@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Engram.Cli/Engram.Cli.csproj" />
+    <Project Path="src/Engram.Mcp/Engram.Mcp.csproj" />
+    <Project Path="src/Engram.Server/Engram.Server.csproj" />
+    <Project Path="src/Engram.Store/Engram.Store.csproj" />
+    <Project Path="src/Engram.Sync/Engram.Sync.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Engram.Mcp.Tests/Engram.Mcp.Tests.csproj" />
+    <Project Path="tests/Engram.Server.Tests/Engram.Server.Tests.csproj" />
+    <Project Path="tests/Engram.Store.Tests/Engram.Store.Tests.csproj" />
+  </Folder>
+</Solution>

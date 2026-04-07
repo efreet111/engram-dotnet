@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Run tests
+        run: dotnet test -c Release --logger "console;verbosity=normal"
+
+      - name: Publish linux-x64
+        run: |
+          dotnet publish src/Engram.Cli \
+            -c Release \
+            -r linux-x64 \
+            --self-contained \
+            -p:PublishSingleFile=true \
+            -p:DebugType=none \
+            -o out/linux-x64
+
+      - name: Publish win-x64
+        run: |
+          dotnet publish src/Engram.Cli \
+            -c Release \
+            -r win-x64 \
+            --self-contained \
+            -p:PublishSingleFile=true \
+            -p:DebugType=none \
+            -o out/win-x64
+
+      - name: Rename binaries
+        run: |
+          mv out/linux-x64/engram   out/engram-linux-x64
+          mv out/win-x64/engram.exe out/engram-win-x64.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "engram-dotnet ${{ github.ref_name }}"
+          body: |
+            ## engram-dotnet ${{ github.ref_name }}
+
+            Puerto en .NET 10 del proyecto original [engram](https://github.com/Gentleman-Programming/engram) por Alan Buscaglia.
+
+            ### Instalación rápida (Linux)
+
+            ```bash
+            curl -L https://github.com/efreet111/engram-dotnet/releases/download/${{ github.ref_name }}/engram-linux-x64 -o engram
+            chmod +x engram
+            ./engram serve
+            ```
+
+            ### Binarios
+
+            | Plataforma | Archivo |
+            |---|---|
+            | Linux x64 | `engram-linux-x64` |
+            | Windows x64 | `engram-win-x64.exe` |
+
+            > Binarios self-contained — no requieren .NET instalado.
+          files: |
+            out/engram-linux-x64
+            out/engram-win-x64.exe

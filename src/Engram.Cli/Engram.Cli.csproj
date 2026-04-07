@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>engram</AssemblyName>
+    <!-- Self-contained publish settings — only active on dotnet publish, not build -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Engram.Store/Engram.Store.csproj" />
+    <ProjectReference Include="../Engram.Server/Engram.Server.csproj" />
+    <ProjectReference Include="../Engram.Mcp/Engram.Mcp.csproj" />
+    <ProjectReference Include="../Engram.Sync/Engram.Sync.csproj" />
+  </ItemGroup>
+</Project>
