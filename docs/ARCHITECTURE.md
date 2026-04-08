@@ -9,6 +9,7 @@
 ## Índice
 
 - [Cómo funciona](#cómo-funciona)
+- [Modo equipo (servidor compartido)](#modo-equipo-servidor-compartido)
 - [Ciclo de sesión](#ciclo-de-sesión)
 - [Sistema de deduplicación](#sistema-de-deduplicación)
 - [Estructura del proyecto](#estructura-del-proyecto)
@@ -22,13 +23,29 @@
 
 ## Cómo funciona
 
+### Modo local (una instancia por desarrollador)
+
 ```
 Agente (Claude Code / OpenCode / Gemini CLI / Codex / ...)
-    ↓ MCP stdio  o  HTTP REST
-engram-dotnet (binario self-contained .NET 10)
+    ↓ MCP stdio
+engram mcp (binario local)
     ↓
 SQLite + FTS5 (~/.engram/engram.db)
 ```
+
+### Modo equipo (servidor compartido)
+
+```
+Agente (Cursor / VS Code / Claude Code / ...)
+    ↓ MCP stdio
+engram mcp (binario en la máquina del dev)
+    ↓ HTTP REST (ENGRAM_URL)
+engram serve (servidor centralizado en Linux)
+    ↓
+SQLite + FTS5 (/data/engram/engram.db)
+```
+
+El binario `engram mcp` detecta la variable de entorno `ENGRAM_URL`. Si está presente, instancia `HttpStore` (proxy HTTP) en lugar de `SqliteStore` — sin ningún cambio en el código del agente ni en el protocolo MCP.
 
 El agente decide qué vale la pena recordar y llama a `mem_save`. Engram persiste la observación con indexación FTS5, deduplicación automática y soporte de `topic_key` para temas evolutivos.
 
@@ -41,6 +58,36 @@ El agente decide qué vale la pena recordar y llama a `mem_save`. Engram persist
 3. Engram persiste en SQLite con indexación FTS5
 4. Siguiente sesión: el agente busca en memoria, obtiene contexto relevante
 ```
+
+---
+
+## Modo equipo (servidor compartido)
+
+### Variables de entorno del cliente
+
+| Variable | Descripción |
+|---|---|
+| `ENGRAM_URL` | URL del servidor centralizado. Si está presente, activa modo proxy. Ej: `http://10.0.0.5:7437` |
+| `ENGRAM_USER` | Identidad del desarrollador. Namespcea las memorias como `user/project`. Ej: `victor.silgado` |
+
+### Namespacing transparente
+
+Cuando el agente guarda una memoria del proyecto `mi-api` con `ENGRAM_USER=victor.silgado`, el proyecto se convierte automáticamente en `victor.silgado/mi-api` antes de enviarlo al servidor. El agente no lo sabe ni necesita saberlo. Las búsquedas también filtran por usuario automáticamente.
+
+```csharp
+// McpConfig.ResolveNamespacedProject — en EngramTools.cs
+string ResolveNamespacedProject(string? project)
+    → string.IsNullOrWhiteSpace(User) ? project : $"{User}/{project}"
+```
+
+### HttpStore — proxy HTTP
+
+`HttpStore` implementa `IStore` completo delegando cada llamada a un endpoint HTTP del servidor. Diferencias clave respecto a `SqliteStore`:
+
+- **Sin SQLite local** — no hay archivo `.db` en la máquina del desarrollador
+- **Header de identidad** — cada request incluye `X-Engram-User: {ENGRAM_USER}` para auditoría
+- **Errores legibles** — las respuestas de error HTTP se envuelven en `EngramRemoteException` y llegan al agente como mensajes descriptivos
+- **Idéntica interfaz** — el agente MCP no sabe si habla con `SqliteStore` o `HttpStore`
 
 ---
 
@@ -110,7 +157,8 @@ engram-dotnet/
 ├── src/
 │   ├── Engram.Store/              ← Motor central: SQLite + FTS5 + deduplicación
 │   │   ├── IStore.cs              ← Interfaz pública (22 métodos)
-│   │   ├── SqliteStore.cs         ← Implementación SQLite
+│   │   ├── SqliteStore.cs         ← Implementación SQLite (modo local)
+│   │   ├── HttpStore.cs           ← Implementación HTTP proxy (modo equipo)
 │   │   ├── Models.cs              ← Session, Observation, Prompt, Stats, etc.
 │   │   ├── StoreConfig.cs         ← Configuración desde variables de entorno
 │   │   ├── Normalizers.cs         ← HashNormalized, NormalizeTopicKey, SanitizeFts5Query
@@ -119,15 +167,28 @@ engram-dotnet/
 │   │   └── EngramServer.cs        ← 22 endpoints (rutas + middleware integrados)
 │   ├── Engram.Mcp/                ← Servidor MCP (transporte stdio)
 │   │   ├── EngramMcpServer.cs     ← Bootstrap y configuración del servidor MCP
-│   │   └── EngramTools.cs         ← 15 herramientas registradas
+│   │   └── EngramTools.cs         ← 15 herramientas registradas + McpConfig (ENGRAM_USER)
 │   ├── Engram.Sync/               ← Sync git-friendly (gzip + JSONL)
 │   │   └── EngramSync.cs          ← Export/import de chunks comprimidos
 │   └── Engram.Cli/                ← Entry point CLI + wiring DI
 │       └── Program.cs             ← Comandos serve, mcp, search, export, import, etc.
-└── tests/
-    ├── Engram.Store.Tests/        ← Unitarios + integración + tests de paridad (51)
-    ├── Engram.Server.Tests/       ← Tests HTTP con WebApplicationFactory (16)
-    └── Engram.Mcp.Tests/          ← Tests de herramientas MCP (22)
+│                                     Switch automático: ENGRAM_URL → HttpStore | SqliteStore
+├── tests/
+│   ├── Engram.Store.Tests/        ← Unitarios + integración + tests de paridad (51)
+│   ├── Engram.Server.Tests/       ← Tests HTTP con WebApplicationFactory (16)
+│   ├── Engram.Mcp.Tests/          ← Tests de herramientas MCP + McpConfig (32)
+│   └── Engram.HttpStore.Tests/    ← Tests end-to-end de HttpStore con servidor real (25)
+└── config/
+    ├── cursor/
+    │   ├── mcp.json               ← Config MCP para Cursor
+    │   ├── rules/
+    │   │   ├── engram.mdc         ← Reglas de memoria (alwaysApply: true)
+    │   │   └── sdd-orchestrator.md← Orquestador SDD
+    │   └── agents/                ← 9 sub-agentes SDD (sdd-apply, sdd-design, etc.)
+    └── vscode/
+        ├── mcp.json               ← Config MCP para VS Code
+        └── prompts/
+            └── engram.instructions.md ← Instrucciones de memoria para GitHub Copilot
 ```
 
 ---
@@ -179,6 +240,35 @@ El schema de SQLite debe ser **idéntico** al proyecto Go original para garantiz
 
 ### JWT opcional
 Si `ENGRAM_JWT_SECRET` no está configurado, el servidor arranca sin autenticación (comportamiento idéntico al proyecto Go original). Si está configurado, todos los endpoints excepto `/health` requieren `Authorization: Bearer <token>`.
+
+### HttpStore y IStore — Strategy Pattern
+
+El switch entre modo local y modo equipo se resuelve via `IStore`:
+
+```csharp
+// Program.cs — comando mcp
+IStore store = config.IsRemote
+    ? new HttpStore(config)
+    : new SqliteStore(config);
+```
+
+`HttpStore` implementa exactamente la misma interfaz que `SqliteStore`. El servidor MCP y las herramientas no saben con qué implementación están trabajando. Este es el **Strategy Pattern**: la estrategia de persistencia se inyecta, no se hardcodea.
+
+Las únicas diferencias visibles desde el exterior:
+- `SqliteStore` lee/escribe un archivo `.db` local
+- `HttpStore` hace requests HTTP al servidor centralizado con header `X-Engram-User`
+
+### Namespacing automático con ENGRAM_USER
+
+`McpConfig` resuelve el proyecto namespaceado antes de cada llamada a `IStore`:
+
+```csharp
+// Agente llama: mem_save(project: "mi-api")
+// McpConfig resuelve: "victor.silgado/mi-api"
+// IStore recibe: project = "victor.silgado/mi-api"
+```
+
+El agente nunca necesita conocer su usuario ni el prefijo — el namespacing es completamente transparente.
 
 ---
 

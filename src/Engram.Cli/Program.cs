@@ -55,18 +55,36 @@ var mcpProjectOpt = new Option<string?>("--project", "Override detected project 
 mcpCmd.AddOption(mcpProjectOpt);
 mcpCmd.SetHandler(async (string? project) =>
 {
+    var storeCfg = StoreConfig.FromEnvironment();
+
     // Project detection chain: --project → ENGRAM_PROJECT → git/cwd
     var defaultProject = project
-        ?? Environment.GetEnvironmentVariable("ENGRAM_PROJECT")
+        ?? storeCfg.Project
         ?? DetectProject(Directory.GetCurrentDirectory());
     defaultProject = Normalizers.NormalizeProject(defaultProject);
 
-    var storeCfg = StoreConfig.FromEnvironment();
-    using var store = new SqliteStore(storeCfg);
+    // User identity: provided by IT via ENGRAM_USER (empty in local mode)
+    var user = storeCfg.User ?? "";
+
+    // Store selection: HttpStore (team mode) vs SqliteStore (local mode)
+    IStore store = storeCfg.IsRemote
+        ? new HttpStore(storeCfg)
+        : new SqliteStore(storeCfg);
+
+    if (storeCfg.IsRemote)
+        Console.Error.WriteLine($"[engram] mcp → remote {storeCfg.RemoteUrl} (user={user}, project={defaultProject})");
+    else
+        Console.Error.WriteLine($"[engram] mcp → local SQLite (project={defaultProject})");
+
+    using var ownedStore = store;
 
     var mcpBuilder = EngramMcpServer.CreateBuilder(args);
     mcpBuilder.Services.AddSingleton<IStore>(store);
-    mcpBuilder.Services.AddSingleton(new McpConfig { DefaultProject = defaultProject });
+    mcpBuilder.Services.AddSingleton(new McpConfig
+    {
+        DefaultProject = defaultProject,
+        User           = user,
+    });
 
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt);

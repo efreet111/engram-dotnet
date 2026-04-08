@@ -9,10 +9,30 @@ namespace Engram.Mcp;
 /// Configuration injected into MCP tools.
 /// DefaultProject is auto-detected from the working directory and applied
 /// when the LLM sends an empty project field.
+///
+/// In team/centralized mode (ENGRAM_URL set), User is the developer identity
+/// provided by IT (ENGRAM_USER). The DefaultProject is automatically prefixed
+/// as "user/project" so memories are namespaced per-developer in the shared server.
+/// The LLM always sees only the bare project name — the prefix is transparent.
 /// </summary>
 public sealed class McpConfig
 {
     public string DefaultProject { get; init; } = "";
+
+    /// <summary>
+    /// Developer identity (from ENGRAM_USER). Empty in local mode.
+    /// </summary>
+    public string User { get; init; } = "";
+
+    /// <summary>
+    /// Builds the namespaced project string used for storage ("user/project").
+    /// Falls back to DefaultProject when no user is configured.
+    /// </summary>
+    public string ResolveNamespacedProject(string? project)
+    {
+        var p = string.IsNullOrEmpty(project) ? DefaultProject : project;
+        return !string.IsNullOrEmpty(User) ? $"{User}/{p}" : p;
+    }
 }
 
 /// <summary>
@@ -501,8 +521,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
 
     private string ResolveProject(string? project)
     {
-        var p = string.IsNullOrEmpty(project) ? cfg.DefaultProject : project;
-        return Normalizers.NormalizeProject(p);
+        // In team mode: transparently namespace as "user/project" for storage.
+        // The LLM only ever specifies the bare project name; the user prefix is injected here.
+        var namespaced = cfg.ResolveNamespacedProject(project);
+        return Normalizers.NormalizeProject(namespaced);
     }
 
     private static string DefaultSessionId(string project)

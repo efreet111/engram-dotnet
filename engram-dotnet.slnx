@@ -7,6 +7,7 @@
     <Project Path="src/Engram.Sync/Engram.Sync.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Engram.HttpStore.Tests/Engram.HttpStore.Tests.csproj" />
     <Project Path="tests/Engram.Mcp.Tests/Engram.Mcp.Tests.csproj" />
     <Project Path="tests/Engram.Server.Tests/Engram.Server.Tests.csproj" />
     <Project Path="tests/Engram.Store.Tests/Engram.Store.Tests.csproj" />

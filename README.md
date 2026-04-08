@@ -80,15 +80,25 @@ Todas las opciones se controlan via variables de entorno:
 | `ENGRAM_SYNC_REPO` | — | URL del repo git para sync distribuido |
 | `ENGRAM_SYNC_DIR` | `~/.engram/sync` | Directorio local de chunks de sync |
 
-### Servidor compartido para equipos
+### Servidor compartido para equipos (Team Mode)
+
+En modo equipo, una sola instancia centralizada sirve a todo el equipo. Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespcea sus memorias automáticamente — sin colisiones entre compañeros.
 
 ```bash
-# En el servidor
+# En el servidor (IT)
 ENGRAM_DATA_DIR=/data/engram ./engram serve
 
-# En cada máquina de desarrollo — los plugins usan ENGRAM_URL automáticamente
+# En cada máquina de desarrollo
 export ENGRAM_URL=http://servidor.interno:7437
+export ENGRAM_USER=nombre.apellido       # ← namespcea tus memorias en el servidor
 ```
+
+El binario `engram mcp` detecta `ENGRAM_URL` automáticamente y actúa como proxy HTTP hacia el servidor centralizado — sin SQLite local.
+
+| Documentación | Audiencia |
+|---|---|
+| [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor, systemd, backup, distribución de config |
+| [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code, variables de entorno, uso en la práctica |
 
 ---
 
@@ -279,6 +289,8 @@ Authorization: Bearer <token>
 | Doc | Descripción |
 |---|---|
 | [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas |
+| [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor compartido, systemd, backup, distribución de config |
+| [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code al servidor de equipo |
 | [Deployment](docs/DEPLOYMENT.md) | Systemd + nginx en servidor Linux, backup, monitoreo |
 | [Desarrollo](docs/DEVELOPMENT.md) | Compilar, testear, publicar |
 | [Migración desde Go](docs/MIGRATION.md) | Compatibilidad, diferencias, migración de datos |
@@ -289,7 +301,7 @@ Authorization: Bearer <token>
 
 ```bash
 dotnet test
-# Store.Tests: 51 | Mcp.Tests: 22 | Server.Tests: 16 — 89 tests en total
+# Store.Tests: 51 | Mcp.Tests: 32 | Server.Tests: 16 | HttpStore.Tests: 25 — 124 tests en total
 ```
 
 ---

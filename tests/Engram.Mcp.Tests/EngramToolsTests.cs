@@ -321,3 +321,112 @@ public class EngramToolsTests : IDisposable
         Assert.Contains("Found", result);
     }
 }
+
+// ─── McpConfig — user/project namespace tests ─────────────────────────────────
+
+public class McpConfigTests
+{
+    // ─── ResolveNamespacedProject — local mode (no user) ──────────────────────
+
+    [Fact]
+    public void ResolveNamespacedProject_ReturnsProject_WhenNoUser()
+    {
+        var cfg = new McpConfig { DefaultProject = "my-app", User = "" };
+
+        var result = cfg.ResolveNamespacedProject("my-app");
+
+        Assert.Equal("my-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_UsesDefault_WhenProjectIsNull()
+    {
+        var cfg = new McpConfig { DefaultProject = "default-app", User = "" };
+
+        var result = cfg.ResolveNamespacedProject(null);
+
+        Assert.Equal("default-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_UsesDefault_WhenProjectIsEmpty()
+    {
+        var cfg = new McpConfig { DefaultProject = "default-app", User = "" };
+
+        var result = cfg.ResolveNamespacedProject("");
+
+        Assert.Equal("default-app", result);
+    }
+
+    // ─── ResolveNamespacedProject — team mode (with user) ─────────────────────
+
+    [Fact]
+    public void ResolveNamespacedProject_PrefixesUser_WhenUserIsSet()
+    {
+        var cfg = new McpConfig { DefaultProject = "my-app", User = "victor.silgado" };
+
+        var result = cfg.ResolveNamespacedProject("my-app");
+
+        Assert.Equal("victor.silgado/my-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_PrefixesUserWithDefault_WhenProjectIsNull()
+    {
+        var cfg = new McpConfig { DefaultProject = "default-app", User = "victor.silgado" };
+
+        var result = cfg.ResolveNamespacedProject(null);
+
+        Assert.Equal("victor.silgado/default-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_PrefixesUserWithDefault_WhenProjectIsEmpty()
+    {
+        var cfg = new McpConfig { DefaultProject = "default-app", User = "victor.silgado" };
+
+        var result = cfg.ResolveNamespacedProject("");
+
+        Assert.Equal("victor.silgado/default-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_DifferentUsers_ProduceDifferentNamespaces()
+    {
+        var cfgA = new McpConfig { DefaultProject = "shared-app", User = "alice" };
+        var cfgB = new McpConfig { DefaultProject = "shared-app", User = "bob" };
+
+        var resultA = cfgA.ResolveNamespacedProject("shared-app");
+        var resultB = cfgB.ResolveNamespacedProject("shared-app");
+
+        Assert.NotEqual(resultA, resultB);
+        Assert.Equal("alice/shared-app", resultA);
+        Assert.Equal("bob/shared-app",   resultB);
+    }
+
+    // ─── StoreConfig — IsRemote flag ──────────────────────────────────────────
+
+    [Fact]
+    public void StoreConfig_IsRemote_FalseByDefault()
+    {
+        var cfg = new StoreConfig();
+
+        Assert.False(cfg.IsRemote);
+    }
+
+    [Fact]
+    public void StoreConfig_IsRemote_TrueWhenRemoteUrlSet()
+    {
+        var cfg = new StoreConfig { RemoteUrl = "http://10.0.0.5:7437" };
+
+        Assert.True(cfg.IsRemote);
+    }
+
+    [Fact]
+    public void StoreConfig_IsRemote_FalseWhenRemoteUrlIsWhitespace()
+    {
+        var cfg = new StoreConfig { RemoteUrl = "   " };
+
+        Assert.False(cfg.IsRemote);
+    }
+}
