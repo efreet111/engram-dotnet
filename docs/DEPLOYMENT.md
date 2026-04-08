@@ -17,7 +17,7 @@
 En una máquina con .NET 10 SDK:
 
 ```bash
-git clone https://github.com/tu-usuario/engram-dotnet
+git clone https://github.com/efreet111/engram-dotnet
 cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 ```
@@ -141,12 +141,18 @@ sudo systemctl reload nginx
 En cada desarrollador, agregar a `~/.bashrc` o `~/.zshrc`:
 
 ```bash
+# URL del servidor compartido
 export ENGRAM_URL=http://engram.servidor.interno
 # o con IP directa:
 export ENGRAM_URL=http://192.168.1.100:7437
+
+# Identidad del desarrollador (namespcea tus memorias en el servidor)
+export ENGRAM_USER=nombre.apellido
 ```
 
 Los plugins de Claude Code, OpenCode, Gemini CLI y Codex leen `ENGRAM_URL` automáticamente. **No se requieren cambios en los plugins.**
+
+> Ver la [Guía para el desarrollador](DEVELOPER-SETUP.md) para instrucciones detalladas por editor (Cursor, VS Code).
 
 ---
 

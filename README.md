@@ -47,7 +47,7 @@ El proyecto original está escrito en Go. En entornos donde el equipo trabaja co
 ### Compilar desde fuente
 
 ```bash
-git clone https://github.com/tu-usuario/engram-dotnet
+git clone https://github.com/efreet111/engram-dotnet
 cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 ```
