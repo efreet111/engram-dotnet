@@ -291,6 +291,7 @@ Authorization: Bearer <token>
 | [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas |
 | [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor compartido, systemd, backup, distribución de config |
 | [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code al servidor de equipo |
+| [TrueNAS SCALE](docker/README.md) | Instalar como Custom App en TrueNAS SCALE (Docker) |
 | [Deployment](docs/DEPLOYMENT.md) | Systemd + nginx en servidor Linux, backup, monitoreo |
 | [Desarrollo](docs/DEVELOPMENT.md) | Compilar, testear, publicar |
 | [Migración desde Go](docs/MIGRATION.md) | Compatibilidad, diferencias, migración de datos |

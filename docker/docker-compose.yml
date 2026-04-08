@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  engram:
+    image: engram-dotnet:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v1.1.0
+    container_name: engram
+    restart: unless-stopped
+
+    ports:
+      - "7437:7437"
+
+    volumes:
+      # Montar el dataset de TrueNAS donde se guardan los datos
+      # Cambiar la ruta izquierda por el path de tu dataset en TrueNAS
+      # Ejemplo: /mnt/tank/engram:/data/engram
+      - /mnt/tank/engram:/data/engram
+
+    environment:
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7437"
+      # Opcional — habilitar auth JWT (descomentar y cambiar el valor)
+      # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
+      # Opcional — CORS si accedés al servidor desde un dashboard web
+      # ENGRAM_CORS_ORIGINS: "http://truenas.local"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
