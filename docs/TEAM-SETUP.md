@@ -1,20 +1,18 @@
 [← Volver al README](../README.md)
 
-# Guía de configuración para IT — engram-dotnet
+# Guía para IT — Deploy del servidor
 
-> Esta guía está dirigida al equipo de IT o DevOps. Explica cómo deployar el servidor de memoria compartida y distribuir la configuración a los desarrolladores.
-
----
+> Esta guía explica cómo instalar y configurar el servidor engram-dotnet para el equipo.
+> Hay dos opciones: TrueNAS SCALE con Docker (recomendado) o Linux tradicional con systemd.
 
 ## Índice
 
 - [¿Qué es esto?](#qué-es-esto)
 - [Arquitectura del equipo](#arquitectura-del-equipo)
-- [Paso 1 — Descargar el binario](#paso-1--descargar-el-binario)
-- [Paso 2 — Configurar el servidor](#paso-2--configurar-el-servidor)
-- [Paso 3 — Instalar como servicio systemd](#paso-3--instalar-como-servicio-systemd)
-- [Paso 4 — Distribuir configuración a los desarrolladores](#paso-4--distribuir-configuración-a-los-desarrolladores)
-- [Variables de entorno del servidor](#variables-de-entorno-del-servidor)
+- [Opción 1 — TrueNAS SCALE con Docker](#opción-1--truenas-scale-con-docker)
+- [Opción 2 — Linux tradicional con systemd](#opción-2--linux-tradicional-con-systemd)
+- [Distribuir configuración a los desarrolladores](#distribuir-configuración-a-los-desarrolladores)
+- [Variables de entorno](#variables-de-entorno)
 - [Verificación del servidor](#verificación-del-servidor)
 - [Backup y mantenimiento](#backup-y-mantenimiento)
 
@@ -22,9 +20,9 @@
 
 ## ¿Qué es esto?
 
-**engram-dotnet** es un servidor de memoria persistente para agentes de IA (Claude Code, Cursor, OpenCode, Gemini CLI, etc.). En lugar de que cada desarrollador tenga su propia instancia local, el equipo comparte una sola instancia centralizada en un servidor Linux.
+**engram-dotnet** es un servidor de memoria persistente para agentes de IA (Claude Code, Cursor, OpenCode, Gemini CLI, etc.). En lugar de que cada desarrollador tenga su propia instancia local, el equipo comparte una sola instancia centralizada.
 
-Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespcea automáticamente sus memorias — no hay colisión de datos entre desarrolladores.
+Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespacea automáticamente sus memorias — no hay colisión de datos entre desarrolladores.
 
 ---
 
@@ -32,10 +30,10 @@ Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespcea automáticam
 
 ```
 ┌────────────────────────────────────────────┐
-│              Servidor Linux                │
+│         Servidor (Docker o systemd)        │
 │                                            │
 │   engram-dotnet (puerto 7437)              │
-│   SQLite en /data/engram/engram.db         │
+│   SQLite en /app/database/engram.db        │
 │                                            │
 └──────────────────────┬─────────────────────┘
                        │ HTTP REST / MCP stdio
@@ -51,22 +49,95 @@ Cada agente (Cursor, Claude Code, etc.) corre en la máquina del desarrollador. 
 
 ---
 
-## Paso 1 — Descargar el binario
+## Opción 1 — TrueNAS SCALE con Docker
 
-Descargar el release más reciente de GitHub:
+### Prerequisitos
+
+- TrueNAS SCALE con Docker y Docker Compose habilitados
+- Git disponible en el sistema
+- Acceso SSH al servidor
+
+### Paso 1 — Clonar el repositorio
 
 ```bash
-# Crear directorio de instalación
+git clone https://github.com/efreet111/engram-dotnet.git /mnt/Pool_8TB/engram_data
+cd /mnt/Pool_8TB/engram_data
+```
+
+### Paso 2 — Configurar datos y entorno
+
+Crear el directorio de datos y ajustar permisos para el usuario del contenedor (UID/GID 950):
+
+```bash
+mkdir -p /mnt/Pool_8TB/engram_data/database
+chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+```
+
+Crear el archivo de entorno a partir del ejemplo:
+
+```bash
+cp docker/.env.example docker/.env
+```
+
+Editar `docker/.env` con la ruta real:
+
+```env
+ENGRAM_DATA_PATH=/mnt/Pool_8TB/engram_data/database
+ENGRAM_HOST_PORT=7437
+```
+
+> **Nota**: `ENGRAM_DATA_PATH` es la ruta en el **host** que Docker monta dentro del contenedor. Dentro del contenedor la app lo ve como `/app/database`.
+
+### Paso 3 — Build y deploy
+
+```bash
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml up -d
+```
+
+### Paso 4 — Verificar
+
+```bash
+wget -qO- http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.0.0"}
+```
+
+Ver logs:
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f
+```
+
+### Actualizar a nueva versión
+
+```bash
+docker compose -f docker/docker-compose.yml down
+git pull
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml up -d
+```
+
+---
+
+## Opción 2 — Linux tradicional con systemd
+
+### Prerequisitos
+
+- Linux x64 (Ubuntu 20.04+, Debian 11+, RHEL 8+, etc.)
+- Acceso root o sudo
+
+### Paso 1 — Descargar el binario
+
+```bash
 sudo mkdir -p /opt/engram
 
 # Descargar el binario linux-x64
 curl -L https://github.com/efreet111/engram-dotnet/releases/latest/download/engram-linux-x64 \
      -o /opt/engram/engram
 
-# Dar permisos de ejecución
 sudo chmod +x /opt/engram/engram
 
-# Verificar que funciona
+# Verificar
 /opt/engram/engram version
 ```
 
@@ -78,19 +149,17 @@ cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o /opt/engram/
 ```
 
----
+### Paso 2 — Configurar el servidor
 
-## Paso 2 — Configurar el servidor
-
-Crear el directorio de datos:
+Crear directorio de datos y usuario de servicio:
 
 ```bash
 sudo mkdir -p /data/engram
-sudo useradd -r -s /bin/false engram          # usuario sin login para el servicio
+sudo useradd -r -s /bin/false engram
 sudo chown engram:engram /data/engram
 ```
 
-Crear el archivo de entorno en `/etc/engram/server.env`:
+Crear archivo de entorno en `/etc/engram/server.env`:
 
 ```bash
 sudo mkdir -p /etc/engram
@@ -104,20 +173,13 @@ ENGRAM_PORT=7437
 
 # Opcional — CORS si el dashboard web se accede desde otro origen
 # ENGRAM_CORS_ORIGINS=http://dashboard.interno
-
-# Opcional — sync git para backup distribuido
-# ENGRAM_SYNC_REPO=git@github.com:tu-org/engram-sync.git
 EOF
 
 sudo chmod 640 /etc/engram/server.env
 sudo chown root:engram /etc/engram/server.env
 ```
 
----
-
-## Paso 3 — Instalar como servicio systemd
-
-Crear el archivo de servicio en `/etc/systemd/system/engram.service`:
+### Paso 3 — Instalar como servicio systemd
 
 ```bash
 sudo tee /etc/systemd/system/engram.service > /dev/null <<'EOF'
@@ -149,59 +211,51 @@ SyslogIdentifier=engram
 WantedBy=multi-user.target
 EOF
 
-# Habilitar e iniciar el servicio
 sudo systemctl daemon-reload
 sudo systemctl enable engram
 sudo systemctl start engram
+sudo systemctl status engram
+```
 
-# Verificar estado
+### Paso 4 — Verificar
+
+```bash
+curl http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.0.0"}
+
+sudo systemctl status engram
+sudo journalctl -u engram -f
+```
+
+### Actualizar el binario
+
+```bash
+sudo systemctl stop engram
+sudo cp nuevo-engram /opt/engram/engram
+sudo chmod +x /opt/engram/engram
+sudo systemctl start engram
 sudo systemctl status engram
 ```
 
 ---
 
-## Paso 4 — Distribuir configuración a los desarrolladores
+## Distribuir configuración a los desarrolladores
 
 El repositorio incluye archivos de configuración en `config/` listos para distribuir.
 
-### Estructura del directorio `config/`
-
-```
-config/
-├── cursor/
-│   ├── mcp.json                    ← Configuración MCP para Cursor
-│   ├── rules/
-│   │   ├── engram.mdc              ← Reglas de memoria (alwaysApply: true)
-│   │   └── sdd-orchestrator.md    ← Orquestador SDD
-│   └── agents/
-│       ├── sdd-apply.md            ← Agente: implementar cambios
-│       ├── sdd-archive.md          ← Agente: archivar cambio
-│       ├── sdd-design.md           ← Agente: diseño técnico
-│       ├── sdd-explore.md          ← Agente: investigar codebase
-│       ├── sdd-init.md             ← Agente: inicializar SDD
-│       ├── sdd-propose.md          ← Agente: propuesta de cambio
-│       ├── sdd-spec.md             ← Agente: especificaciones
-│       ├── sdd-tasks.md            ← Agente: desglose de tareas
-│       └── sdd-verify.md           ← Agente: validar implementación
-└── vscode/
-    ├── mcp.json                    ← Configuración MCP para VS Code
-    └── prompts/
-        └── engram.instructions.md  ← Instrucciones de memoria (GitHub Copilot)
-```
-
 ### Variables de entorno por desarrollador
 
-Cada desarrollador necesita estas variables en su `.bashrc` / `.zshrc` / perfil de sistema:
+Cada desarrollador necesita estas variables en su `.bashrc` / `.zshrc`:
 
 ```bash
 # URL del servidor compartido
-export ENGRAM_URL=http://10.0.0.5:7437        # ← reemplazar con IP/hostname del servidor
+export ENGRAM_URL=http://10.0.0.5:7437        # ← IP/hostname del servidor
 
-# Identidad del desarrollador (namespaces las memorias en el servidor)
-export ENGRAM_USER=nombre.apellido            # ← personalizar por desarrollador
+# Identidad del desarrollador (namespacea las memorias en el servidor)
+export ENGRAM_USER=nombre.apellido
 ```
 
-> **Importante**: si `ENGRAM_JWT_SECRET` está configurado en el servidor, también hay que setear `ENGRAM_JWT_TOKEN` en la máquina del desarrollador con el JWT válido.
+> Si `ENGRAM_JWT_SECRET` está configurado en el servidor, también hay que setear `ENGRAM_JWT_TOKEN` en la máquina del desarrollador con el JWT válido.
 
 ### Instrucciones para Cursor
 
@@ -212,26 +266,42 @@ export ENGRAM_USER=nombre.apellido            # ← personalizar por desarrollad
 
 ### Instrucciones para VS Code
 
-1. Copiar `config/vscode/mcp.json` a `~/.vscode/mcp.json` (o al directorio del workspace `.vscode/mcp.json`)
+1. Copiar `config/vscode/mcp.json` a `~/.vscode/mcp.json`
 2. Copiar `config/vscode/prompts/engram.instructions.md` a `~/.github/copilot-instructions.md`
 3. Reiniciar VS Code
 
-> Consultar la [guía para el desarrollador](DEVELOPER-SETUP.md) para las instrucciones detalladas por herramienta.
+> Ver la [guía para el desarrollador](DEVELOPER-SETUP.md) para instrucciones detalladas por herramienta.
 
 ---
 
-## Variables de entorno del servidor
+## Variables de entorno
+
+### Variables del servidor
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `ENGRAM_DATA_DIR` | `~/.engram` | Directorio de datos (SQLite + sync chunks) |
-| `ENGRAM_PORT` | `7437` | Puerto del servidor HTTP |
+| `ENGRAM_DATA_DIR` | `~/.engram` | Directorio de datos (SQLite) — usado por la app dentro del contenedor o en systemd |
+| `ENGRAM_PORT` | `7437` | Puerto interno del servidor |
 | `ENGRAM_JWT_SECRET` | — | Si se setea, habilita auth JWT en todos los endpoints (excepto `/health`) |
 | `ENGRAM_CORS_ORIGINS` | — | Orígenes CORS permitidos, separados por coma |
-| `ENGRAM_SYNC_REPO` | — | URL del repo git para sync distribuido |
-| `ENGRAM_SYNC_DIR` | `~/.engram/sync` | Directorio local de chunks de sync |
 
-> Las variables `ENGRAM_URL` y `ENGRAM_USER` son del **cliente** (máquina del desarrollador), NO del servidor.
+### Variables del host Docker (docker/.env)
+
+Solo aplican al deployment con Docker Compose:
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `ENGRAM_DATA_PATH` | Ruta en el **host** al directorio de datos | `/mnt/Pool_8TB/engram_data/database` |
+| `ENGRAM_HOST_PORT` | Puerto expuesto en el host (default: `7437`) | `7437` |
+
+> `ENGRAM_DATA_PATH` (host) se monta como `/app/database` dentro del contenedor → la app lo ve como `ENGRAM_DATA_DIR=/app/database`.
+
+### Variables del cliente (máquina del desarrollador)
+
+| Variable | Descripción |
+|---|---|
+| `ENGRAM_URL` | URL del servidor compartido |
+| `ENGRAM_USER` | Identidad del desarrollador (namespacea sus memorias) |
 
 ---
 
@@ -245,8 +315,15 @@ curl http://localhost:7437/health
 # Estadísticas
 curl http://localhost:7437/stats
 # → {"sessions":0,"observations":0,"prompts":0,"projects":[]}
+```
 
-# Ver logs del servicio
+Logs según la opción de deploy:
+
+```bash
+# Docker
+docker compose -f docker/docker-compose.yml logs -f
+
+# systemd
 sudo journalctl -u engram -f
 ```
 
@@ -257,37 +334,27 @@ sudo journalctl -u engram -f
 ### Backup de la base de datos SQLite
 
 ```bash
-# Backup diario recomendado (SQLite con WAL — el archivo está siempre en estado consistente)
+# Docker
+cp /mnt/Pool_8TB/engram_data/database/engram.db /backups/engram-$(date +%Y%m%d).db
+
+# systemd
 cp /data/engram/engram.db /backups/engram-$(date +%Y%m%d).db
 
-# O usando el endpoint de export de engram
+# O usando el endpoint de export
 curl http://localhost:7437/export -o /backups/engram-$(date +%Y%m%d).json
 ```
 
-### Actualizar el binario
-
-```bash
-# Parar el servicio
-sudo systemctl stop engram
-
-# Reemplazar el binario
-sudo cp nuevo-engram /opt/engram/engram
-sudo chmod +x /opt/engram/engram
-
-# Reiniciar
-sudo systemctl start engram
-sudo systemctl status engram
-```
+SQLite en modo WAL es seguro para copias en caliente.
 
 ### Logs
 
 ```bash
-# Últimas 100 líneas de log
+# Docker — últimas 100 líneas
+docker compose -f docker/docker-compose.yml logs --tail=100
+
+# systemd — últimas 100 líneas
 sudo journalctl -u engram -n 100
 
-# Seguir logs en tiempo real
-sudo journalctl -u engram -f
-
-# Logs de las últimas 24 horas
+# systemd — últimas 24 horas
 sudo journalctl -u engram --since "24 hours ago"
 ```

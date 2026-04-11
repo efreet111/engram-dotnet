@@ -1,69 +1,164 @@
 [← Volver al README](../README.md)
 
-# Deployment — engram-dotnet en servidor Linux
+# Deployment
 
 ---
 
-## Requisitos del servidor
+## Opción 1 — TrueNAS SCALE con Docker
+
+### Prerequisitos
+
+- TrueNAS SCALE con Docker y Docker Compose habilitados
+- Git disponible en el sistema
+- Acceso SSH al servidor
+
+### Pasos
+
+#### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/efreet111/engram-dotnet.git /mnt/Pool_8TB/engram_data
+cd /mnt/Pool_8TB/engram_data
+```
+
+#### 2. Configurar datos y entorno
+
+Crear el directorio de datos y ajustar permisos:
+
+```bash
+mkdir -p /mnt/Pool_8TB/engram_data/database
+chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+```
+
+Crear archivo de entorno:
+
+```bash
+cp docker/.env.example docker/.env
+```
+
+Editar `docker/.env` con la ruta correcta:
+
+```env
+ENGRAM_DATA_PATH=/mnt/Pool_8TB/engram_data/database
+ENGRAM_HOST_PORT=7437
+```
+
+> **Nota**: El host monta `ENGRAM_DATA_PATH`; dentro del contenedor, la app lo ve como `ENGRAM_DATA_DIR=/app/database`.
+
+#### 3. Construir la imagen Docker
+
+```bash
+docker compose -f docker/docker-compose.yml build
+```
+
+#### 4. Levantar el servicio
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+#### 5. Verificar el estado
+
+```bash
+wget -qO- http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.0.0"}
+```
+
+#### 6. Logs en tiempo real
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f
+```
+
+### Variables de entorno opcionales
+
+| Variable             | Descripción                                                                 |
+|----------------------|-----------------------------------------------------------------------------|
+| `ENGRAM_JWT_SECRET`  | Define un secreto para habilitar autenticación JWT                         |
+| `ENGRAM_CORS_ORIGINS`| Lista separada por comas con orígenes permitidos para CORS                  |
+
+### Actualizar el servicio
+
+```bash
+docker compose -f docker/docker-compose.yml down
+git pull
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml up -d
+```
+
+---
+
+## Opción 2 — Linux tradicional con systemd
+
+### Requisitos del servidor
 
 - Linux x64 (Ubuntu 20.04+, Debian 11+, RHEL 8+, etc.)
-- Sin .NET runtime requerido — el binario es self-contained
-- Puerto 7437 disponible (o el que se configure)
+- Acceso root o sudo
 
----
+### Instalación del binario
 
-## Compilar el binario
+#### Opción 1: Descargar binario precompilado
 
-En una máquina con .NET 10 SDK:
+```bash
+sudo mkdir -p /opt/engram
+curl -L https://github.com/efreet111/engram-dotnet/releases/latest/download/engram-linux-x64 -o /opt/engram/engram
+sudo chmod +x /opt/engram/engram
+
+# Verificar instalación
+/opt/engram/engram version
+```
+
+#### Opción 2: Compilar desde fuente
 
 ```bash
 git clone https://github.com/efreet111/engram-dotnet
 cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
+sudo mv dist/engram /opt/engram/
+sudo chmod +x /opt/engram/engram
 ```
 
-El binario queda en `dist/engram`. Copiarlo al servidor:
+### Configuración
+
+1. Crear directorio de datos:
 
 ```bash
-scp dist/engram usuario@servidor.interno:/opt/engram/engram
-ssh usuario@servidor.interno "chmod +x /opt/engram/engram"
+sudo mkdir -p /data/engram
+sudo useradd -r -s /bin/false engram
+sudo chown engram:engram /data/engram
 ```
 
----
-
-## Verificar instalación
+2. Crear archivo de entorno en `/etc/engram/server.env`:
 
 ```bash
-/opt/engram/engram version
-/opt/engram/engram stats
+sudo mkdir -p /etc/engram
+sudo tee /etc/engram/server.env > /dev/null <<'EOF'
+ENGRAM_DATA_DIR=/data/engram
+ENGRAM_PORT=7437
+
+# Opcional
+# ENGRAM_JWT_SECRET=secreto_seguro
+# ENGRAM_CORS_ORIGINS=http://frontend.ejemplo.com
+EOF
+sudo chmod 640 /etc/engram/server.env
+sudo chown root:engram /etc/engram/server.env
 ```
 
----
+### Systemd
 
-## Servicio systemd
-
-Crear `/etc/systemd/system/engram.service`:
+1. Crear servicio systemd en `/etc/systemd/system/engram.service`:
 
 ```ini
 [Unit]
-Description=Engram — Memoria persistente para agentes de IA
+Description=Engram — Servidor de IA
 After=network.target
 
 [Service]
 Type=simple
 User=engram
 Group=engram
-WorkingDirectory=/opt/engram
-
-# Variables de entorno
-Environment=ENGRAM_DATA_DIR=/data/engram
-Environment=ENGRAM_PORT=7437
-# Descomentar para habilitar auth JWT:
-# Environment=ENGRAM_JWT_SECRET=cambiar-por-secreto-seguro
-# Descomentar para habilitar CORS (separados por coma):
-# Environment=ENGRAM_CORS_ORIGINS=http://localhost:3000,http://dashboard.interno
-
 ExecStart=/opt/engram/engram serve
+EnvironmentFile=/etc/engram/server.env
 Restart=on-failure
 RestartSec=5s
 
@@ -77,19 +172,29 @@ ReadWritePaths=/data/engram
 WantedBy=multi-user.target
 ```
 
-Activar y arrancar:
+2. Habilitar y arrancar:
 
 ```bash
-# Crear usuario dedicado
-sudo useradd -r -s /bin/false engram
-
-# Crear directorio de datos
-sudo mkdir -p /data/engram
-sudo chown engram:engram /data/engram
-
-# Habilitar y arrancar el servicio
 sudo systemctl daemon-reload
 sudo systemctl enable engram
+sudo systemctl start engram
+sudo systemctl status engram
+```
+
+### Verificación del servicio
+
+```bash
+curl http://localhost:7437/health
+sudo systemctl status engram
+sudo journalctl -u engram -f
+```
+
+### Actualizar el binario
+
+```bash
+sudo systemctl stop engram
+sudo cp nuevo-engram /opt/engram/engram
+sudo chmod +x /opt/engram/engram
 sudo systemctl start engram
 sudo systemctl status engram
 ```
@@ -98,38 +203,29 @@ sudo systemctl status engram
 
 ## Reverse proxy con nginx
 
-Crear `/etc/nginx/sites-available/engram`:
+### Configuración
 
 ```nginx
-upstream engram {
-    server 127.0.0.1:7437;
-    keepalive 32;
-}
-
 server {
     listen 80;
-    server_name engram.servidor.interno;
-
-    # Redirigir a HTTPS si se tiene certificado
-    # return 301 https://$host$request_uri;
+    server_name engram.example.com;
 
     location / {
-        proxy_pass http://engram;
+        proxy_pass http://localhost:7437;
         proxy_http_version 1.1;
-        proxy_set_header Connection "";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-        # Timeouts generosos para operaciones largas (export, import)
-        proxy_read_timeout 120s;
-        proxy_connect_timeout 10s;
+        proxy_cache_bypass $http_upgrade;
     }
 }
 ```
 
+> **Nota**: Actualizar `server_name` con el dominio real.
+
+Reiniciar nginx:
+
 ```bash
-sudo ln -s /etc/nginx/sites-available/engram /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -138,71 +234,45 @@ sudo systemctl reload nginx
 
 ## Configuración en máquinas de desarrollo
 
-En cada desarrollador, agregar a `~/.bashrc` o `~/.zshrc`:
+Cada usuario debe configurar:
 
 ```bash
-# URL del servidor compartido
-export ENGRAM_URL=http://engram.servidor.interno
-# o con IP directa:
-export ENGRAM_URL=http://192.168.1.100:7437
-
-# Identidad del desarrollador (namespcea tus memorias en el servidor)
-export ENGRAM_USER=nombre.apellido
+export ENGRAM_URL=http://servidor:7437
+export ENGRAM_USER=your.name
 ```
-
-Los plugins de Claude Code, OpenCode, Gemini CLI y Codex leen `ENGRAM_URL` automáticamente. **No se requieren cambios en los plugins.**
-
-> Ver la [Guía para el desarrollador](DEVELOPER-SETUP.md) para instrucciones detalladas por editor (Cursor, VS Code).
 
 ---
 
 ## Monitoreo básico
 
+Comandos útiles:
+
 ```bash
-# Estado del servicio
+# Ver servicio
 sudo systemctl status engram
 
-# Logs en tiempo real
-sudo journalctl -u engram -f
+# Logs recientes
+sudo journalctl -u engram
 
-# Verificar que responde
+# Health check
 curl http://localhost:7437/health
 
-# Estadísticas de memoria
-curl http://localhost:7437/stats | jq .
+# Stats del servidor
+curl http://localhost:7437/stats
 ```
 
 ---
 
 ## Backup de datos
 
-Los datos viven en `ENGRAM_DATA_DIR/engram.db` (SQLite). Estrategia mínima:
+### SQLite
 
 ```bash
-# Backup diario con cron
-0 2 * * * cp /data/engram/engram.db /backup/engram/engram-$(date +\%Y\%m\%d).db
-
-# O usar el export JSON para backup portable
-/opt/engram/engram export /backup/engram/export-$(date +%Y%m%d).json
+cp /data/engram/engram.db /backup/engram-$(date +%Y%m%d).db
 ```
 
-SQLite en modo WAL es seguro para copias en caliente (el archivo `.db` puede copiarse mientras el proceso corre).
-
----
-
-## Actualizar el binario
+### Export JSON
 
 ```bash
-# Detener el servicio
-sudo systemctl stop engram
-
-# Reemplazar el binario
-sudo cp /tmp/engram-nuevo /opt/engram/engram
-sudo chmod +x /opt/engram/engram
-
-# Arrancar
-sudo systemctl start engram
-sudo systemctl status engram
+curl http://localhost:7437/export -o /backup/engram-$(date +%Y%m%d).json
 ```
-
-No se requiere migración de base de datos — las migraciones de schema se aplican automáticamente al arrancar si hay cambios pendientes.

@@ -9,12 +9,11 @@ services:
     restart: unless-stopped
 
     ports:
-      - "7437:7437"
+      - "${ENGRAM_HOST_PORT:-7437}:7437"
 
     volumes:
-      # Dataset TrueNAS SCALE — owner: truenas_admin (UID/GID 950)
-      # Ejecutar una vez en TrueNAS: chown -R 950:950 /mnt/Pool_8TB/engram_data/database
-      - /mnt/Pool_8TB/engram_data/database:/app/database
+      # Montar el directorio de datos desde el host — configurar ENGRAM_DATA_PATH en docker/.env
+      - ${ENGRAM_DATA_PATH}:/app/database
 
     environment:
       - ENGRAM_DATA_DIR=/app/database

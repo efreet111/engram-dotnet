@@ -85,8 +85,8 @@ Todas las opciones se controlan via variables de entorno:
 En modo equipo, una sola instancia centralizada sirve a todo el equipo. Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespcea sus memorias automáticamente — sin colisiones entre compañeros.
 
 ```bash
-# En el servidor (IT)
-ENGRAM_DATA_DIR=/data/engram ./engram serve
+# En el servidor (IT) — deployment Docker en TrueNAS (ver docker/README.md)
+ENGRAM_DATA_DIR=<ENGRAM_DATA_PATH> ./engram serve
 
 # En cada máquina de desarrollo
 export ENGRAM_URL=http://servidor.interno:7437
@@ -97,8 +97,10 @@ El binario `engram mcp` detecta `ENGRAM_URL` automáticamente y actúa como prox
 
 | Documentación | Audiencia |
 |---|---|
-| [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor, systemd, backup, distribución de config |
+| [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor, Docker en TrueNAS, backup, distribución de config |
 | [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code, variables de entorno, uso en la práctica |
+| [Docker](docker/README.md) | Build, deploy y operación del contenedor en TrueNAS SCALE |
+| [CI/CD (planificado)](docs/CICD-SPEC.md) | Pipeline de GitHub Actions — spec para implementación futura |
 
 ---
 

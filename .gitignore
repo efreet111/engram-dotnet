@@ -6,3 +6,9 @@
 /dist/
 /publish/
 *.user
+
+# Archivo interno de instrucciones para agentes AI
+intrusctions.md
+
+# Variables de entorno locales (contienen rutas específicas de cada instalación)
+docker/.env

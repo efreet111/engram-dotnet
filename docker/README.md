@@ -1,167 +1,180 @@
-[← Volver al README](../README.md)
+# Docker — engram-dotnet
 
-# Instalar engram-dotnet en TrueNAS SCALE
+## Estrategia de build
 
-> Esta guía explica cómo instalar engram-dotnet en TrueNAS SCALE usando Custom App (Docker). No se requiere .NET ni conocimientos de programación — solo seguir los pasos.
+El proyecto utiliza una estrategia de compilación basada en código fuente dentro del servidor de Docker, siguiendo un enfoque de construcción multietapa. Se inicia con una imagen base `mcr.microsoft.com/dotnet/sdk:10.0-preview` para compilar el código y generar el binario autocontenido `engram`. Luego, la imagen final utiliza `mcr.microsoft.com/dotnet/runtime-deps:10.0-preview` para ejecutar el contenedor en un entorno más liviano.
 
----
+## Prerequisitos
 
-## Requisitos previos
+Antes de comenzar, asegúrate de cumplir con los siguientes prerequisitos:
 
-- TrueNAS SCALE con Apps habilitado
-- Un dataset creado para los datos de engram (ej: `tank/engram`)
-- Acceso a la interfaz web de TrueNAS
+- **Herramientas necesarias:**
+  - `git`
+  - `docker`
+  - `docker compose`
+- **Configuración inicial en TrueNAS SCALE:**
+  1. Clonar este repositorio en `/mnt/Pool_8TB/engram_data`.
+  2. Crear el directorio para los datos de la base de datos SQLite:
+     ```bash
+     mkdir -p /mnt/Pool_8TB/engram_data/database
+     ```
+  3. Ajustar los permisos del directorio de datos para el usuario del contenedor `appuser` (UID/GID 950):
+     ```bash
+     chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+     ```
 
----
+## Build y deploy (TrueNAS SCALE)
 
-## Paso 1 — Crear el dataset de datos
+Pasos detallados para construir y desplegar el contenedor en TrueNAS SCALE:
 
-En TrueNAS SCALE, los datos del contenedor deben vivir en un dataset propio para que sobrevivan actualizaciones.
-
-1. Ir a **Storage → Datasets**
-2. Crear un dataset nuevo: `engram` (dentro de tu pool, ej: `tank/engram`)
-3. Anotar el path completo: `/mnt/tank/engram` (reemplazar `tank` por el nombre de tu pool)
-
----
-
-## Paso 2 — Preparar los archivos de configuración
-
-Necesitás dos archivos en tu TrueNAS. La forma más fácil es conectarse por SSH al TrueNAS y crear una carpeta de configuración:
-
+1. **Clonar el repositorio:**
 ```bash
-# Conectarse por SSH al TrueNAS
-ssh admin@truenas.local
-
-# Crear carpeta de configuración
-mkdir -p /mnt/tank/engram-config
-cd /mnt/tank/engram-config
-
-# Descargar los archivos del repo
-curl -L https://raw.githubusercontent.com/efreet111/engram-dotnet/main/docker/Dockerfile -o Dockerfile
-curl -L https://raw.githubusercontent.com/efreet111/engram-dotnet/main/docker/docker-compose.yml -o docker-compose.yml
+git clone https://github.com/efreet111/engram-dotnet.git /mnt/Pool_8TB/engram_data
+cd /mnt/Pool_8TB/engram_data
 ```
 
-### Editar docker-compose.yml
-
-Abrir el archivo y cambiar el path del volumen por el path real de tu dataset:
-
+2. **Configurar el archivo de entorno:**
 ```bash
-nano docker-compose.yml
+cp docker/.env.example docker/.env
+```
+Editar `docker/.env` y definir la ruta al directorio de datos:
+```env
+ENGRAM_DATA_PATH=/mnt/Pool_8TB/engram_data/database
+ENGRAM_HOST_PORT=7437
 ```
 
-Buscar esta línea:
-```yaml
-- /mnt/tank/engram:/data/engram
-```
+3. **Configurar permisos de datos:**
+   ```bash
+   chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+   ```
 
-Reemplazar `tank` por el nombre de tu pool. Guardar con `Ctrl+O`, salir con `Ctrl+X`.
+4. **Construir y desplegar los servicios:**
+   ```bash
+   docker compose -f docker/docker-compose.yml build
+   docker compose -f docker/docker-compose.yml up -d
+   ```
 
----
+## Verificar que funciona
 
-## Paso 3 — Crear la Custom App en TrueNAS
+Después de iniciar los servicios, verifica que todo esté funcionando correctamente:
 
-1. Ir a **Apps → Available Applications**
-2. Hacer click en **Custom App** (arriba a la derecha)
-3. Completar el formulario:
+1. **Listar contenedores en ejecución:**
+   ```bash
+   docker ps
+   ```
 
-### Application Name
-```
-engram
-```
+2. **Ver los logs del contenedor:**
+   ```bash
+   docker logs engram
+   ```
 
-### Image Configuration
-- **Image Repository**: dejar vacío por ahora (vamos a usar build local)
-- Alternativamente, en **Docker Compose** pegar el contenido del `docker-compose.yml`
+3. **Consultar el endpoint de health check:**
+   ```bash
+   wget -qO- http://localhost:7437/health
+   ```
+   Respuesta esperada:
+   ```json
+   {"status":"ok","service":"engram","version":"1.0.0"}
+   ```
 
-> **Nota**: TrueNAS SCALE con Apps basado en Kubernetes (versiones anteriores) usa Helm. Si tu versión usa **Docker Compose** directamente, pegá el contenido del `docker-compose.yml` en el campo correspondiente.
+4. **Obtener estadísticas del contenedor:**
+   ```bash
+   docker stats engram
+   ```
 
-### Port Forwarding
-- Container Port: `7437`
-- Node Port: `7437`
-- Protocol: `TCP`
+## Variables del host (docker/.env)
 
-### Storage
-- Host Path: `/mnt/tank/engram` (tu dataset)
-- Mount Path: `/data/engram`
+Estas variables configuran cómo Docker mapea recursos del host al contenedor. Se definen en `docker/.env` (no commiteado) a partir de `docker/.env.example`.
 
-4. Hacer click en **Save** e **Install**
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `ENGRAM_DATA_PATH` | Ruta en el host al directorio de datos SQLite | `/mnt/Pool_8TB/engram_data/database` |
+| `ENGRAM_HOST_PORT` | Puerto expuesto en el host (default: `7437`) | `7437` |
 
----
+## Variables de entorno
 
-## Paso 4 — Verificar que funciona
+### Configurables
 
-Desde cualquier máquina en tu red:
+| Nombre            | Descripción                                  | Valor por defecto      | Obligatorio |
+|-------------------|----------------------------------------------|------------------------|-------------|
+| `ENGRAM_DATA_DIR` | Ruta al directorio de datos dentro del contenedor | `/app/database`       | No          |
+| `ENGRAM_PORT`     | Puerto en el que se expone el servicio       | `7437`                | No          |
+| `ENGRAM_JWT_SECRET` | Clave secreta para JWT                     | *(vacío)*              | Sí          |
+| `ENGRAM_CORS_ORIGINS` | Orígenes para CORS                       | *(vacío)*              | No          |
 
+## Volumen de datos
+
+El contenedor utiliza un volumen persistente configurado en `/mnt/Pool_8TB/engram_data/database` dentro del servidor TrueNAS. Este almacenamiento se utiliza para guardar la base de datos SQLite.
+
+### Backup manual
+
+Para realizar un respaldo manual de los datos, copia el contenido del directorio:
 ```bash
-# Reemplazar con la IP de tu TrueNAS
-curl http://192.168.1.X:7437/health
+rsync -av /mnt/Pool_8TB/engram_data/database /ruta/de/backup/
 ```
 
-Respuesta esperada:
-```json
-{"status":"ok","service":"engram","version":"1.0.0"}
-```
+### Restauración manual
 
----
-
-## Paso 5 — Configurar los desarrolladores
-
-Una vez que el servidor responde, cada desarrollador agrega estas variables a su `~/.bashrc` o `~/.zshrc`:
-
+Para restaurar un backup, copia los datos al directorio de datos y ajusta los permisos:
 ```bash
-export ENGRAM_URL=http://192.168.1.X:7437    # IP de tu TrueNAS
-export ENGRAM_USER=nombre.apellido            # identidad del desarrollador
+rsync -av /ruta/de/backup/ /mnt/Pool_8TB/engram_data/database
+chown -R 950:950 /mnt/Pool_8TB/engram_data/database
 ```
 
-Y sigue la [Guía para el desarrollador](../docs/DEVELOPER-SETUP.md) para configurar Cursor o VS Code.
+## Actualizar a nueva versión
 
----
+Para actualizar a una nueva versión del proyecto:
 
-## Alternativa — Correr con Docker directamente (sin TrueNAS)
+1. Detener los servicios:
+   ```bash
+   docker compose -f docker/docker-compose.yml down
+   ```
 
-Si tenés Docker instalado en cualquier Linux:
+2. Descargar los últimos cambios del repositorio:
+   ```bash
+   git pull
+   ```
 
+3. Reconstruir y reiniciar los servicios:
+   ```bash
+   docker compose -f docker/docker-compose.yml build
+   docker compose -f docker/docker-compose.yml up -d
+   ```
+
+## Troubleshooting
+
+### Permisos incorrectos en el directorio de datos
+
+Asegúrate de que el directorio de datos tenga los permisos correctos:
 ```bash
-# Clonar solo el directorio docker
-git clone https://github.com/efreet111/engram-dotnet
-cd engram-dotnet/docker
-
-# Crear directorio de datos
-mkdir -p /data/engram
-
-# Editar docker-compose.yml y ajustar el path del volumen
-# Luego construir e iniciar
-docker compose up -d --build
-
-# Verificar
-curl http://localhost:7437/health
+chown -R 950:950 /mnt/Pool_8TB/engram_data/database
 ```
 
----
+### Puerto 7437 ya está en uso
 
-## Solución de problemas
-
-### El contenedor no arranca
-
-Ver los logs:
+Verifica qué servicio está ocupando el puerto:
 ```bash
-docker logs engram
+sudo lsof -i :7437
 ```
+Detén el servicio correspondiente o cambia el puerto en `docker-compose.yml`.
 
-### Error: `libicu` not found
+### Health check falla
 
-El binario .NET requiere `libicu`. Está incluido en el Dockerfile. Si construiste la imagen manualmente, asegurate de usar `debian:12-slim` como base.
+1. Asegúrate de que el contenedor esté en ejecución:
+   ```bash
+   docker ps
+   ```
 
-### El health check falla
+2. Revisa los logs del contenedor para detectar errores:
+   ```bash
+   docker logs engram
+   ```
 
-Verificar que el puerto 7437 no esté bloqueado por el firewall de TrueNAS:
-- Ir a **Network → Global Configuration**
-- Verificar que no haya reglas bloqueando el puerto 7437
+3. Verifica la conectividad al puerto:
+   ```bash
+   wget -qO- http://localhost:7437/health
+   ```
 
-### Los datos no persisten al reiniciar
+## CI/CD futuro
 
-Verificar que el volumen esté montado correctamente:
-```bash
-docker inspect engram | grep Mounts -A 10
-```
-El `Source` debe apuntar a tu dataset de TrueNAS.
+Se encuentra planificado implementar un pipeline de CI/CD. Para más detalles, consulta [`docs/CICD-SPEC.md`](../docs/CICD-SPEC.md).
