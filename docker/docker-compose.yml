@@ -1,13 +1,10 @@
-version: "3.8"
-
 services:
   engram:
     image: engram-dotnet:latest
     build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGRAM_VERSION: v1.1.0
+      # Contexto en raíz del proyecto para que COPY . . funcione correctamente
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: engram
     restart: unless-stopped
 
@@ -15,21 +12,20 @@ services:
       - "7437:7437"
 
     volumes:
-      # Montar el dataset de TrueNAS donde se guardan los datos
-      # Cambiar la ruta izquierda por el path de tu dataset en TrueNAS
-      # Ejemplo: /mnt/tank/engram:/data/engram
-      - /mnt/tank/engram:/data/engram
+      # Dataset TrueNAS SCALE — owner: truenas_admin (UID/GID 950)
+      # Ejecutar una vez en TrueNAS: chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+      - /mnt/Pool_8TB/engram_data/database:/app/database
 
     environment:
-      ENGRAM_DATA_DIR: /data/engram
-      ENGRAM_PORT: "7437"
+      - ENGRAM_DATA_DIR=/app/database
+      - ENGRAM_PORT=7437
       # Opcional — habilitar auth JWT (descomentar y cambiar el valor)
-      # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
+      # - ENGRAM_JWT_SECRET=cambia_esto_por_un_secreto_seguro
       # Opcional — CORS si accedés al servidor desde un dashboard web
-      # ENGRAM_CORS_ORIGINS: "http://truenas.local"
+      # - ENGRAM_CORS_ORIGINS=http://truenas.local
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:7437/health"]
       interval: 30s
       timeout: 5s
       retries: 3
