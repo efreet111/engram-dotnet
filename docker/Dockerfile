@@ -12,7 +12,8 @@ COPY . .
 RUN dotnet restore engram-dotnet.slnx
 
 # Publicar como self-contained linux-x64
-RUN dotnet publish src/Engram.Server/Engram.Server.csproj \
+# Engram.Server es una librería — el entry point ejecutable es Engram.Cli (AssemblyName: engram)
+RUN dotnet publish src/Engram.Cli/Engram.Cli.csproj \
     -c Release \
     -o /app/publish \
     --runtime linux-x64 \
@@ -41,8 +42,9 @@ RUN mkdir -p /app/database \
 COPY --from=build /app/publish .
 
 # Asignar ownership al usuario no-root y asegurar ejecutable
+# El binario se llama "engram" (AssemblyName en Engram.Cli.csproj)
 RUN chown -R appuser:appgroup /app \
-    && chmod +x /app/Engram.Server
+    && chmod +x /app/engram
 
 # Variables de entorno
 ENV ENGRAM_DATA_DIR=/app/database
@@ -55,5 +57,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 USER appuser
 
-ENTRYPOINT ["./Engram.Server"]
-CMD ["--urls", "http://+:7437"]
+ENTRYPOINT ["./engram"]
+CMD ["serve"]
