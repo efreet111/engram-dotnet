@@ -29,8 +29,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Usuario no-root con UID/GID 950 (coincide con truenas_admin en TrueNAS SCALE)
-RUN addgroup --gid 950 appgroup \
-    && adduser --uid 950 --gid 950 --disabled-password --gecos "" appuser
+# Nota: runtime-deps:10.0-preview es Ubuntu 24.04 — usar groupadd/useradd (no addgroup/adduser)
+RUN groupadd --gid 950 appgroup \
+    && useradd --uid 950 --gid 950 --no-create-home --shell /bin/false appuser
 
 # Directorio de datos para SQLite (punto de mount del volumen)
 RUN mkdir -p /app/database \
