@@ -1,30 +1,35 @@
+version: "3.8"
+
 services:
   engram:
     image: engram-dotnet:latest
     build:
-      # Contexto en raíz del proyecto para que COPY . . funcione correctamente
-      context: ..
-      dockerfile: docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v1.2.0
     container_name: engram
     restart: unless-stopped
 
     ports:
-      - "${ENGRAM_HOST_PORT:-7437}:7437"
+      - "7437:7437"
 
     volumes:
-      # Montar el directorio de datos desde el host — configurar ENGRAM_DATA_PATH en docker/.env
-      - ${ENGRAM_DATA_PATH}:/app/database
+      # Montar el dataset de TrueNAS donde se guardan los datos
+      # Cambiar la ruta izquierda por el path de tu dataset en TrueNAS
+      # Ejemplo: /mnt/tank/engram:/data/engram
+      - /mnt/tank/engram:/data/engram
 
     environment:
-      - ENGRAM_DATA_DIR=/app/database
-      - ENGRAM_PORT=7437
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7437"
       # Opcional — habilitar auth JWT (descomentar y cambiar el valor)
-      # - ENGRAM_JWT_SECRET=cambia_esto_por_un_secreto_seguro
+      # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
       # Opcional — CORS si accedés al servidor desde un dashboard web
-      # - ENGRAM_CORS_ORIGINS=http://truenas.local
+      # ENGRAM_CORS_ORIGINS: "http://truenas.local"
 
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:7437/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
       interval: 30s
       timeout: 5s
       retries: 3

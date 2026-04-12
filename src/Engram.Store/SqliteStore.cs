@@ -955,7 +955,7 @@ public sealed class SqliteStore : IStore
     {
         var data = new ExportData
         {
-            Version    = "0.1.0",
+            Version    = "1.1.0",
             ExportedAt = UtcNow(),
         };
 

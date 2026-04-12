@@ -101,7 +101,7 @@ public class Stats
 
 public class ExportData
 {
-    [JsonPropertyName("version")]      public string            Version      { get; set; } = "0.1.0";
+    [JsonPropertyName("version")]      public string            Version      { get; set; } = "1.1.0";
     [JsonPropertyName("exported_at")] public string            ExportedAt   { get; set; } = "";
     [JsonPropertyName("sessions")]     public List<Session>     Sessions     { get; set; } = [];
     [JsonPropertyName("observations")] public List<Observation> Observations { get; set; } = [];

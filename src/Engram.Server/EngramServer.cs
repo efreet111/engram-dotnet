@@ -88,7 +88,7 @@ public static class EngramServer
     // ─── Handlers ───────────────────────────────────────────────────────────
 
     private static IResult HandleHealth() =>
-        Json(new { status = "ok", service = "engram", version = "0.1.0" });
+        Json(new { status = "ok", service = "engram", version = "1.1.0" });
 
     private static async Task<IResult> HandleCreateSession(HttpContext ctx, IStore store)
     {

@@ -1,61 +1,37 @@
-# engram-dotnet — compilación desde código fuente (Opción A)
-# Build context: raíz del proyecto (un nivel arriba de docker/)
-# Para CI/CD futuro ver: docs/CICD-SPEC.md
+# engram-dotnet — imagen desde binario publicado
+# No requiere .NET SDK — descarga el binario self-contained del release
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
-WORKDIR /src
+FROM debian:12-slim
 
-# Copiar todo el repositorio
-COPY . .
+ARG ENGRAM_VERSION=v1.2.0
 
-# Restaurar dependencias desde la solución
-RUN dotnet restore engram-dotnet.slnx
-
-# Publicar como self-contained linux-x64
-# Engram.Server es una librería — el entry point ejecutable es Engram.Cli (AssemblyName: engram)
-RUN dotnet publish src/Engram.Cli/Engram.Cli.csproj \
-    -c Release \
-    -o /app/publish \
-    --runtime linux-x64 \
-    --self-contained true \
-    -p:UseAppHost=true
-
-# ── Runtime stage ────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-preview AS runtime
-WORKDIR /app
-
-# wget para healthcheck (runtime-deps no incluye curl ni wget por defecto)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget ca-certificates \
+# Dependencias mínimas para correr el binario .NET self-contained en Linux
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libicu72 \
     && rm -rf /var/lib/apt/lists/*
 
-# Usuario no-root con UID/GID 950 (coincide con truenas_admin en TrueNAS SCALE)
-# Nota: runtime-deps:10.0-preview es Ubuntu 24.04 — usar groupadd/useradd (no addgroup/adduser)
-RUN groupadd --gid 950 appgroup \
-    && useradd --uid 950 --gid 950 --no-create-home --shell /bin/false appuser
+# Descargar el binario del release
+RUN curl -L \
+    "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
+    -o /usr/local/bin/engram \
+    && chmod +x /usr/local/bin/engram
 
-# Directorio de datos para SQLite (punto de mount del volumen)
-RUN mkdir -p /app/database \
-    && chown -R appuser:appgroup /app/database
+# Directorio de datos (se monta como volumen)
+RUN mkdir -p /data/engram
+VOLUME ["/data/engram"]
 
-# Copiar artefactos del stage de build
-COPY --from=build /app/publish .
-
-# Asignar ownership al usuario no-root y asegurar ejecutable
-# El binario se llama "engram" (AssemblyName en Engram.Cli.csproj)
-RUN chown -R appuser:appgroup /app \
-    && chmod +x /app/engram
-
-# Variables de entorno
-ENV ENGRAM_DATA_DIR=/app/database
-ENV ENGRAM_PORT=7437
-
+# Puerto HTTP
 EXPOSE 7437
 
+# Variables de entorno con defaults seguros
+ENV ENGRAM_DATA_DIR=/data/engram
+ENV ENGRAM_PORT=7437
+
+# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:7437/health || exit 1
+    CMD curl -f http://localhost:7437/health || exit 1
 
-USER appuser
-
-ENTRYPOINT ["./engram"]
+ENTRYPOINT ["/usr/local/bin/engram"]
 CMD ["serve"]
