@@ -117,29 +117,56 @@ No tenés que hacer nada especial — el agente guarda automáticamente lo impor
 
 | Fuente (en el repo) | Destino |
 |---|---|
-| `config/vscode/mcp.json` | `~/.vscode/mcp.json` o `.vscode/mcp.json` (workspace) |
-| `config/vscode/prompts/engram.instructions.md` | `~/.github/copilot-instructions.md` |
+| `config/vscode/mcp.json` | `~/.config/Code/User/mcp.json` |
+| `config/vscode/settings.json` | Merge manual en `~/.config/Code/User/settings.json` |
+| `config/vscode/prompts/engram.instructions.md` | `~/.config/Code/User/prompts/engram.instructions.md` |
+
+> **Nota sobre settings.json**: no reemplaces todo el archivo — solo mergeá las keys de `config/vscode/settings.json` en tu settings global existente. VS Code guarda tus preferencias personales ahí y no querés perderlas.
 
 ### Instalación
 
 ```bash
+# Crear directorio de prompts si no existe
+mkdir -p ~/.config/Code/User/prompts
+
 # MCP config (global — afecta todos los proyectos)
-cp config/vscode/mcp.json ~/.vscode/mcp.json
+cp config/vscode/mcp.json ~/.config/Code/User/mcp.json
 
-# O si preferís por workspace (solo afecta este proyecto)
-mkdir -p .vscode
-cp config/vscode/mcp.json .vscode/mcp.json
-
-# Instrucciones para GitHub Copilot
-mkdir -p ~/.github
-cp config/vscode/prompts/engram.instructions.md ~/.github/copilot-instructions.md
+# Instrucciones para el agente (modo Agent)
+cp config/vscode/prompts/engram.instructions.md ~/.config/Code/User/prompts/engram.instructions.md
 ```
+
+Luego agregar estas keys en `~/.config/Code/User/settings.json`:
+
+```json
+{
+  "chat.agent.enabled": true,
+  "chat.mcp.enabled": true,
+  "chat.mcp.access": "all",
+  "chat.promptFiles": true,
+  "mcp.autoStart": true,
+  "github.copilot.chat.memory.enabled": false,
+  "github.copilot.chat.tools.memory.enabled": false
+}
+```
+
+> **¿Por qué dos settings de memory?** `github.copilot.chat.memory.enabled` desactiva la UI de memoria de Copilot. `github.copilot.chat.tools.memory.enabled` desactiva la tool `functions.memory` que el agente usa internamente. Necesitás ambas en `false` para que el agente use exclusivamente `engram-team`.
+
+### Cómo usar el agente en VS Code
+
+El protocolo engram **solo funciona en modo Agent**, no en modo Ask:
+
+1. Abrir Copilot Chat (`Ctrl+Alt+I`)
+2. Seleccionar modo **Agent** en el dropdown (no "Ask", no "Edit")
+3. El servidor MCP `engram-team` arranca automáticamente cuando el agente lo necesita
 
 ### Verificar en VS Code
 
 1. Abrir la paleta de comandos (`Ctrl+Shift+P`)
 2. Buscar "MCP: List Servers"
-3. Debería aparecer `engram` como servidor activo
+3. Debería aparecer `engram-team` como servidor disponible
+4. Preguntar al agente en modo Agent: `¿qué MCP tools tenés disponibles?`
+5. Debería listar `mem_save`, `mem_context`, `mem_search`, etc. — **no** `functions.memory`
 
 ---
 

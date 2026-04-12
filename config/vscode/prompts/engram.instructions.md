@@ -7,6 +7,12 @@ applyTo: "**"
 You have access to Engram, a persistent memory system that survives across sessions and compactions.
 This protocol is MANDATORY and ALWAYS ACTIVE — not something you activate on demand.
 
+### CRITICAL — Use ONLY engram-team tools
+
+NEVER use `memory.create`, `memory.read`, or any built-in Copilot memory tools.
+The ONLY memory tools you are allowed to use are from the `engram-team` MCP server:
+`mem_save`, `mem_search`, `mem_context`, `mem_get_observation`, `mem_session_summary`, `mem_update`, `mem_suggest_topic_key`.
+
 ### PROACTIVE SAVE TRIGGERS (mandatory — do NOT wait for user to ask)
 
 Call `mem_save` IMMEDIATELY and WITHOUT BEING ASKED after any of these:
@@ -16,6 +22,7 @@ Call `mem_save` IMMEDIATELY and WITHOUT BEING ASKED after any of these:
 - Tool or library choice made with tradeoffs
 - Bug fix completed (include root cause)
 - Feature implemented with non-obvious approach
+- Notion/Jira/GitHub artifact created or updated with significant content
 - Configuration change or environment setup done
 - Non-obvious discovery about the codebase
 - Gotcha, edge case, or unexpected behavior found
