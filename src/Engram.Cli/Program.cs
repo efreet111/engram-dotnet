@@ -95,7 +95,7 @@ var searchCmd      = new Command("search", "Search memories");
 var searchQueryArg = new Argument<string>("query", "Search query");
 var searchTypeOpt  = new Option<string?>("--type",    "Filter by type");
 var searchProjOpt  = new Option<string?>("--project", "Filter by project");
-var searchScopeOpt = new Option<string?>("--scope",   "Filter by scope");
+var searchScopeOpt = new Option<string?>("--scope",   "Filter by scope: team or personal (omit for both)");
 var searchLimitOpt = new Option<int>("--limit", () => 10, "Max results");
 searchCmd.AddArgument(searchQueryArg);
 searchCmd.AddOption(searchTypeOpt);
@@ -133,7 +133,7 @@ var saveTitleArg  = new Argument<string>("title",   "Memory title");
 var saveContentArg= new Argument<string>("content", "Memory content");
 var saveTypeOpt   = new Option<string>("--type",    () => "manual", "Type");
 var saveProjOpt   = new Option<string?>("--project", "Project name");
-var saveScopeOpt  = new Option<string>("--scope",   () => "project", "Scope");
+var saveScopeOpt  = new Option<string?>("--scope",  "Scope: team (shared with all devs) or personal (private). Default: auto-classified from --type");
 var saveTopicOpt  = new Option<string?>("--topic",  "Topic key for upsert");
 saveCmd.AddArgument(saveTitleArg);
 saveCmd.AddArgument(saveContentArg);
@@ -141,7 +141,7 @@ saveCmd.AddOption(saveTypeOpt);
 saveCmd.AddOption(saveProjOpt);
 saveCmd.AddOption(saveScopeOpt);
 saveCmd.AddOption(saveTopicOpt);
-saveCmd.SetHandler(async (string title, string content, string type, string? proj, string scope, string? topic) =>
+saveCmd.SetHandler(async (string title, string content, string type, string? proj, string? scope, string? topic) =>
 {
     using var store = OpenStore();
     var sessionId = string.IsNullOrEmpty(proj) ? "manual-save" : $"manual-save-{proj}";

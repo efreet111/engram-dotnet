@@ -333,7 +333,7 @@ public class McpConfigTests
     {
         var cfg = new McpConfig { DefaultProject = "my-app", User = "" };
 
-        var result = cfg.ResolveNamespacedProject("my-app");
+        var result = cfg.ResolveNamespacedProject("my-app", Engram.Store.Scopes.Personal);
 
         Assert.Equal("my-app", result);
     }
@@ -343,7 +343,7 @@ public class McpConfigTests
     {
         var cfg = new McpConfig { DefaultProject = "default-app", User = "" };
 
-        var result = cfg.ResolveNamespacedProject(null);
+        var result = cfg.ResolveNamespacedProject(null, Engram.Store.Scopes.Personal);
 
         Assert.Equal("default-app", result);
     }
@@ -353,19 +353,19 @@ public class McpConfigTests
     {
         var cfg = new McpConfig { DefaultProject = "default-app", User = "" };
 
-        var result = cfg.ResolveNamespacedProject("");
+        var result = cfg.ResolveNamespacedProject("", Engram.Store.Scopes.Personal);
 
         Assert.Equal("default-app", result);
     }
 
-    // ─── ResolveNamespacedProject — team mode (with user) ─────────────────────
+    // ─── ResolveNamespacedProject — team mode, personal scope ─────────────────
 
     [Fact]
     public void ResolveNamespacedProject_PrefixesUser_WhenUserIsSet()
     {
         var cfg = new McpConfig { DefaultProject = "my-app", User = "victor.silgado" };
 
-        var result = cfg.ResolveNamespacedProject("my-app");
+        var result = cfg.ResolveNamespacedProject("my-app", Engram.Store.Scopes.Personal);
 
         Assert.Equal("victor.silgado/my-app", result);
     }
@@ -375,7 +375,7 @@ public class McpConfigTests
     {
         var cfg = new McpConfig { DefaultProject = "default-app", User = "victor.silgado" };
 
-        var result = cfg.ResolveNamespacedProject(null);
+        var result = cfg.ResolveNamespacedProject(null, Engram.Store.Scopes.Personal);
 
         Assert.Equal("victor.silgado/default-app", result);
     }
@@ -385,7 +385,7 @@ public class McpConfigTests
     {
         var cfg = new McpConfig { DefaultProject = "default-app", User = "victor.silgado" };
 
-        var result = cfg.ResolveNamespacedProject("");
+        var result = cfg.ResolveNamespacedProject("", Engram.Store.Scopes.Personal);
 
         Assert.Equal("victor.silgado/default-app", result);
     }
@@ -396,12 +396,37 @@ public class McpConfigTests
         var cfgA = new McpConfig { DefaultProject = "shared-app", User = "alice" };
         var cfgB = new McpConfig { DefaultProject = "shared-app", User = "bob" };
 
-        var resultA = cfgA.ResolveNamespacedProject("shared-app");
-        var resultB = cfgB.ResolveNamespacedProject("shared-app");
+        var resultA = cfgA.ResolveNamespacedProject("shared-app", Engram.Store.Scopes.Personal);
+        var resultB = cfgB.ResolveNamespacedProject("shared-app", Engram.Store.Scopes.Personal);
 
         Assert.NotEqual(resultA, resultB);
         Assert.Equal("alice/shared-app", resultA);
         Assert.Equal("bob/shared-app",   resultB);
+    }
+
+    // ─── ResolveNamespacedProject — team scope → team/ prefix ─────────────────
+
+    [Fact]
+    public void ResolveNamespacedProject_PrefixesTeam_WhenScopeIsTeam()
+    {
+        var cfg = new McpConfig { DefaultProject = "my-app", User = "victor.silgado" };
+
+        var result = cfg.ResolveNamespacedProject("my-app", Engram.Store.Scopes.Team);
+
+        Assert.Equal("team/my-app", result);
+    }
+
+    [Fact]
+    public void ResolveNamespacedProject_TeamScope_SameForAllUsers()
+    {
+        var cfgA = new McpConfig { DefaultProject = "shared-app", User = "alice" };
+        var cfgB = new McpConfig { DefaultProject = "shared-app", User = "bob" };
+
+        var resultA = cfgA.ResolveNamespacedProject("shared-app", Engram.Store.Scopes.Team);
+        var resultB = cfgB.ResolveNamespacedProject("shared-app", Engram.Store.Scopes.Team);
+
+        Assert.Equal(resultA, resultB);
+        Assert.Equal("team/shared-app", resultA);
     }
 
     // ─── StoreConfig — IsRemote flag ──────────────────────────────────────────

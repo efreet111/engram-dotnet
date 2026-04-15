@@ -2,6 +2,17 @@ using System.Text.Json.Serialization;
 
 namespace Engram.Store;
 
+// ─── Scope constants ──────────────────────────────────────────────────────────
+// Valid scope values for observations. The two-tier model namespaces storage:
+//   ScopeTeam     → stored under "team/{project}"   — visible to all developers
+//   ScopePersonal → stored under "{user}/{project}" — private to the developer
+// Legacy value "project" is treated as ScopePersonal at runtime via NormalizeScope().
+public static class Scopes
+{
+    public const string Team     = "team";
+    public const string Personal = "personal";
+}
+
 // ─── Core entities ────────────────────────────────────────────────────────────
 // Dates are stored as SQLite TEXT (ISO-8601 strings) and kept as strings here
 // so they round-trip perfectly without timezone conversion.
