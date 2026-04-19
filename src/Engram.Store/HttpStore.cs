@@ -140,6 +140,39 @@ public sealed class HttpStore : IStore
         return await Deserialize<List<SearchResult>>(resp) ?? [];
     }
 
+    /// <summary>
+    /// Cross-namespace search: issues one search request per project namespace and merges results.
+    /// Deduplicates by observation ID; topic-key hits ranked first, then by FTS5 rank.
+    /// </summary>
+    public async Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts)
+    {
+        if (projects.Count == 0) return await SearchAsync(query, opts);
+        if (projects.Count == 1) return await SearchAsync(query, opts with { Project = projects[0] });
+
+        var seen   = new HashSet<long>();
+        var merged = new List<SearchResult>();
+        var limit  = opts.Limit <= 0 ? 10 : opts.Limit;
+
+        foreach (var proj in projects)
+        {
+            var perProjectOpts = opts with { Project = proj };
+            var results = await SearchAsync(query, perProjectOpts);
+            foreach (var r in results)
+                if (seen.Add(r.Observation.Id))
+                    merged.Add(r);
+        }
+
+        merged.Sort((a, b) =>
+        {
+            if (a.Rank == -1000 && b.Rank != -1000) return -1;
+            if (b.Rank == -1000 && a.Rank != -1000) return 1;
+            return a.Rank.CompareTo(b.Rank);
+        });
+
+        if (merged.Count > limit) merged = merged[..limit];
+        return merged;
+    }
+
     public async Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         var qs   = BuildQuery(
@@ -188,6 +221,25 @@ public sealed class HttpStore : IStore
         await EnsureSuccess(resp, "FormatContext");
         var result = await Deserialize<ContextResponse>(resp);
         return result?.Context ?? "";
+    }
+
+    /// <summary>
+    /// Wide-read across multiple project namespaces. In HTTP mode, calls FormatContextAsync
+    /// for each project separately and concatenates the results (server does the SQL work).
+    /// </summary>
+    public async Task<string> FormatContextAsync(IList<string> projects, string? scope)
+    {
+        if (projects.Count == 0) return string.Empty;
+        if (projects.Count == 1) return await FormatContextAsync(projects[0], scope);
+
+        var parts = new System.Text.StringBuilder();
+        foreach (var proj in projects)
+        {
+            var ctx = await FormatContextAsync(proj, scope);
+            if (!string.IsNullOrEmpty(ctx))
+                parts.Append(ctx);
+        }
+        return parts.ToString();
     }
 
     public async Task<Stats> StatsAsync()

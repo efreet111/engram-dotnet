@@ -740,6 +740,41 @@ public sealed class SqliteStore : IStore
         return Task.FromResult<IList<SearchResult>>(results);
     }
 
+    /// <summary>
+    /// Cross-namespace search: runs SearchAsync for each project namespace and merges results.
+    /// Deduplicates by observation ID; ranks topic-key hits first, then FTS5 by rank.
+    /// </summary>
+    public async Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts)
+    {
+        if (projects.Count == 0) return await SearchAsync(query, opts);
+
+        var seen    = new HashSet<long>();
+        var merged  = new List<SearchResult>();
+        var limit   = opts.Limit <= 0 ? 10 : opts.Limit;
+
+        foreach (var proj in projects)
+        {
+            var perProjectOpts = opts with { Project = proj };
+            var results = await SearchAsync(query, perProjectOpts);
+            foreach (var r in results)
+            {
+                if (seen.Add(r.Observation.Id))
+                    merged.Add(r);
+            }
+        }
+
+        // Sort: topic-key hits (rank == -1000) first, then by FTS5 rank ascending (negative = better)
+        merged.Sort((a, b) =>
+        {
+            if (a.Rank == -1000 && b.Rank != -1000) return -1;
+            if (b.Rank == -1000 && a.Rank != -1000) return 1;
+            return a.Rank.CompareTo(b.Rank);
+        });
+
+        if (merged.Count > limit) merged = merged[..limit];
+        return merged;
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         if (before <= 0) before = 5;
@@ -911,6 +946,82 @@ public sealed class SqliteStore : IStore
             sb.Append("### Recent Observations\n");
             foreach (var o in observations)
                 sb.AppendLine($"- [{o.Type}] **{o.Title}**: {Truncate(o.Content, 300)}");
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Wide-read overload: merges observations from all provided project namespaces.
+    /// Used by mem_context to read both "team/{project}" and "{user}/{project}" simultaneously.
+    /// Observations are labelled [team] or [personal] based on the project prefix.
+    /// </summary>
+    public async Task<string> FormatContextAsync(IList<string> projects, string? scope)
+    {
+        if (projects.Count == 0) return string.Empty;
+
+        // Sessions: use first project (typically the team one) for recent sessions
+        var sessions = await RecentSessionsAsync(projects[0], 5);
+
+        // Observations: gather from all projects and merge by updated_at DESC
+        var allObservations = new List<Observation>();
+        foreach (var proj in projects)
+        {
+            var obs = await RecentObservationsAsync(proj, scope, 20);
+            allObservations.AddRange(obs);
+        }
+
+        // Sort merged list by updated_at DESC, take top 20
+        var mergedObservations = allObservations
+            .OrderByDescending(o => o.UpdatedAt)
+            .Take(20)
+            .ToList();
+
+        // Prompts: gather from all projects, merge and deduplicate
+        var allPrompts = new List<Prompt>();
+        foreach (var proj in projects)
+        {
+            var p = await RecentPromptsAsync(proj, 10);
+            allPrompts.AddRange(p);
+        }
+        var mergedPrompts = allPrompts
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(10)
+            .ToList();
+
+        if (sessions.Count == 0 && mergedObservations.Count == 0 && mergedPrompts.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder("## Memory from Previous Sessions\n\n");
+
+        if (sessions.Count > 0)
+        {
+            sb.Append("### Recent Sessions\n");
+            foreach (var s in sessions)
+            {
+                var sum = s.Summary != null ? $": {Truncate(s.Summary, 200)}" : "";
+                sb.AppendLine($"- **{s.Project}** ({s.StartedAt}){sum} [{s.ObservationCount} observations]");
+            }
+            sb.AppendLine();
+        }
+
+        if (mergedPrompts.Count > 0)
+        {
+            sb.Append("### Recent User Prompts\n");
+            foreach (var p in mergedPrompts)
+                sb.AppendLine($"- {p.CreatedAt}: {Truncate(p.Content, 200)}");
+            sb.AppendLine();
+        }
+
+        if (mergedObservations.Count > 0)
+        {
+            sb.Append("### Recent Observations\n");
+            foreach (var o in mergedObservations)
+            {
+                var label = o.Project?.StartsWith("team/") == true ? "[team]" : "[personal]";
+                sb.AppendLine($"- {label} [{o.Type}] **{o.Title}**: {Truncate(o.Content, 300)}");
+            }
             sb.AppendLine();
         }
 
@@ -1397,7 +1508,7 @@ public sealed class SqliteStore : IStore
     private static string NormalizeScope(string? scope)
     {
         var v = (scope ?? "").Trim().ToLowerInvariant();
-        return v == "personal" ? "personal" : "project";
+        return v == Scopes.Team ? Scopes.Team : Scopes.Personal;
     }
 
     private static string NewSyncId(string prefix)

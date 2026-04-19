@@ -258,14 +258,53 @@ Las únicas diferencias visibles desde el exterior:
 - `SqliteStore` lee/escribe un archivo `.db` local
 - `HttpStore` hace requests HTTP al servidor centralizado con header `X-Engram-User`
 
-### Namespacing automático con ENGRAM_USER
+### Namespacing automático con ENGRAM_USER — Modelo team/personal
 
-`McpConfig` resuelve el proyecto namespaceado antes de cada llamada a `IStore`:
+`McpConfig` resuelve el proyecto namespaceado antes de cada llamada a `IStore`. El modelo tiene **dos niveles de scope**:
+
+| Scope | Namespace en DB | Visibilidad |
+|---|---|---|
+| `team` | `team/{project}` | Compartido con todos los desarrolladores del equipo |
+| `personal` | `{user}/{project}` | Privado del desarrollador (ENGRAM_USER) |
 
 ```csharp
-// Agente llama: mem_save(project: "mi-api")
-// McpConfig resuelve: "victor.silgado/mi-api"
+// Agente llama: mem_save(project: "mi-api", type: "architecture")
+// AutoClassifyScope("architecture") → "team"
+// McpConfig.ResolveNamespacedProject("mi-api", "team") → "team/mi-api"
+// IStore recibe: project = "team/mi-api"
+
+// Agente llama: mem_save(project: "mi-api", type: "tool_use")
+// AutoClassifyScope("tool_use") → "personal"
+// McpConfig.ResolveNamespacedProject("mi-api", "personal") → "victor.silgado/mi-api"
 // IStore recibe: project = "victor.silgado/mi-api"
+```
+
+#### Auto-clasificación de scope por tipo
+
+Cuando el agente no especifica `scope`, `AutoClassifyScope(type)` lo decide:
+
+| Default: `team` | Default: `personal` |
+|---|---|
+| `architecture`, `decision`, `bugfix` | `tool_use`, `file_change` |
+| `pattern`, `session_summary`, `config` | `command`, `file_read` |
+| `discovery`, `learning`, `manual` | `search`, `passive` |
+
+#### Wide-read en mem_context y mem_search
+
+- `mem_context` siempre lee **ambos** namespaces (`team/` y `{user}/`) y mergea por `updated_at DESC`, etiquetando cada observación `[team]` o `[personal]`.
+- `mem_search` sin `scope` explícito busca en ambos namespaces simultáneamente.
+- `mem_search` con `scope` explícito filtra solo ese namespace.
+
+#### Compatibilidad retroactiva
+
+El valor legacy `scope="project"` en registros existentes se normaliza a `"personal"` vía `NormalizeScope()` en runtime. No se requiere migración masiva de datos.
+
+```csharp
+// SqliteStore.NormalizeScope
+"team"     → "team"
+"personal" → "personal"
+"project"  → "personal"   // legacy
+null/""    → "personal"   // default
 ```
 
 El agente nunca necesita conocer su usuario ni el prefijo — el namespacing es completamente transparente.

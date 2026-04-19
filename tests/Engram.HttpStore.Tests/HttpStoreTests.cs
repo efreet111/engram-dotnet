@@ -322,7 +322,7 @@ public class HttpStoreTests : IAsyncDisposable
     public async Task FormatContext_ReturnsString()
     {
         // Even with no data, should return a string (possibly empty)
-        var ctx = await _sut.FormatContextAsync(null, null);
+        var ctx = await _sut.FormatContextAsync((string?)null, null);
 
         Assert.NotNull(ctx);
     }

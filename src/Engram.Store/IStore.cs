@@ -17,6 +17,7 @@ public interface IStore : IDisposable
 
     // Search
     Task<IList<SearchResult>> SearchAsync(string query, SearchOptions opts);
+    Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts);
     Task<TimelineResult?> TimelineAsync(long observationId, int before, int after);
 
     // Prompts
@@ -26,6 +27,7 @@ public interface IStore : IDisposable
 
     // Context & stats
     Task<string> FormatContextAsync(string? project, string? scope);
+    Task<string> FormatContextAsync(IList<string> projects, string? scope);
     Task<Stats> StatsAsync();
 
     // Export / Import

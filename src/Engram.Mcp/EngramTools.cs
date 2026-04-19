@@ -12,7 +12,8 @@ namespace Engram.Mcp;
 ///
 /// In team/centralized mode (ENGRAM_URL set), User is the developer identity
 /// provided by IT (ENGRAM_USER). The DefaultProject is automatically prefixed
-/// as "user/project" so memories are namespaced per-developer in the shared server.
+/// as "user/project" or "team/project" depending on scope, so memories are
+/// namespaced correctly in the shared server.
 /// The LLM always sees only the bare project name — the prefix is transparent.
 /// </summary>
 public sealed class McpConfig
@@ -25,13 +26,16 @@ public sealed class McpConfig
     public string User { get; init; } = "";
 
     /// <summary>
-    /// Builds the namespaced project string used for storage ("user/project").
-    /// Falls back to DefaultProject when no user is configured.
+    /// Builds the namespaced project string used for storage.
+    /// scope "team"     → "team/{project}"   (shared across all developers)
+    /// scope "personal" → "{user}/{project}" (private per developer)
+    /// No user configured → bare project name (local mode, no namespacing).
     /// </summary>
-    public string ResolveNamespacedProject(string? project)
+    public string ResolveNamespacedProject(string? project, string scope)
     {
         var p = string.IsNullOrEmpty(project) ? DefaultProject : project;
-        return !string.IsNullOrEmpty(User) ? $"{User}/{p}" : p;
+        if (string.IsNullOrEmpty(User)) return p;
+        return scope == Engram.Store.Scopes.Team ? $"team/{p}" : $"{User}/{p}";
     }
 }
 
@@ -51,18 +55,40 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Search query — natural language or keywords")] string query,
         [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
         [Description("Filter by project name")] string? project = null,
-        [Description("Filter by scope: project (default) or personal")] string? scope = null,
+        [Description("Filter by scope: team, personal. Omit to search both.")] string? scope = null,
         [Description("Max results (default: 10, max: 20)")] int limit = 10)
     {
-        project = ResolveProject(project);
+        var clampedLimit = Math.Clamp(limit, 1, 20);
 
-        var results = await store.SearchAsync(query, new SearchOptions
+        IList<SearchResult> results;
+
+        if (scope is null && !string.IsNullOrEmpty(cfg.User))
         {
-            Type    = type,
-            Project = project,
-            Scope   = scope,
-            Limit   = Math.Clamp(limit, 1, 20),
-        });
+            // Cross-namespace: search both team/{project} and {user}/{project}
+            var teamProject     = ResolveProject(project, Engram.Store.Scopes.Team);
+            var personalProject = ResolveProject(project, Engram.Store.Scopes.Personal);
+            var searchProjects  = new List<string> { teamProject, personalProject };
+
+            results = await store.SearchAsync(query, searchProjects, new SearchOptions
+            {
+                Type  = type,
+                Limit = clampedLimit,
+            });
+        }
+        else
+        {
+            // Explicit scope or local mode: single namespace
+            var resolvedScope   = scope ?? Engram.Store.Scopes.Personal;
+            var resolvedProject = ResolveProject(project, resolvedScope);
+
+            results = await store.SearchAsync(query, new SearchOptions
+            {
+                Type    = type,
+                Project = resolvedProject,
+                Scope   = scope,   // pass through to filter by scope column if explicit
+                Limit   = clampedLimit,
+            });
+        }
 
         if (results.Count == 0)
             return $"No memories found for: \"{query}\"";
@@ -118,11 +144,12 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Category: decision, architecture, bugfix, pattern, config, discovery, learning (default: manual)")] string? type = null,
         [Description("Session ID to associate with (default: manual-save-{project})")] string? session_id = null,
         [Description("Project name")] string? project = null,
-        [Description("Scope for this observation: project (default) or personal")] string? scope = null,
+        [Description("Scope for this observation: team (shared with all devs) or personal (private). Auto-classified from type when omitted.")] string? scope = null,
         [Description("Optional topic identifier for upserts (e.g. architecture/auth-model). Reuses and updates the latest observation in same project+scope.")] string? topic_key = null)
     {
-        project    = ResolveProject(project);
         type     ??= "manual";
+        scope    ??= AutoClassifyScope(type);
+        project    = ResolveProject(project, scope);
         session_id ??= DefaultSessionId(project);
 
         var suggestedKey = Normalizers.SuggestTopicKey(type, title, content);
@@ -232,7 +259,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Session ID to associate with (default: manual-save-{project})")] string? session_id = null,
         [Description("Project name")] string? project = null)
     {
-        project    = ResolveProject(project);
+        project    = ResolveProject(project, Engram.Store.Scopes.Personal);
         session_id ??= DefaultSessionId(project);
 
         await store.CreateSessionAsync(session_id, project, "");
@@ -252,19 +279,33 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
     [Description("Get recent memory context from previous sessions. Shows recent sessions and observations to understand what was done before.")]
     public async Task<string> MemContext(
         [Description("Filter by project (omit for all projects)")] string? project = null,
-        [Description("Filter observations by scope: project (default) or personal")] string? scope = null,
+        [Description("Filter observations by scope: team, personal, or omit for both")] string? scope = null,
         [Description("Number of observations to retrieve (default: 20)")] int limit = 20)
     {
-        project = ResolveProject(project);
+        // Wide-read: fetch from both team/{project} and {user}/{project} when user is set
+        var teamProject     = ResolveProject(project, Engram.Store.Scopes.Team);
+        var personalProject = ResolveProject(project, Engram.Store.Scopes.Personal);
 
-        var context = await store.FormatContextAsync(project, scope);
+        string context;
+        if (teamProject != personalProject)
+        {
+            // Team mode: merge both namespaces
+            var projects = new List<string> { teamProject, personalProject };
+            context = await store.FormatContextAsync(projects, scope);
+        }
+        else
+        {
+            // Local mode (no ENGRAM_USER): single namespace
+            context = await store.FormatContextAsync(teamProject, scope);
+        }
+
         if (string.IsNullOrEmpty(context))
             return "No previous session memories found.";
 
         var stats    = await store.StatsAsync();
-        var projects = stats.Projects.Count > 0 ? string.Join(", ", stats.Projects) : "none";
+        var projects2 = stats.Projects.Count > 0 ? string.Join(", ", stats.Projects) : "none";
 
-        return $"{context}\n---\nMemory stats: {stats.TotalSessions} sessions, {stats.TotalObservations} observations across projects: {projects}";
+        return $"{context}\n---\nMemory stats: {stats.TotalSessions} sessions, {stats.TotalObservations} observations across projects: {projects2}";
     }
 
     // ─── mem_stats ───────────────────────────────────────────────────────────
@@ -401,7 +442,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Project name")] string project,
         [Description("Session ID (default: manual-save-{project})")] string? session_id = null)
     {
-        project    = ResolveProject(project);
+        project    = ResolveProject(project, Engram.Store.Scopes.Team);
         session_id ??= DefaultSessionId(project);
 
         await store.CreateSessionAsync(session_id, project, "");
@@ -412,6 +453,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
             Title     = $"Session summary: {project}",
             Content   = content,
             Project   = project,
+            Scope     = Engram.Store.Scopes.Team,
         });
 
         return $"Session summary saved for project \"{project}\"";
@@ -426,7 +468,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Project name")] string project,
         [Description("Working directory")] string? directory = null)
     {
-        project = ResolveProject(project);
+        project = ResolveProject(project, Engram.Store.Scopes.Team);
         await store.CreateSessionAsync(id, project, directory ?? "");
         return $"Session \"{id}\" started for project \"{project}\"";
     }
@@ -462,7 +504,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         if (string.IsNullOrEmpty(content))
             return "Error: content is required — include text with a '## Key Learnings:' section";
 
-        project    = ResolveProject(project);
+        project    = ResolveProject(project, Engram.Store.Scopes.Personal);
         session_id ??= DefaultSessionId(project);
         source     ??= "mcp-passive";
 
@@ -481,7 +523,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
                 Title     = title,
                 Content   = learning,
                 Project   = project,
-                Scope     = "project",
+                Scope     = Engram.Store.Scopes.Personal,
                 ToolName  = source,
             });
             if (result > 0) saved++;
@@ -519,13 +561,41 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    private string ResolveProject(string? project)
+    /// <summary>
+    /// Resolves the final namespaced project string for storage.
+    /// Scope drives the namespace prefix (team/ vs user/).
+    /// </summary>
+    private string ResolveProject(string? project, string scope)
     {
-        // In team mode: transparently namespace as "user/project" for storage.
-        // The LLM only ever specifies the bare project name; the user prefix is injected here.
-        var namespaced = cfg.ResolveNamespacedProject(project);
+        var namespaced = cfg.ResolveNamespacedProject(project, scope);
         return Normalizers.NormalizeProject(namespaced);
     }
+
+    /// <summary>
+    /// Backward-compatible overload: resolves using personal scope (user/ prefix).
+    /// Used by tools that don't participate in team/personal classification
+    /// (mem_search without scope, mem_save_prompt, mem_session_start).
+    /// </summary>
+    private string ResolveProject(string? project)
+        => ResolveProject(project, Engram.Store.Scopes.Personal);
+
+    /// <summary>
+    /// Auto-classifies the scope based on observation type.
+    /// Team types: architecture, decision, bugfix, pattern, session_summary,
+    ///             config, discovery, learning, manual
+    /// Personal types: tool_use, file_change, command, file_read, search, passive
+    /// null/unknown → "team" (safe default for shared knowledge)
+    /// </summary>
+    private static string AutoClassifyScope(string? type) => type switch
+    {
+        "tool_use"    or
+        "file_change" or
+        "command"     or
+        "file_read"   or
+        "search"      or
+        "passive"     => Engram.Store.Scopes.Personal,
+        _             => Engram.Store.Scopes.Team,
+    };
 
     private static string DefaultSessionId(string project)
         => string.IsNullOrEmpty(project) ? "manual-save" : $"manual-save-{project}";
