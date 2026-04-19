@@ -25,24 +25,25 @@
 
 ### Modo local (una instancia por desarrollador)
 
-```
-Agente (Claude Code / OpenCode / Gemini CLI / Codex / ...)
-    ↓ MCP stdio
-engram mcp (binario local)
-    ↓
-SQLite + FTS5 (~/.engram/engram.db)
+```mermaid
+flowchart LR
+    A[Agente de IA\nClaude / OpenCode / Gemini / Codex] -->|MCP stdio JSON-RPC| B[engram mcp\nbinario local]
+    B -->|IStore| C[SqliteStore]
+    C --> D[(SQLite + FTS5\n~/.engram/engram.db)]
 ```
 
 ### Modo equipo (servidor compartido)
 
-```
-Agente (Cursor / VS Code / Claude Code / ...)
-    ↓ MCP stdio
-engram mcp (binario en la máquina del dev)
-    ↓ HTTP REST (ENGRAM_URL)
-engram serve (servidor centralizado en Linux)
-    ↓
-SQLite + FTS5 (/data/engram/engram.db)
+```mermaid
+flowchart LR
+    A1[Dev 1] -->|MCP stdio| M1[engram mcp\nHttpStore]
+    A2[Dev 2] -->|MCP stdio| M2[engram mcp\nHttpStore]
+    A3[Dev 3] -->|MCP stdio| M3[engram mcp\nHttpStore]
+    M1 -->|HTTP REST + X-Engram-User| S[engram serve\nASP.NET Core / Kestrel]
+    M2 -->|HTTP REST + X-Engram-User| S
+    M3 -->|HTTP REST + X-Engram-User| S
+    S -->|IStore| SS[SqliteStore]
+    SS --> DB[(SQLite + FTS5\n/data/engram/engram.db)]
 ```
 
 El binario `engram mcp` detecta la variable de entorno `ENGRAM_URL`. Si está presente, instancia `HttpStore` (proxy HTTP) en lugar de `SqliteStore` — sin ningún cambio en el código del agente ni en el protocolo MCP.
@@ -93,19 +94,39 @@ string ResolveNamespacedProject(string? project)
 
 ## Ciclo de sesión
 
-```
-Sesión inicia → Agente trabaja → Agente guarda memorias proactivamente
-                                         ↓
-Sesión termina → Agente escribe resumen de sesión (Goal/Discoveries/Accomplished/Files)
-                                         ↓
-Siguiente sesión → Contexto de la sesión anterior se inyecta automáticamente
+```mermaid
+sequenceDiagram
+    participant A as Agente de IA
+    participant E as engram mcp
+    participant DB as SQLite / Servidor
+
+    A->>E: mem_session_start(project)
+    loop Trabajo
+        A->>E: mem_save(title, content, type)
+        E->>DB: INSERT / UPSERT observación
+    end
+    A->>E: mem_session_summary(Goal/Discoveries/Accomplished)
+    E->>DB: Guarda resumen de sesión
+    Note over A,DB: Próxima sesión
+    A->>E: mem_context(project)
+    E->>DB: SELECT sesiones + observaciones recientes
+    E-->>A: Contexto formateado [team] y [personal]
 ```
 
 ---
 
 ## Sistema de deduplicación
 
-El store implementa tres caminos de decisión en orden al guardar una observación:
+```mermaid
+flowchart TD
+    A[mem_save llamado] --> B{¿Tiene topic_key?}
+    B -->|Sí| C{¿Existe en DB\nmismo project+scope?}
+    C -->|Sí| D[UPDATE — revision_count++]
+    C -->|No| E{¿Hash existe\nen últimos 15 min?}
+    B -->|No| E
+    E -->|Sí| F[UPDATE — duplicate_count++]
+    E -->|No| G[INSERT nueva observación]
+```
 
 ### Camino 1 — topic_key upsert
 Si la observación tiene `topic_key`, busca si ya existe una observación con ese mismo topic_key en el mismo proyecto+scope. Si existe, la **actualiza** en lugar de crear una nueva (incrementa `revision_count`).
@@ -195,10 +216,20 @@ engram-dotnet/
 
 ## Grafo de dependencias
 
-```
-Engram.Cli ──→ Engram.Server ──→ Engram.Store
-           ──→ Engram.Mcp    ──→ Engram.Store
-           ──→ Engram.Sync   ──→ Engram.Store
+```mermaid
+flowchart TD
+    CLI[Engram.Cli\nEntry point + DI wiring]
+    SRV[Engram.Server\nHTTP REST API]
+    MCP[Engram.Mcp\nMCP stdio server]
+    SYNC[Engram.Sync\nGit-friendly sync]
+    STORE[Engram.Store\nMotor central SQLite]
+
+    CLI --> SRV
+    CLI --> MCP
+    CLI --> SYNC
+    SRV --> STORE
+    MCP --> STORE
+    SYNC --> STORE
 ```
 
 `Engram.Store` no tiene dependencias de proyecto — solo NuGet. Es el único módulo que toca la base de datos.

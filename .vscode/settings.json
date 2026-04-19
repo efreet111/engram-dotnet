@@ -1,1 +1,9 @@
-{}
+{
+  "chat.agent.enabled": true,
+  "chat.mcp.enabled": true,
+  "chat.mcp.access": "all",
+  "chat.promptFiles": true,
+  "mcp.autoStart": true,
+  "github.copilot.chat.memory.enabled": false,
+  "github.copilot.chat.tools.memory.enabled": false
+}

@@ -36,6 +36,42 @@ El proyecto original está escrito en Go. En entornos donde el equipo trabaja co
 
 ---
 
+## Cómo funciona
+
+### Modo local
+
+```mermaid
+flowchart LR
+    A[Agente de IA\nClaude / OpenCode / Gemini] -->|MCP stdio| B[engram mcp\nbinario local]
+    B --> C[(SQLite + FTS5\n~/.engram/engram.db)]
+```
+
+### Modo equipo (servidor compartido)
+
+```mermaid
+flowchart LR
+    A1[Dev 1\nvictor.silgado] -->|MCP stdio| B1[engram mcp]
+    A2[Dev 2\njuan.perez] -->|MCP stdio| B2[engram mcp]
+    A3[Dev 3\nana.gomez] -->|MCP stdio| B3[engram mcp]
+    B1 -->|HTTP REST\nENGRAM_URL| S[engram serve\nservidor centralizado]
+    B2 -->|HTTP REST\nENGRAM_URL| S
+    B3 -->|HTTP REST\nENGRAM_URL| S
+    S --> DB[(SQLite + FTS5\n/data/engram.db)]
+```
+
+### Namespacing automático (team vs personal)
+
+```mermaid
+flowchart TD
+    A[Agente llama mem_save\nproject: mi-api\ntype: architecture] --> B{AutoClassifyScope}
+    B -->|architecture → team| C[project = team/mi-api]
+    B -->|tool_use → personal| D[project = victor.silgado/mi-api]
+    C --> E[(SQLite — compartido con el equipo)]
+    D --> F[(SQLite — privado del dev)]
+```
+
+---
+
 ## Quick Start
 
 ### Requisitos
