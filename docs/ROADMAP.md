@@ -29,6 +29,11 @@ Implementar `PostgresStore` como tercer implementor de `IStore`, junto a `Sqlite
 
 **Cuándo**: Cuando el equipo supere los 5 desarrolladores activos o se detecte degradación en tiempos de escritura.
 
+**Documentación de diseño**:
+- [RFC-001 — PostgreSQL Backend](rfcs/RFC-001-postgresql-backend.md) — motivación, diseño técnico, riesgos
+- [PRD-001 — PostgreSQL Backend](rfcs/PRD-001-postgresql-backend.md) — requisitos, criterios de aceptación
+- [ADR-001 — SQL directo sin ORM](adr/ADR-001-no-orm.md) — decisión de no usar EF Core / Dapper
+
 ---
 
 ## 🟡 Media Prioridad

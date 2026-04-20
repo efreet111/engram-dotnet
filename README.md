@@ -115,6 +115,8 @@ Todas las opciones se controlan via variables de entorno:
 | `ENGRAM_CORS_ORIGINS` | — | Orígenes CORS permitidos, separados por coma |
 | `ENGRAM_SYNC_REPO` | — | URL del repo git para sync distribuido |
 | `ENGRAM_SYNC_DIR` | `~/.engram/sync` | Directorio local de chunks de sync |
+| `ENGRAM_DB_TYPE` | `sqlite` | Backend de persistencia: `sqlite` \| `postgres` |
+| `ENGRAM_PG_CONNECTION` | — | Connection string de PostgreSQL (requerido si `ENGRAM_DB_TYPE=postgres`). Ej: `Host=db;Database=engram;Username=engram;Password=secret` |
 
 ### Servidor compartido para equipos (Team Mode)
 
@@ -329,10 +331,12 @@ Authorization: Bearer <token>
 | [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas |
 | [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor compartido, systemd, backup, distribución de config |
 | [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code al servidor de equipo |
+| [PostgreSQL Setup](docs/rfcs/RFC-001-postgresql-backend.md) | RFC técnico del backend PostgreSQL |
 | [TrueNAS SCALE](docker/README.md) | Instalar como Custom App en TrueNAS SCALE (Docker) |
 | [Deployment](docs/DEPLOYMENT.md) | Systemd + nginx en servidor Linux, backup, monitoreo |
 | [Desarrollo](docs/DEVELOPMENT.md) | Compilar, testear, publicar |
 | [Migración desde Go](docs/MIGRATION.md) | Compatibilidad, diferencias, migración de datos |
+| [Roadmap](docs/ROADMAP.md) | Backlog de mejoras planificadas |
 
 ---
 
