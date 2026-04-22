@@ -67,6 +67,8 @@ If `ENGRAM_DB_TYPE=postgres` and `ENGRAM_PG_CONNECTION` is unset or empty, the s
 
 The `observations` table MUST have a `search_vector tsvector GENERATED ALWAYS AS STORED` column and a GIN index. Search queries MUST use `plainto_tsquery('simple', @query)` with `ts_rank` for ranking.
 
+All project-scoped queries MUST use index-friendly `WHERE project = @proj` clauses. The schema MUST include a partial GIN index on `search_vector WHERE deleted_at IS NULL` to optimize FTS queries on active observations.
+
 #### Scenario: Single-word search
 
 - GIVEN observations with title "Fixed N+1 query in user list"
@@ -168,6 +170,29 @@ Queries requiring date arithmetic MUST cast explicitly: `created_at::timestamptz
 - GIVEN `ENGRAM_DB_TYPE=postgres`
 - WHEN `engram stats` runs
 - THEN output shows `Database: PostgreSQL ({host})`
+
+### Requirement: Shared-Table Scalability
+
+The PostgreSQL schema MUST use shared tables (one `observations` table for all projects) filtered by the `project` column. This is consistent with the SQLite schema and the existing `IStore` interface.
+
+Per-project table separation, schema-per-tenant, or table partitioning MUST NOT be implemented in v1. These MAY be considered as future optimizations if `mem_stats` or monitoring indicates queries are slow beyond 5M observations.
+
+The schema MUST include indexes that optimize project-scoped queries:
+- `idx_obs_project ON observations(project)` — B-tree for project filtering
+- `idx_obs_created ON observations(created_at DESC)` — sorted retrieval per project
+- Partial GIN index `WHERE deleted_at IS NULL` — active-observation FTS only
+
+#### Scenario: Query performance with 1M+ observations across 10 projects
+
+- GIVEN 1,000,000 observations across 10 projects
+- WHEN `SearchAsync("auth", SearchOptions { Project = "team/mi-api" })` is called
+- THEN results are returned in under 200ms (p95) using project index + GIN scan
+
+#### Scenario: Recent observations per project
+
+- GIVEN 500,000 observations across multiple projects
+- WHEN `RecentObservationsAsync("team/mi-api", null, 20)` is called
+- THEN only the 20 most recent observations for that project are returned using index `idx_obs_project`
 
 ---
 

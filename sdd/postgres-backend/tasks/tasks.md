@@ -6,7 +6,7 @@
 - [ ] 1.2 Add `StoreDbType` enum (`Sqlite`, `Postgres`) and properties (`DbType`, `PgConnectionString`, `IsPostgres`) to `src/Engram.Store/StoreConfig.cs`
 - [ ] 1.3 Update `StoreConfig.FromEnvironment()` to read `ENGRAM_DB_TYPE` and `ENGRAM_PG_CONNECTION`
 - [ ] 1.4 Create `src/Engram.Store/PostgresStore.cs` with constructor, `Dispose()`, and schema migration (`Migrate()`) using `CREATE TABLE IF NOT EXISTS` / safe `ALTER TABLE`
-- [ ] 1.5 Add `search_vector tsvector GENERATED ALWAYS AS STORED` column and GIN index to `observations` table in PG schema
+- [ ] 1.5 Add `search_vector tsvector GENERATED ALWAYS AS STORED` column, GIN index, and partial GIN index `WHERE deleted_at IS NULL` to optimize FTS on active observations
 - [ ] 1.6 Add `Testcontainers.PostgreSQL` NuGet to a new `tests/Engram.Postgres.Tests/` project
 
 ## Phase 2: Core Implementation — PostgresStore Methods
