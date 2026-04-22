@@ -136,25 +136,25 @@ The current `EngramSync` works via `IStore.Export/Import`. Since `PostgresStore`
 
 ---
 
-## Open Questions (Resolved)
+## Open Questions (Resolved — confirmed by stakeholder)
 
-All open questions from RFC-001 exploration have been resolved with recommendations:
+All open questions from RFC-001 exploration have been resolved and confirmed:
 
-| Question | Decision |
-|----------|----------|
-| D1: PostgresStore location | Same project (`Engram.Store`) |
-| D2: Migrations strategy | Code-first, `IF NOT EXISTS` |
-| D3: Date storage format | `TEXT` (ISO-8601) in v1 |
-| D4: Data access approach | Raw `Npgsql` |
-| D5: Connection management | Npgsql built-in pool |
-| D6: FTS implementation | `tsvector GENERATED ALWAYS AS STORED` + GIN |
-| D7: Dedupe window expression | `created_at::timestamptz >= NOW() - INTERVAL` |
-| D8: Testing in CI | `Testcontainers.PostgreSQL` |
-| D9: Minimum PG version | 15 |
-| D10: Sync strategy | Keep existing, no changes |
+| Question | Decision | Notes |
+|----------|----------|-------|
+| D1: PostgresStore location | Same project (`Engram.Store`) | Separate if binary grows too large |
+| D2: Migrations strategy | Code-first, `IF NOT EXISTS` | Same approach as SqliteStore |
+| D3: Date storage format | `TEXT` (ISO-8601) in v1 | **Impact of changing to TIMESTAMPTZ in v2**: would require changing `Models.cs` string dates to `DateTimeOffset?`, updating `ExportData` serialization, modifying `Normalizers.HashNormalized` date handling, and a data migration script. The cast `created_at::timestamptz` works with valid ISO-8601 strings. |
+| D4: Data access approach | Raw `Npgsql` | Dapper doesn't solve SQL dialect differences. Consistency with SqliteStore's ADO.NET pattern > convenience. See ADR-001. |
+| D5: Connection management | Npgsql built-in pool | `MaxPoolSize=50` documented in POSTGRES-SETUP.md |
+| D6: FTS implementation | `tsvector GENERATED ALWAYS AS STORED` + partial GIN (`WHERE deleted_at IS NULL`) | |
+| D7: Dedupe window expression | `created_at::timestamptz >= NOW() - INTERVAL` | Explicit cast with TEXT dates |
+| D8: Testing in CI | `Testcontainers.PostgreSQL` | |
+| D9: Minimum PG version | 15 | Required for `GENERATED ALWAYS AS` |
+| D10: Sync strategy | Keep existing, no changes | Works via IStore.Export/Import |
 
 ---
 
 ## Next Step
 
-Proceed to **spec writing** (`sdd-spec`) to produce formal specifications with requirements, scenarios, and acceptance criteria. Then task breakdown (`sdd-tasks`) before implementation.
+Proceed to **implementation** (`sdd-apply`) using specs and task breakdown from `sdd/postgres-backend/`.
