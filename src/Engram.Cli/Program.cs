@@ -40,9 +40,10 @@ serveCmd.SetHandler(async (int port) =>
     if (!string.IsNullOrEmpty(envPort) && int.TryParse(envPort, out var p)) port = p;
 
     var cfg   = StoreConfig.FromEnvironment();
-    using var store = new SqliteStore(cfg);
+    using var store = OpenStore(cfg);
 
-    Console.Error.WriteLine($"[engram] starting HTTP server on :{port}");
+    var backendLabel = cfg.IsPostgres ? "PostgreSQL" : "SQLite";
+    Console.Error.WriteLine($"[engram] starting HTTP server on :{port} ({backendLabel})");
     var app = EngramServer.Build(store, cfg);
     app.Urls.Clear();
     app.Urls.Add($"http://0.0.0.0:{port}");
@@ -67,13 +68,15 @@ mcpCmd.SetHandler(async (string? project) =>
     // User identity: provided by IT via ENGRAM_USER (empty in local mode)
     var user = storeCfg.User ?? "";
 
-    // Store selection: HttpStore (team mode) vs SqliteStore (local mode)
+    // Store selection: HttpStore (team mode) > PostgresStore > SqliteStore (local mode)
     IStore store = storeCfg.IsRemote
         ? new HttpStore(storeCfg)
-        : new SqliteStore(storeCfg);
+        : OpenStore(storeCfg);
 
     if (storeCfg.IsRemote)
         Console.Error.WriteLine($"[engram] mcp → remote {storeCfg.RemoteUrl} (user={user}, project={defaultProject})");
+    else if (storeCfg.IsPostgres)
+        Console.Error.WriteLine($"[engram] mcp → PostgreSQL (project={defaultProject})");
     else
         Console.Error.WriteLine($"[engram] mcp → local SQLite (project={defaultProject})");
 
@@ -180,16 +183,21 @@ var statsCmd = new Command("stats", "Show memory system statistics");
 statsCmd.SetHandler(async () =>
 {
     var cfg = StoreConfig.FromEnvironment();
-    using var store = OpenStore();
+    using var store = OpenStore(cfg);
     var s = await store.StatsAsync();
     var projects = s.Projects.Count > 0 ? string.Join(", ", s.Projects) : "none yet";
+    var dbLabel = cfg.IsPostgres
+        ? $"PostgreSQL ({cfg.PgConnectionString?.Split(';').FirstOrDefault(p => p.StartsWith("Host=", StringComparison.OrdinalIgnoreCase))?.Split('=').LastOrDefault() ?? "unknown"})"
+        : cfg.IsRemote
+            ? $"HTTP Remote ({cfg.RemoteUrl})"
+            : $"{cfg.DataDir}/engram.db";
     Console.WriteLine($"""
         Engram Memory Stats
           Sessions:     {s.TotalSessions}
           Observations: {s.TotalObservations}
           Prompts:      {s.TotalPrompts}
           Projects:     {projects}
-          Database:     {cfg.DataDir}/engram.db
+          Database:     {dbLabel}
         """);
 });
 
@@ -578,10 +586,22 @@ return await root.InvokeAsync(args);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-static IStore OpenStore()
+static IStore OpenStore(StoreConfig? cfg = null)
 {
-    var cfg = StoreConfig.FromEnvironment();
-    return new SqliteStore(cfg);
+    cfg ??= StoreConfig.FromEnvironment();
+
+    // Validation: PostgreSQL requires connection string
+    if (cfg.IsPostgres && string.IsNullOrWhiteSpace(cfg.PgConnectionString))
+    {
+        Console.Error.WriteLine("error: ENGRAM_PG_CONNECTION is required when ENGRAM_DB_TYPE=postgres");
+        Environment.Exit(1);
+    }
+
+    return cfg.DbType switch
+    {
+        StoreDbType.Postgres => new PostgresStore(cfg),
+        _ => new SqliteStore(cfg),
+    };
 }
 
 static string Truncate(string s, int max)
