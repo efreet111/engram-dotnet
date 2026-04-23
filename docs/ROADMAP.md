@@ -27,6 +27,8 @@ Actualizar `.vscode/settings.json` con configuración recomendada para el proyec
 
 Detectar el nombre de proyecto automáticamente desde git remote, normalizar con warnings cuando hay drift, y sugerir consolidación cuando hay nombres similares.
 
+**Estado**: ✅ Completo — merged en PR #2.
+
 **Funcionalidad**:
 - `DetectProject(dir)` — detecta nombre desde git remote origin → git root → filepath.Base (prioridad en ese orden)
 - `FindSimilar(name, existing, maxDistance)` — busqueda por case-insensitive, substring, y Levenshtein distance
@@ -36,11 +38,7 @@ Detectar el nombre de proyecto automáticamente desde git remote, normalizar con
 
 **Por qué**: Los agentes y los devs escriben el nombre del proyecto de formas inconsistentes (`Mi-API`, `mi-api`, `mi_api`). Esto fragmenta la memoria y contamina las búsquedas. El Go original ya lo tiene implementado.
 
-**Dependencias**: Necesita método nuevo `IStore.ListProjectNames()` para `FindSimilar`. `PostgresStore` también lo implementará.
-
 **Referencia**: Go original `internal/project/detect.go` + `internal/project/similar.go`
-
-**Documentación de diseño**: Pendiente — crear RFC cuando se empiece.
 
 ---
 
@@ -48,9 +46,18 @@ Detectar el nombre de proyecto automáticamente desde git remote, normalizar con
 
 Implementar `PostgresStore` como tercer implementor de `IStore`, junto a `SqliteStore` e `HttpStore`.
 
-**Por qué**: SQLite tiene límites reales de escritura concurrente. Con 5+ desarrolladores activos en simultáneo se genera contención. La interfaz `IStore` ya está diseñada para soportar esto — el trabajo está acotado.
+**Estado**: ✅ Completo — implementado en rama `feat/postgres-backend-impl`.
 
-**Cuándo**: Después de Project Drift Detection (agrega `ListProjectNames` a `IStore` que PostgresStore también necesita).
+**Implementación**:
+- `PostgresStore.cs` (~900 líneas) — todos los 22 métodos de `IStore`
+- FTS via `tsvector GENERATED ALWAYS AS STORED` + GIN indexes
+- Deduplicación de 3 caminos (topic_key, hash window, fresh insert)
+- Schema con índices optimizados y partial GIN index `WHERE deleted_at IS NULL`
+- CLI soporta `ENGRAM_DB_TYPE=postgres` + `ENGRAM_PG_CONNECTION`
+- Tests de paridad con Testcontainers.PostgreSql (26 tests)
+- Npgsql 9.0.* como dependencia
+
+**Por qué**: SQLite tiene límites reales de escritura concurrente. Con 5+ desarrolladores activos en simultáneo se genera contención. La interfaz `IStore` ya está diseñada para soportar esto — el trabajo está acotado.
 
 **Documentación de diseño**:
 - [RFC-001 — PostgreSQL Backend](rfcs/RFC-001-postgresql-backend.md) — motivación, diseño técnico, riesgos
