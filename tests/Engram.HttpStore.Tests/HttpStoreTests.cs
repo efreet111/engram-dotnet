@@ -414,4 +414,77 @@ public class HttpStoreTests : IAsyncDisposable
         var stats = await storeWithUser.StatsAsync();
         Assert.NotNull(stats);
     }
+
+    // ─── Project listing ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListProjectNames_ReturnsDistinctProjects()
+    {
+        await _sut.CreateSessionAsync("s-pl-1", "alpha", "/");
+        await _sut.CreateSessionAsync("s-pl-2", "beta", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-pl-1", Title = "obs-1", Content = "c", Type = "manual", Project = "alpha",
+        });
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-pl-2", Title = "obs-2", Content = "c", Type = "manual", Project = "beta",
+        });
+
+        var names = await _sut.ListProjectNamesAsync();
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("alpha", names);
+        Assert.Contains("beta", names);
+    }
+
+    [Fact]
+    public async Task ListProjectNames_ReturnsEmpty_WhenNoData()
+    {
+        var names = await _sut.ListProjectNamesAsync();
+        Assert.Empty(names);
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_ReturnsCorrectCounts()
+    {
+        await _sut.CreateSessionAsync("s-ps-1", "proj-a", "/");
+        await _sut.CreateSessionAsync("s-ps-2", "proj-b", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-ps-1", Title = "obs-1", Content = "c", Type = "manual", Project = "proj-a",
+        });
+
+        var stats = await _sut.ListProjectsWithStatsAsync();
+
+        var projA = stats.FirstOrDefault(s => s.Name == "proj-a");
+        Assert.NotNull(projA);
+        Assert.Equal(1, projA.ObservationCount);
+        Assert.Equal(1, projA.SessionCount);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_ReturnsCorrectCount()
+    {
+        await _sut.CreateSessionAsync("s-co", "proj-c", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-co", Title = "obs-1", Content = "c", Type = "manual", Project = "proj-c",
+        });
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-co", Title = "obs-2", Content = "c", Type = "manual", Project = "proj-c",
+        });
+
+        var count = await _sut.CountObservationsForProjectAsync("proj-c");
+
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_ReturnsZero_WhenNoProject()
+    {
+        var count = await _sut.CountObservationsForProjectAsync("nonexistent-proj");
+        Assert.Equal(0, count);
+    }
 }

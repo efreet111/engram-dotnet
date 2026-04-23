@@ -509,4 +509,171 @@ public class SqliteStoreTests : IDisposable
         var ctx = await _store.FormatContextAsync("ghost-project", null);
         Assert.Empty(ctx);
     }
+
+    // ─── Project listing & stats ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListProjectNames_ReturnsDistinctNonEmptyProjects()
+    {
+        await SeedSession();
+        await SeedObservation("obs-1", "content", project: "alpha");
+        await SeedObservation("obs-2", "content", project: "beta");
+        await SeedObservation("obs-3", "content", project: "alpha"); // duplicate name
+
+        var names = await _store.ListProjectNamesAsync();
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("alpha", names);
+        Assert.Contains("beta", names);
+    }
+
+    [Fact]
+    public async Task ListProjectNames_ExcludesDeletedAndNullProjects()
+    {
+        await SeedSession();
+        await SeedObservation("obs-1", "content", project: "visible");
+        var id = await SeedObservation("obs-to-delete", "content", project: "hidden-project");
+        await _store.DeleteObservationAsync(id);
+
+        var obsNoProject = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title = "no-project",
+            Content = "content",
+            Type = "manual",
+            Project = null,
+        });
+
+        var names = await _store.ListProjectNamesAsync();
+
+        Assert.Contains("visible", names);
+        Assert.DoesNotContain("hidden-project", names);
+    }
+
+    [Fact]
+    public async Task ListProjectNames_ReturnsEmpty_WhenNoData()
+    {
+        var names = await _store.ListProjectNamesAsync();
+        Assert.Empty(names);
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_ReturnsCorrectCounts()
+    {
+        // Create sessions with project-specific IDs so FK constraints hold
+        await _store.CreateSessionAsync("s-pa-1", "proj-a", "/a");
+        await _store.CreateSessionAsync("s-pa-2", "proj-a", "/a");
+        await _store.CreateSessionAsync("s-pb-1", "proj-b", "/b");
+
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-pa-1", Title = "o1", Content = "c", Type = "manual", Project = "proj-a" });
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-pa-2", Title = "o2", Content = "c", Type = "manual", Project = "proj-a" });
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-pb-1", Title = "o3", Content = "c", Type = "manual", Project = "proj-b" });
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+
+        var projA = stats.FirstOrDefault(s => s.Name == "proj-a");
+        var projB = stats.FirstOrDefault(s => s.Name == "proj-b");
+
+        Assert.NotNull(projA);
+        Assert.Equal(2, projA.ObservationCount);
+        Assert.Equal(2, projA.SessionCount);
+
+        Assert.NotNull(projB);
+        Assert.Equal(1, projB.ObservationCount);
+        Assert.Equal(1, projB.SessionCount);
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_ExcludesDeletedObservations()
+    {
+        await SeedSession();
+        var id = await SeedObservation("obs-to-delete", "content", project: "proj-x");
+        await _store.DeleteObservationAsync(id);
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+        // "test-project" still appears because the session exists, but obs count is 0
+        var projX = stats.FirstOrDefault(s => s.Name == "proj-x");
+        Assert.Null(projX); // deleted observation excluded
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_OrdersByObservationCountDesc()
+    {
+        await _store.CreateSessionAsync("s-minor", "minor", "/a");
+        await _store.CreateSessionAsync("s-major", "major", "/b");
+
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-major", Title = "o1", Content = "c", Type = "manual", Project = "major" });
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-major", Title = "o2", Content = "c", Type = "manual", Project = "major" });
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-minor", Title = "o3", Content = "c", Type = "manual", Project = "minor" });
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+
+        Assert.Equal(2, stats.Count);
+        Assert.Equal("major", stats[0].Name);  // 2 observations > 1
+        Assert.Equal("minor", stats[1].Name);
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_IncludesSessionOnlyProjects()
+    {
+        // A project with sessions but no observations should still appear
+        await _store.CreateSessionAsync("s-solo", "session-only-proj", "/x");
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+
+        var proj = stats.FirstOrDefault(s => s.Name == "session-only-proj");
+        Assert.NotNull(proj);
+        Assert.Equal(0, proj.ObservationCount);
+        Assert.Equal(1, proj.SessionCount);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_ReturnsCorrectCount()
+    {
+        await SeedSession();
+        await SeedObservation("obs-1", "content", project: "my-proj");
+        await SeedObservation("obs-2", "content", project: "my-proj");
+        await SeedObservation("obs-3", "content", project: "other-proj");
+
+        var count = await _store.CountObservationsForProjectAsync("my-proj");
+
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_NormalizesProjectName()
+    {
+        await SeedSession();
+        await SeedObservation("obs-1", "content", project: "my-proj");
+
+        // CountObservationsForProject normalizes internally
+        var count = await _store.CountObservationsForProjectAsync("My-PROJ");
+
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_ExcludesDeleted()
+    {
+        await SeedSession();
+        var id = await SeedObservation("obs-to-delete", "content", project: "proj-d");
+        await _store.DeleteObservationAsync(id);
+
+        var count = await _store.CountObservationsForProjectAsync("proj-d");
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task CountObservationsForProject_ReturnsZero_WhenNoProject()
+    {
+        var count = await _store.CountObservationsForProjectAsync("nonexistent");
+        Assert.Equal(0, count);
+    }
 }
