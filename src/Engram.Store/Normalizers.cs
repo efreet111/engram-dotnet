@@ -27,11 +27,23 @@ public static class Normalizers
 
     public static string NormalizeProject(string? project)
     {
-        if (string.IsNullOrWhiteSpace(project)) return "";
+        var (normalized, _) = NormalizeProjectWithWarning(project);
+        return normalized;
+    }
+
+    /// <summary>
+    /// Normalizes a project name and returns a warning message if the name was changed.
+    /// This mirrors the Go original NormalizeProject which returns (normalized, warning).
+    /// The warning is empty when no normalization was needed.
+    /// </summary>
+    public static (string normalized, string warning) NormalizeProjectWithWarning(string? project)
+    {
+        if (string.IsNullOrWhiteSpace(project)) return ("", "");
         var n = project.Trim().ToLowerInvariant();
         while (n.Contains("--")) n = n.Replace("--", "-");
         while (n.Contains("__")) n = n.Replace("__", "_");
-        return n;
+        if (n == project) return (n, "");
+        return (n, $"⚠️ Project name normalized: \"{project}\" → \"{n}\"");
     }
 
     public static string DedupeWindowExpression(TimeSpan window)

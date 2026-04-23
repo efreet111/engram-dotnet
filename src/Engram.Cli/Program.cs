@@ -57,10 +57,10 @@ mcpCmd.SetHandler(async (string? project) =>
 {
     var storeCfg = StoreConfig.FromEnvironment();
 
-    // Project detection chain: --project → ENGRAM_PROJECT → git/cwd
+    // Project detection chain: --project → ENGRAM_PROJECT → git remote → git root → cwd basename
     var defaultProject = project
         ?? storeCfg.Project
-        ?? DetectProject(Directory.GetCurrentDirectory());
+        ?? ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
     defaultProject = Normalizers.NormalizeProject(defaultProject);
 
     // User identity: provided by IT via ENGRAM_USER (empty in local mode)
@@ -331,18 +331,3 @@ static IStore OpenStore()
 
 static string Truncate(string s, int max)
     => s.Length <= max ? s : s[..max] + "...";
-
-static string DetectProject(string dir)
-{
-    // Simple heuristic: use the last segment of the directory path
-    // (mirrors the Go project.DetectProject behaviour for non-git dirs)
-    try
-    {
-        var name = new DirectoryInfo(dir).Name;
-        return Normalizers.NormalizeProject(name);
-    }
-    catch
-    {
-        return "";
-    }
-}

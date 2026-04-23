@@ -82,6 +82,8 @@ public static class EngramServer
         app.MapPost("/import",                      (Func<HttpContext, Task<IResult>>)((ctx) => HandleImport(ctx, store)));
         app.MapGet("/stats",                        (Func<HttpContext, Task<IResult>>)((ctx) => HandleStats(ctx, store)));
         app.MapPost("/projects/migrate",            (Func<HttpContext, Task<IResult>>)((ctx) => HandleMigrateProject(ctx, store)));
+        app.MapGet("/projects/list",                 (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectList(ctx, store)));
+        app.MapGet("/projects/stats",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectStats(ctx, store)));
         app.MapGet("/sync/status",                  (Func<IResult>)HandleSyncStatus);
     }
 
@@ -331,6 +333,18 @@ public static class EngramServer
             sessions     = result.SessionsUpdated,
             prompts      = result.PromptsUpdated,
         });
+    }
+
+    private static async Task<IResult> HandleProjectList(HttpContext ctx, IStore store)
+    {
+        var names = await store.ListProjectNamesAsync();
+        return Json(names);
+    }
+
+    private static async Task<IResult> HandleProjectStats(HttpContext ctx, IStore store)
+    {
+        var stats = await store.ListProjectsWithStatsAsync();
+        return Json(stats);
     }
 
     private static IResult HandleSyncStatus() =>

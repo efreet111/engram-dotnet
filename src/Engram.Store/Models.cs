@@ -110,6 +110,14 @@ public class Stats
     [JsonPropertyName("projects")]            public List<string> Projects          { get; set; } = [];
 }
 
+public class ProjectStats
+{
+    [JsonPropertyName("name")]                public string   Name             { get; set; } = "";
+    [JsonPropertyName("observation_count")]   public int      ObservationCount  { get; set; }
+    [JsonPropertyName("session_count")]       public int      SessionCount     { get; set; }
+    [JsonPropertyName("prompt_count")]        public int      PromptCount      { get; set; }
+}
+
 public class ExportData
 {
     [JsonPropertyName("version")]      public string            Version      { get; set; } = "1.1.0";

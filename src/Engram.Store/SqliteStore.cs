@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -1194,6 +1195,96 @@ public sealed class SqliteStore : IStore
         });
 
         return Task.FromResult(result);
+    }
+
+    public Task<IList<string>> ListProjectNamesAsync()
+    {
+        var results = new List<string>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT DISTINCT project FROM observations
+            WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL
+            ORDER BY project";
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) results.Add(r.GetString(0));
+        return Task.FromResult<IList<string>>(results);
+    }
+
+    public Task<IList<ProjectStats>> ListProjectsWithStatsAsync()
+    {
+        var statsMap = new Dictionary<string, ProjectStats>();
+
+        // Observation counts
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT project, COUNT(*) as cnt
+                FROM observations
+                WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL
+                GROUP BY project";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var name = r.GetString(0);
+                var cnt = r.GetInt32(1);
+                statsMap[name] = new ProjectStats { Name = name, ObservationCount = cnt };
+            }
+        }
+
+        // Session counts
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT project, COUNT(*) as cnt
+                FROM sessions
+                WHERE project IS NOT NULL AND project != ''
+                GROUP BY project";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var name = r.GetString(0);
+                var cnt = r.GetInt32(1);
+                if (statsMap.TryGetValue(name, out var stats))
+                    stats.SessionCount = cnt;
+                else
+                    statsMap[name] = new ProjectStats { Name = name, SessionCount = cnt };
+            }
+        }
+
+        // Prompt counts
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT ifnull(project,'') as project, COUNT(*) as cnt
+                FROM user_prompts
+                GROUP BY project";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var name = r.GetString(0);
+                if (string.IsNullOrEmpty(name)) continue;
+                var cnt = r.GetInt32(1);
+                if (statsMap.TryGetValue(name, out var stats))
+                    stats.PromptCount = cnt;
+                // Don't add projects that only have prompts — unlikely and not useful
+            }
+        }
+
+        var results = statsMap.Values
+            .OrderByDescending(s => s.ObservationCount)
+            .ToList();
+
+        return Task.FromResult<IList<ProjectStats>>(results);
+    }
+
+    public Task<int> CountObservationsForProjectAsync(string project)
+    {
+        project = Normalizers.NormalizeProject(project);
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL";
+        cmd.Parameters.AddWithValue("@proj", project);
+        var count = Convert.ToInt32(cmd.ExecuteScalar());
+        return Task.FromResult(count);
     }
 
     // ─── Sync Chunks ───────────────────────────────────────────────────────────
