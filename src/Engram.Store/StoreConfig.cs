@@ -1,5 +1,7 @@
 namespace Engram.Store;
 
+public enum StoreDbType { Sqlite, Postgres }
+
 public class StoreConfig
 {
     public string DataDir { get; init; } =
@@ -36,9 +38,37 @@ public class StoreConfig
     public string? User { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_USER");
 
     /// <summary>
+    /// Database backend type (env: ENGRAM_DB_TYPE). Values: "sqlite" (default) or "postgres".
+    /// </summary>
+    public StoreDbType DbType { get; init; } = ParseDbType(
+        Environment.GetEnvironmentVariable("ENGRAM_DB_TYPE"));
+
+    /// <summary>
+    /// PostgreSQL connection string (env: ENGRAM_PG_CONNECTION).
+    /// Required when DbType == Postgres.
+    /// </summary>
+    public string? PgConnectionString { get; init; } =
+        Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
+
+    /// <summary>
+    /// True when using PostgreSQL as the local backend.
+    /// </summary>
+    public bool IsPostgres => DbType == StoreDbType.Postgres;
+
+    /// <summary>
     /// True when the client is configured to operate in team/centralized mode.
     /// </summary>
     public bool IsRemote => !string.IsNullOrWhiteSpace(RemoteUrl);
+
+    private static StoreDbType ParseDbType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return StoreDbType.Sqlite;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "postgres" or "postgresql" or "pg" => StoreDbType.Postgres,
+            _ => StoreDbType.Sqlite,
+        };
+    }
 
     public static StoreConfig FromEnvironment() => new();
 }
