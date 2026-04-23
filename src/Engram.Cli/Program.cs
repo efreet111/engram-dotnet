@@ -14,6 +14,7 @@
 
 using System.CommandLine;
 using System.Text.Json;
+using Engram.Cli;
 using Engram.Mcp;
 using Engram.Server;
 using Engram.Store;
@@ -287,18 +288,272 @@ syncCmd.SetHandler(async (bool doImport, bool doStatus) =>
 
 var projectsCmd = new Command("projects", "Manage projects");
 
-var projectsListCmd = new Command("list", "List all projects");
+// projects list
+var projectsListCmd = new Command("list", "List all projects with stats");
 projectsListCmd.SetHandler(async () =>
 {
     using var store = OpenStore();
-    var stats = await store.StatsAsync();
-    if (stats.Projects.Count == 0) { Console.WriteLine("No projects found."); return; }
-    Console.WriteLine($"Projects ({stats.Projects.Count}):");
-    foreach (var p in stats.Projects)
-        Console.WriteLine($"  {p}");
+    var stats = await store.ListProjectsWithStatsAsync();
+    if (stats.Count == 0) { Console.WriteLine("No projects found."); return; }
+
+    Console.WriteLine($"Projects ({stats.Count}):");
+    foreach (var p in stats)
+    {
+        var sessionWord = p.SessionCount == 1 ? "session" : "sessions";
+        var promptWord  = p.PromptCount == 1  ? "prompt"  : "prompts";
+        Console.WriteLine($"  {p.Name,-30} {p.ObservationCount,4} obs   {p.SessionCount,3} {sessionWord,-9}  {p.PromptCount,3} {promptWord}");
+    }
 });
 
+// projects consolidate
+var consolidateAllOpt   = new Option<bool>("--all", "Consolidate all similar projects (no interactive)");
+var consolidateDryRunOpt = new Option<bool>("--dry-run", "Show what would be merged without changing anything");
+var consolidateCmd = new Command("consolidate", "Merge similar project names into a canonical name");
+consolidateCmd.AddOption(consolidateAllOpt);
+consolidateCmd.AddOption(consolidateDryRunOpt);
+consolidateCmd.SetHandler(async (bool doAll, bool dryRun) =>
+{
+    using var store = OpenStore();
+
+    if (!doAll)
+    {
+        // Single-project mode: detect canonical project for cwd, find variants
+        var canonical = ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
+        canonical = Normalizers.NormalizeProject(canonical);
+
+        var allNames = await store.ListProjectNamesAsync();
+
+        // Check if the detected canonical actually exists in the DB
+        bool canonicalExists = allNames.Any(n => n == canonical);
+        if (!canonicalExists)
+            Console.WriteLine($"Note: \"{canonical}\" has no existing memories. Merging will move memories into this new project name.");
+
+        // Find candidates by name similarity
+        var similar = ProjectDetector.FindSimilar(canonical, allNames, 3);
+
+        if (similar.Count == 0)
+        {
+            Console.WriteLine($"No similar project names found for \"{canonical}\". Nothing to consolidate.");
+            return;
+        }
+
+        Console.WriteLine($"Detected project: \"{canonical}\"");
+        Console.WriteLine();
+        Console.WriteLine("Found similar project names:");
+        for (int i = 0; i < similar.Count; i++)
+        {
+            var sm = similar[i];
+            var obsCount = await store.CountObservationsForProjectAsync(sm.Name);
+            Console.WriteLine($"  [{i + 1}] {sm.Name,-30} {obsCount,3} obs  ({sm.MatchType})");
+        }
+
+        if (dryRun)
+        {
+            Console.WriteLine($"\n[dry-run] Would merge {similar.Count} project(s) into \"{canonical}\"");
+            return;
+        }
+
+        Console.WriteLine($"\nSelect which to merge into \"{canonical}\" (comma-separated numbers, 'all', or 'none'): ");
+        var answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "";
+
+        if (answer == "none" || answer == "n" || answer == "")
+        {
+            Console.WriteLine("Cancelled.");
+            return;
+        }
+
+        var sources = new List<string>();
+        if (answer == "all" || answer == "a")
+        {
+            sources.AddRange(similar.Select(sm => sm.Name));
+        }
+        else
+        {
+            foreach (var part in answer.Split(','))
+            {
+                var trimmed = part.Trim();
+                if (!int.TryParse(trimmed, out var idx) || idx < 1 || idx > similar.Count)
+                {
+                    Console.Error.WriteLine($"Invalid selection: \"{trimmed}\" (expected 1-{similar.Count})");
+                    return;
+                }
+                sources.Add(similar[idx - 1].Name);
+            }
+        }
+
+        if (sources.Count == 0) { Console.WriteLine("Nothing selected."); return; }
+
+        Console.WriteLine($"\nMerging {sources.Count} project(s) into \"{canonical}\"...");
+        var result = await store.MergeProjectsAsync(sources, canonical);
+        Console.WriteLine($"Done! Merged into \"{result.Canonical}\":");
+        Console.WriteLine($"  Observations: {result.ObservationsUpdated}");
+        Console.WriteLine($"  Sessions:     {result.SessionsUpdated}");
+        Console.WriteLine($"  Prompts:      {result.PromptsUpdated}");
+        return;
+    }
+
+    // --all mode: group all projects by similarity + shared directories
+    var projects = await store.ListProjectsWithStatsAsync();
+    var groups = ProjectConsolidator.GroupSimilarProjects(projects);
+
+    if (groups.Count == 0)
+    {
+        Console.WriteLine("No similar project name groups found.");
+        return;
+    }
+
+    Console.WriteLine($"Found {groups.Count} group(s) of similar project names:\n");
+
+    for (int i = 0; i < groups.Count; i++)
+    {
+        var g = groups[i];
+        Console.WriteLine($"Group {i + 1}:");
+        for (int j = 0; j < g.Names.Count; j++)
+        {
+            var name = g.Names[j];
+            var obs = projects.FirstOrDefault(p => p.Name == name)?.ObservationCount ?? 0;
+            var marker = name == g.Canonical ? "→ " : "  ";
+            Console.WriteLine($"  {marker}[{j + 1}] {name,-30} {obs,3} obs");
+        }
+        Console.WriteLine($"  Suggested canonical: \"{g.Canonical}\" (→)");
+
+        if (dryRun)
+        {
+            Console.WriteLine($"  [dry-run] Would merge into \"{g.Canonical}\"\n");
+            continue;
+        }
+
+        Console.WriteLine("\n  Options:");
+        Console.WriteLine($"    all     — merge everything into \"{g.Canonical}\"");
+        Console.WriteLine($"    1,3,... — merge only selected numbers into \"{g.Canonical}\"");
+        Console.WriteLine("    rename  — choose a different canonical name");
+        Console.WriteLine("    skip    — don't touch this group");
+        Console.Write("  Choice: ");
+        var answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "";
+
+        var canonical = g.Canonical;
+
+        if (answer == "skip" || answer == "s" || answer == "n" || answer == "")
+        {
+            Console.WriteLine("  Skipped.\n");
+            continue;
+        }
+
+        if (answer == "rename" || answer == "r")
+        {
+            Console.Write("  Enter canonical name: ");
+            canonical = Console.ReadLine()?.Trim() ?? "";
+            if (string.IsNullOrEmpty(canonical)) { Console.WriteLine("  Empty input, skipping.\n"); continue; }
+            answer = "all";
+        }
+
+        var sources = new List<string>();
+        if (answer == "all" || answer == "a" || answer == "y" || answer == "yes")
+        {
+            foreach (var name in g.Names)
+                if (name != canonical) sources.Add(name);
+        }
+        else
+        {
+            foreach (var part in answer.Split(','))
+            {
+                var trimmed = part.Trim();
+                if (!int.TryParse(trimmed, out var idx) || idx < 1 || idx > g.Names.Count)
+                {
+                    Console.Error.WriteLine($"  Invalid selection: \"{trimmed}\" (expected 1-{g.Names.Count})");
+                    Console.WriteLine();
+                    continue;
+                }
+                var selected = g.Names[idx - 1];
+                if (selected != canonical) sources.Add(selected);
+            }
+        }
+
+        if (sources.Count == 0) { Console.WriteLine("  Nothing to merge.\n"); continue; }
+
+        var result = await store.MergeProjectsAsync(sources, canonical);
+        Console.WriteLine($"  Merged: {result.ObservationsUpdated} obs, {result.SessionsUpdated} sessions, {result.PromptsUpdated} prompts\n");
+    }
+}, consolidateAllOpt, consolidateDryRunOpt);
+
+// projects prune
+var pruneDryRunOpt = new Option<bool>("--dry-run", "Show what would be pruned without deleting anything");
+var pruneCmd = new Command("prune", "Remove projects with 0 observations (sessions & prompts only)");
+pruneCmd.AddOption(pruneDryRunOpt);
+pruneCmd.SetHandler(async (bool dryRun) =>
+{
+    using var store = OpenStore();
+    var allStats = await store.ListProjectsWithStatsAsync();
+
+    // Find projects with 0 observations
+    var candidates = allStats.Where(ps => ps.ObservationCount == 0).ToList();
+
+    if (candidates.Count == 0)
+    {
+        Console.WriteLine("No empty projects to prune.");
+        return;
+    }
+
+    Console.WriteLine($"Found {candidates.Count} project(s) with 0 observations:\n");
+    for (int i = 0; i < candidates.Count; i++)
+    {
+        var ps = candidates[i];
+        var sessionWord = ps.SessionCount == 1 ? "session" : "sessions";
+        var promptWord  = ps.PromptCount == 1  ? "prompt"  : "prompts";
+        Console.WriteLine($"  [{i + 1}] {ps.Name,-30} {ps.SessionCount,3} {sessionWord,-9}  {ps.PromptCount,3} {promptWord}");
+    }
+
+    if (dryRun)
+    {
+        Console.WriteLine($"\n[dry-run] Would prune {candidates.Count} project(s)");
+        return;
+    }
+
+    Console.Write("\nSelect which to prune (comma-separated numbers, 'all', or 'none'): ");
+    var answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "";
+
+    if (answer == "none" || answer == "n" || answer == "")
+    {
+        Console.WriteLine("Cancelled.");
+        return;
+    }
+
+    var selected = new List<ProjectStats>();
+    if (answer == "all" || answer == "a")
+    {
+        selected = candidates;
+    }
+    else
+    {
+        foreach (var part in answer.Split(','))
+        {
+            var trimmed = part.Trim();
+            if (!int.TryParse(trimmed, out var idx) || idx < 1 || idx > candidates.Count)
+            {
+                Console.Error.WriteLine($"Invalid selection: \"{trimmed}\" (expected 1-{candidates.Count})");
+                return;
+            }
+            selected.Add(candidates[idx - 1]);
+        }
+    }
+
+    if (selected.Count == 0) { Console.WriteLine("Nothing selected."); return; }
+
+    long totalSessions = 0;
+    long totalPrompts = 0;
+    foreach (var ps in selected)
+    {
+        var result = await store.PruneProjectAsync(ps.Name);
+        totalSessions += result.SessionsDeleted;
+        totalPrompts  += result.PromptsDeleted;
+    }
+
+    Console.WriteLine($"\nPruned {selected.Count} project(s): {totalSessions} sessions, {totalPrompts} prompts removed.");
+}, pruneDryRunOpt);
+
 projectsCmd.AddCommand(projectsListCmd);
+projectsCmd.AddCommand(consolidateCmd);
+projectsCmd.AddCommand(pruneCmd);
 
 // ─── version ──────────────────────────────────────────────────────────────────
 

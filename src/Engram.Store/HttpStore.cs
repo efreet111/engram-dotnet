@@ -314,6 +314,13 @@ public sealed class HttpStore : IStore
         return found?.ObservationCount ?? 0;
     }
 
+    public async Task<PruneResult> PruneProjectAsync(string project)
+    {
+        var resp = await Post($"projects/prune", new { project });
+        await EnsureSuccess(resp, "PruneProject");
+        return await Deserialize<PruneResult>(resp) ?? new PruneResult { Project = project };
+    }
+
     // ─── Sync chunks (not supported in proxy mode) ────────────────────────────
 
     public Task<ISet<string>> GetSyncedChunksAsync()

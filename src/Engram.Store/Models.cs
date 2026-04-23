@@ -116,6 +116,14 @@ public class ProjectStats
     [JsonPropertyName("observation_count")]   public int      ObservationCount  { get; set; }
     [JsonPropertyName("session_count")]       public int      SessionCount     { get; set; }
     [JsonPropertyName("prompt_count")]        public int      PromptCount      { get; set; }
+    [JsonPropertyName("directories")]         public List<string> Directories  { get; set; } = [];
+}
+
+public class PruneResult
+{
+    [JsonPropertyName("project")]            public string Project         { get; set; } = "";
+    [JsonPropertyName("sessions_deleted")]   public long   SessionsDeleted { get; set; }
+    [JsonPropertyName("prompts_deleted")]     public long   PromptsDeleted  { get; set; }
 }
 
 public class ExportData

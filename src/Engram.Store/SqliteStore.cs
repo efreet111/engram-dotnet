@@ -1231,7 +1231,7 @@ public sealed class SqliteStore : IStore
             }
         }
 
-        // Session counts
+        // Session counts + directories
         using (var cmd = _db.CreateCommand())
         {
             cmd.CommandText = @"
@@ -1248,6 +1248,34 @@ public sealed class SqliteStore : IStore
                     stats.SessionCount = cnt;
                 else
                     statsMap[name] = new ProjectStats { Name = name, SessionCount = cnt };
+            }
+        }
+
+        // Directories per project (unique directory values from sessions)
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT project, directory
+                FROM sessions
+                WHERE project IS NOT NULL AND project != '' AND directory IS NOT NULL AND directory != ''
+                ORDER BY project, directory";
+            using var r = cmd.ExecuteReader();
+            var dirSet = new Dictionary<string, HashSet<string>>();
+            while (r.Read())
+            {
+                var name = r.GetString(0);
+                var dir = r.GetString(1);
+                if (!dirSet.TryGetValue(name, out var set))
+                {
+                    set = new HashSet<string>();
+                    dirSet[name] = set;
+                }
+                set.Add(dir);
+            }
+            foreach (var (name, dirs) in dirSet)
+            {
+                if (statsMap.TryGetValue(name, out var stats))
+                    stats.Directories = dirs.OrderBy(d => d).ToList();
             }
         }
 
@@ -1279,12 +1307,54 @@ public sealed class SqliteStore : IStore
 
     public Task<int> CountObservationsForProjectAsync(string project)
     {
-        project = Normalizers.NormalizeProject(project);
+        return Task.FromResult(CountObservationsForProjectCore(Normalizers.NormalizeProject(project)));
+    }
+
+    private int CountObservationsForProjectCore(string project)
+    {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@proj", project);
-        var count = Convert.ToInt32(cmd.ExecuteScalar());
-        return Task.FromResult(count);
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public Task<PruneResult> PruneProjectAsync(string project)
+    {
+        project = Normalizers.NormalizeProject(project);
+
+        // Safety check: refuse to prune if observations exist for this project
+        var obsCount = CountObservationsForProjectCore(project);
+        if (obsCount > 0)
+            throw new InvalidOperationException(
+                $"Project \"{project}\" still has {obsCount} observations — cannot prune. " +
+                "Merge or delete observations first.");
+
+        long sessionsDeleted = 0;
+        long promptsDeleted = 0;
+
+        WithTx(tx =>
+        {
+            // Delete prompts first (they have FK → sessions)
+            using var delPrompts = _db.CreateCommand();
+            delPrompts.Transaction = tx;
+            delPrompts.CommandText = "DELETE FROM user_prompts WHERE project = @proj";
+            delPrompts.Parameters.AddWithValue("@proj", project);
+            promptsDeleted = delPrompts.ExecuteNonQuery();
+
+            // Then delete sessions (FK → sessions from prompts already removed)
+            using var delSessions = _db.CreateCommand();
+            delSessions.Transaction = tx;
+            delSessions.CommandText = "DELETE FROM sessions WHERE project = @proj";
+            delSessions.Parameters.AddWithValue("@proj", project);
+            sessionsDeleted = delSessions.ExecuteNonQuery();
+        });
+
+        return Task.FromResult(new PruneResult
+        {
+            Project = project,
+            SessionsDeleted = sessionsDeleted,
+            PromptsDeleted = promptsDeleted,
+        });
     }
 
     // ─── Sync Chunks ───────────────────────────────────────────────────────────

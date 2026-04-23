@@ -676,4 +676,91 @@ public class SqliteStoreTests : IDisposable
         var count = await _store.CountObservationsForProjectAsync("nonexistent");
         Assert.Equal(0, count);
     }
+
+    // ─── Directories in ListProjectsWithStats ──────────────────────────────────
+
+    [Fact]
+    public async Task ListProjectsWithStats_IncludesDirectoriesFromSessions()
+    {
+        await _store.CreateSessionAsync("s-dir-1", "dir-proj", "/home/user/work/dir-proj");
+        await _store.CreateSessionAsync("s-dir-2", "dir-proj", "/home/user/work/dir-proj");
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-dir-1", Title = "o1", Content = "c", Type = "manual", Project = "dir-proj" });
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+
+        var proj = stats.FirstOrDefault(s => s.Name == "dir-proj");
+        Assert.NotNull(proj);
+        Assert.Contains("/home/user/work/dir-proj", proj.Directories);
+    }
+
+    [Fact]
+    public async Task ListProjectsWithStats_Directories_AreDistinct()
+    {
+        // Two sessions with same directory → should appear once
+        await _store.CreateSessionAsync("s-dup-1", "dup-proj", "/same/path");
+        await _store.CreateSessionAsync("s-dup-2", "dup-proj", "/same/path");
+
+        var stats = await _store.ListProjectsWithStatsAsync();
+
+        var proj = stats.FirstOrDefault(s => s.Name == "dup-proj");
+        Assert.NotNull(proj);
+        Assert.Single(proj.Directories);
+        Assert.Equal("/same/path", proj.Directories[0]);
+    }
+
+    // ─── PruneProject ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PruneProject_DeletesSessionsAndPrompts()
+    {
+        await _store.CreateSessionAsync("s-prune", "prune-proj", "/tmp");
+        await _store.AddPromptAsync(new AddPromptParams
+            { SessionId = "s-prune", Content = "a prompt", Project = "prune-proj" });
+
+        var result = await _store.PruneProjectAsync("prune-proj");
+
+        Assert.Equal("prune-proj", result.Project);
+        Assert.True(result.SessionsDeleted >= 1);
+        Assert.True(result.PromptsDeleted >= 1);
+
+        // Verify session is gone
+        var session = await _store.GetSessionAsync("s-prune");
+        Assert.Null(session);
+    }
+
+    [Fact]
+    public async Task PruneProject_Throws_WhenObservationsExist()
+    {
+        await _store.CreateSessionAsync("s-no-prune", "obs-proj", "/tmp");
+        await _store.AddObservationAsync(new AddObservationParams
+            { SessionId = "s-no-prune", Title = "important", Content = "c", Type = "manual", Project = "obs-proj" });
+
+        // Cannot prune a project that still has observations
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _store.PruneProjectAsync("obs-proj"));
+    }
+
+    [Fact]
+    public async Task PruneProject_NormalizesProjectName()
+    {
+        await _store.CreateSessionAsync("s-norm", "My-Project", "/tmp");
+        await _store.AddPromptAsync(new AddPromptParams
+            { SessionId = "s-norm", Content = "prompt", Project = "My-Project" });
+
+        var result = await _store.PruneProjectAsync("MY-PROJECT");
+
+        Assert.Equal("my-project", result.Project);
+        Assert.True(result.SessionsDeleted >= 1);
+    }
+
+    [Fact]
+    public async Task PruneProject_OnNonexistentProject_ReturnsZero()
+    {
+        var result = await _store.PruneProjectAsync("nonexistent");
+
+        Assert.Equal("nonexistent", result.Project);
+        Assert.Equal(0, result.SessionsDeleted);
+        Assert.Equal(0, result.PromptsDeleted);
+    }
 }

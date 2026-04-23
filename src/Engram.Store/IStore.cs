@@ -39,6 +39,7 @@ public interface IStore : IDisposable
     Task<IList<string>> ListProjectNamesAsync();
     Task<IList<ProjectStats>> ListProjectsWithStatsAsync();
     Task<int> CountObservationsForProjectAsync(string project);
+    Task<PruneResult> PruneProjectAsync(string project);
 
     // Sync chunks
     Task<ISet<string>> GetSyncedChunksAsync();
