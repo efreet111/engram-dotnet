@@ -149,11 +149,40 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
     {
         type     ??= "manual";
         scope    ??= AutoClassifyScope(type);
-        project    = ResolveProject(project, scope);
+
+        // ── Normalize project name and capture warning ──
+        var (normalizedProject, normWarning) = Normalizers.NormalizeProjectWithWarning(
+            string.IsNullOrEmpty(project) ? cfg.DefaultProject : project);
+        project    = ResolveProject(normalizedProject, scope);
         session_id ??= DefaultSessionId(project);
 
         var suggestedKey = Normalizers.SuggestTopicKey(type, title, content);
         var truncated    = content.Length > store.MaxObservationLength;
+
+        // ── Check for similar existing projects (only when this project has no observations) ──
+        string? similarWarning = null;
+        if (!string.IsNullOrEmpty(normalizedProject))
+        {
+            try
+            {
+                var existingNames = await store.ListProjectNamesAsync();
+                var isNew = !existingNames.Contains(normalizedProject);
+                if (isNew && existingNames.Count > 0)
+                {
+                    var matches = ProjectDetector.FindSimilar(normalizedProject, existingNames, 3);
+                    if (matches.Count > 0)
+                    {
+                        var bestMatch = matches[0].Name;
+                        var obsCount = await store.CountObservationsForProjectAsync(bestMatch);
+                        similarWarning = $"⚠️ Project \"{normalizedProject}\" has no memories. Similar project found: \"{bestMatch}\" ({obsCount} memories). Consider using that name instead.";
+                    }
+                }
+            }
+            catch
+            {
+                // Similar project checking is best-effort — don't fail the save
+            }
+        }
 
         await store.CreateSessionAsync(session_id, project, "");
         await store.AddObservationAsync(new AddObservationParams
@@ -172,6 +201,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
             msg += $"\nSuggested topic_key: {suggestedKey}";
         if (truncated)
             msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
+        if (!string.IsNullOrEmpty(normWarning))
+            msg += $"\n{normWarning}";
+        if (!string.IsNullOrEmpty(similarWarning))
+            msg += $"\n{similarWarning}";
 
         return msg;
     }

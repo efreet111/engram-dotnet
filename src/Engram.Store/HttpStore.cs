@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -290,6 +291,34 @@ public sealed class HttpStore : IStore
             SessionsUpdated     = sess,
             PromptsUpdated      = prompts,
         };
+    }
+
+    public async Task<IList<string>> ListProjectNamesAsync()
+    {
+        var resp = await Get("projects/list");
+        await EnsureSuccess(resp, "ListProjectNames");
+        return await Deserialize<IList<string>>(resp) ?? [];
+    }
+
+    public async Task<IList<ProjectStats>> ListProjectsWithStatsAsync()
+    {
+        var resp = await Get("projects/stats");
+        await EnsureSuccess(resp, "ListProjectsWithStats");
+        return await Deserialize<IList<ProjectStats>>(resp) ?? [];
+    }
+
+    public async Task<int> CountObservationsForProjectAsync(string project)
+    {
+        var allStats = await ListProjectsWithStatsAsync();
+        var found = allStats.FirstOrDefault(s => s.Name == project);
+        return found?.ObservationCount ?? 0;
+    }
+
+    public async Task<PruneResult> PruneProjectAsync(string project)
+    {
+        var resp = await Post($"projects/prune", new { project });
+        await EnsureSuccess(resp, "PruneProject");
+        return await Deserialize<PruneResult>(resp) ?? new PruneResult { Project = project };
     }
 
     // ─── Sync chunks (not supported in proxy mode) ────────────────────────────

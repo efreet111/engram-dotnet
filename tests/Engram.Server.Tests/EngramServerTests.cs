@@ -339,4 +339,65 @@ public class EngramServerTests : IAsyncDisposable
         }, JsonOpts);
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
     }
+
+    // ─── Projects list & stats ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task GET_projects_list_ReturnsProjectNames()
+    {
+        await SeedSession("s-pl1", "alpha");
+        await SeedSession("s-pl2", "beta");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-pl1", title = "obs-a", content = "c", type = "manual", project = "alpha",
+        }, JsonOpts);
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-pl2", title = "obs-b", content = "c", type = "manual", project = "beta",
+        }, JsonOpts);
+
+        var resp = await _client.GetAsync("/projects/list");
+        resp.EnsureSuccessStatusCode();
+
+        // API returns a JSON array of strings: ["alpha","beta"]
+        var names = await resp.Content.ReadFromJsonAsync<List<string>>(JsonOpts);
+        Assert.NotNull(names);
+        Assert.Equal(2, names.Count);
+        Assert.Contains("alpha", names);
+        Assert.Contains("beta", names);
+    }
+
+    [Fact]
+    public async Task GET_projects_list_ReturnsEmpty_WhenNoData()
+    {
+        var resp = await _client.GetAsync("/projects/list");
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Empty(json);
+    }
+
+    [Fact]
+    public async Task GET_projects_stats_ReturnsStatsWithCounts()
+    {
+        await SeedSession("s-ps1", "proj-stats");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-ps1", title = "obs-1", content = "c", type = "manual", project = "proj-stats",
+        }, JsonOpts);
+
+        var resp = await _client.GetAsync("/projects/stats");
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotEmpty(json);
+
+        var first = json[0] as JsonObject;
+        Assert.NotNull(first);
+        Assert.Equal("proj-stats", first["name"]?.ToString());
+        Assert.True(first["observation_count"]?.GetValue<int>() >= 1);
+        Assert.True(first["session_count"]?.GetValue<int>() >= 1);
+    }
 }
