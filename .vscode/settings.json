@@ -1,6 +1,5 @@
 {
   "chat.agent.enabled": true,
-  "chat.mcp.enabled": true,
   "chat.mcp.access": "all",
   "chat.promptFiles": true,
   "mcp.autoStart": true,

@@ -71,18 +71,19 @@ Implementar `PostgresStore` como tercer implementor de `IStore`, junto a `Sqlite
 
 Exportar memorias a un vault de Obsidian como archivos `.md` con frontmatter YAML.
 
-**Funcionalidad**:
-- CLI `engram obsidian-export` con flags: `--vault`, `--project`, `--scope`, `--limit`, `--since`, `--watch`
-- Cada observación → un archivo `.md` con YAML frontmatter
+**Estado**: ✅ Completo — implementado en rama `feat/obsidian-export`.
+
+**Implementación**:
+- CLI `engram obsidian-export` con flags: `--vault`, `--project`, `--include-personal`, `--force`, `--graph-config`, `--limit`
+- Cada observación → un archivo `.md` con YAML frontmatter + wikilinks
 - Sesiones y topic clusters → hub notes que generan graph view
 - Mapa de tipos: `architecture/decision → Architecture/`, `bugfix → Bugs & Fixes/`, etc.
-- Watch mode para sincronización continua
+- Scope security: `scope=personal` nunca se exporta sin `--include-personal`
+- Incremental export con state file (`.engram-sync-state.json`)
+- Deleted observation cleanup
+- 61 tests en `Engram.Obsidian.Tests`
 
 **Por qué**: El Go original ya lo tiene implementado (`internal/obsidian/`). Portear esta lógica es directo — no es diseño desde cero, es adaptación. Hace que las memorias sean auditables por humanos.
-
-**Seguridad**: `scope=personal` nunca se exporta sin permiso explícito. Solo `scope=team` por defecto.
-
-**Dependencias**: Ninguna — usa `IStore.ExportAsync()` y queries existentes.
 
 **Referencia**: Go original `internal/obsidian/` (exporter, hub, slug, markdown, state, watcher)
 
@@ -190,7 +191,7 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | SuggestTopicKey | ✅ Porteado | `Normalizers.SuggestTopicKey` |
 | Project drift detection (DetectProject, FindSimilar, Levenshtein) | ❌ No porteado | **Backlog #1** |
 | Tool deferral (deferred loading) | ❌ No porteado | En investigación — SDK .NET no lo soporta nativamente |
-| Obsidian brain exporter | ❌ No porteado | **Backlog #3** |
+| Obsidian brain exporter | ✅ Porteado | Fase A completo — CLI + exporter + hubs + tests |
 | Cloud/PostgresStore + JWT auth | ⬅️ Removido del Go repo | Repo privado separado — nuestra implementación es independiente |
 | Docker Compose para PG | ⬅️ Removido del Go repo | Lo crearemos en nuestro Docker |
 | TUI (Bubbletea) | ❌ Excluido de v1 | El Go original lo tiene, .NET port no |
