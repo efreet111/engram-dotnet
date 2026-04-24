@@ -331,7 +331,7 @@ Authorization: Bearer <token>
 | [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas |
 | [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor compartido, systemd, backup, distribución de config |
 | [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code al servidor de equipo |
-| [PostgreSQL Setup](docs/rfcs/RFC-001-postgresql-backend.md) | RFC técnico del backend PostgreSQL |
+| [PostgreSQL Setup](docs/POSTGRES-SETUP.md) | Guía de configuración, Docker Compose, migración desde SQLite |
 | [TrueNAS SCALE](docker/README.md) | Instalar como Custom App en TrueNAS SCALE (Docker) |
 | [Deployment](docs/DEPLOYMENT.md) | Systemd + nginx en servidor Linux, backup, monitoreo |
 | [Desarrollo](docs/DEVELOPMENT.md) | Compilar, testear, publicar |
@@ -344,7 +344,7 @@ Authorization: Bearer <token>
 
 ```bash
 dotnet test
-# Store.Tests: 51 | Mcp.Tests: 32 | Server.Tests: 16 | HttpStore.Tests: 25 — 124 tests en total
+# Store.Tests: 110 | Postgres.Tests: 26 | Mcp.Tests: 34 | Server.Tests: 19 | HttpStore.Tests: 30 — 219 tests en total
 ```
 
 ---

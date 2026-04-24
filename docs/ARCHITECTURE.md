@@ -42,13 +42,20 @@ flowchart LR
     M1 -->|HTTP REST + X-Engram-User| S[engram serve\nASP.NET Core / Kestrel]
     M2 -->|HTTP REST + X-Engram-User| S
     M3 -->|HTTP REST + X-Engram-User| S
-    S -->|IStore| SS[SqliteStore]
-    SS --> DB[(SQLite + FTS5\n/data/engram/engram.db)]
+    S -->|IStore| DB[(Backend)]
+    DB -->|SQLite| SS[SqliteStore]
+    DB -->|PostgreSQL| PS[PostgresStore]
+    SS --> SQ[(SQLite + FTS5)]
+    PS --> PG[(PostgreSQL + tsvector)]
 ```
 
 El binario `engram mcp` detecta la variable de entorno `ENGRAM_URL`. Si está presente, instancia `HttpStore` (proxy HTTP) en lugar de `SqliteStore` — sin ningún cambio en el código del agente ni en el protocolo MCP.
 
-El agente decide qué vale la pena recordar y llama a `mem_save`. Engram persiste la observación con indexación FTS5, deduplicación automática y soporte de `topic_key` para temas evolutivos.
+El servidor `engram serve` selecciona el backend local según `ENGRAM_DB_TYPE`:
+- `sqlite` (default) → `SqliteStore` con SQLite + FTS5
+- `postgres` → `PostgresStore` con PostgreSQL + tsvector
+
+El agente decide qué vale la pena recordar y llama a `mem_save`. Engram persiste la observación con indexación FTS (FTS5 o tsvector según backend), deduplicación automática y soporte de `topic_key` para temas evolutivos.
 
 ```
 1. El agente completa trabajo significativo (bugfix, decisión de arquitectura, etc.)
@@ -176,10 +183,11 @@ string NormalizeTopicKey(string? topic)
 ```
 engram-dotnet/
 ├── src/
-│   ├── Engram.Store/              ← Motor central: SQLite + FTS5 + deduplicación
+│   ├── Engram.Store/              ← Motor central: persistencia multi-backend
 │   │   ├── IStore.cs              ← Interfaz pública (22 métodos)
 │   │   ├── SqliteStore.cs         ← Implementación SQLite (modo local)
-│   │   ├── HttpStore.cs           ← Implementación HTTP proxy (modo equipo)
+│   │   ├── PostgresStore.cs       ← Implementación PostgreSQL (modo equipo escalable)
+│   │   ├── HttpStore.cs           ← Implementación HTTP proxy (modo equipo remoto)
 │   │   ├── Models.cs              ← Session, Observation, Prompt, Stats, etc.
 │   │   ├── StoreConfig.cs         ← Configuración desde variables de entorno
 │   │   ├── Normalizers.cs         ← HashNormalized, NormalizeTopicKey, SanitizeFts5Query
@@ -193,12 +201,13 @@ engram-dotnet/
 │   │   └── EngramSync.cs          ← Export/import de chunks comprimidos
 │   └── Engram.Cli/                ← Entry point CLI + wiring DI
 │       └── Program.cs             ← Comandos serve, mcp, search, export, import, etc.
-│                                     Switch automático: ENGRAM_URL → HttpStore | SqliteStore
+│                                     Switch automático: ENGRAM_URL → HttpStore | ENGRAM_DB_TYPE → PostgresStore | SqliteStore
 ├── tests/
-│   ├── Engram.Store.Tests/        ← Unitarios + integración + tests de paridad (51)
-│   ├── Engram.Server.Tests/       ← Tests HTTP con WebApplicationFactory (16)
-│   ├── Engram.Mcp.Tests/          ← Tests de herramientas MCP + McpConfig (32)
-│   └── Engram.HttpStore.Tests/    ← Tests end-to-end de HttpStore con servidor real (25)
+│   ├── Engram.Store.Tests/        ← Unitarios + integración + tests de paridad (110)
+│   ├── Engram.Postgres.Tests/     ← Tests de paridad con Testcontainers (26)
+│   ├── Engram.Server.Tests/       ← Tests HTTP con WebApplicationFactory (19)
+│   ├── Engram.Mcp.Tests/          ← Tests de herramientas MCP + McpConfig (34)
+│   └── Engram.HttpStore.Tests/    ← Tests end-to-end de HttpStore con servidor real (30)
 └── config/
     ├── cursor/
     │   ├── mcp.json               ← Config MCP para Cursor
@@ -242,11 +251,11 @@ flowchart TD
 |---|---|
 | Lenguaje | C# / .NET 10 LTS |
 | HTTP | ASP.NET Core Minimal API (Kestrel) |
-| Base de datos | SQLite via `Microsoft.Data.Sqlite` + FTS5 |
+| Base de datos | SQLite via `Microsoft.Data.Sqlite` + FTS5 **o** PostgreSQL via `Npgsql` + tsvector |
 | MCP | `ModelContextProtocol` NuGet (Microsoft oficial) |
 | CLI | `System.CommandLine` |
 | Auth | `Microsoft.AspNetCore.Authentication.JwtBearer` (opcional) |
-| Tests | xUnit + WebApplicationFactory + tests de paridad |
+| Tests | xUnit + WebApplicationFactory + Testcontainers.PostgreSql |
 | Deploy | Self-contained linux-x64 (binario único, sin runtime externo) |
 
 ---
@@ -280,13 +289,22 @@ El switch entre modo local y modo equipo se resuelve via `IStore`:
 // Program.cs — comando mcp
 IStore store = config.IsRemote
     ? new HttpStore(config)
-    : new SqliteStore(config);
+    : config.IsPostgres
+        ? new PostgresStore(config)
+        : new SqliteStore(config);
 ```
 
-`HttpStore` implementa exactamente la misma interfaz que `SqliteStore`. El servidor MCP y las herramientas no saben con qué implementación están trabajando. Este es el **Strategy Pattern**: la estrategia de persistencia se inyecta, no se hardcodea.
+`HttpStore` y `PostgresStore` implementan exactamente la misma interfaz que `SqliteStore`. El servidor MCP y las herramientas no saben con qué implementación están trabajando. Este es el **Strategy Pattern**: la estrategia de persistencia se inyecta, no se hardcodea.
+
+| Implementación | Backend | FTS | Uso |
+|---|---|---|---|
+| `SqliteStore` | SQLite + FTS5 | FTS5 virtual table | Local, 1-4 devs |
+| `PostgresStore` | PostgreSQL 15+ | tsvector + GIN index | Equipo, 5+ devs |
+| `HttpStore` | HTTP proxy | Delega al servidor | Modo remoto |
 
 Las únicas diferencias visibles desde el exterior:
 - `SqliteStore` lee/escribe un archivo `.db` local
+- `PostgresStore` conecta a PostgreSQL con schema auto-creado
 - `HttpStore` hace requests HTTP al servidor centralizado con header `X-Engram-User`
 
 ### Namespacing automático con ENGRAM_USER — Modelo team/personal
@@ -346,6 +364,8 @@ El agente nunca necesita conocer su usuario ni el prefijo — el namespacing es 
 
 El schema es **idéntico** al proyecto Go original para permitir migración directa de datos.
 
+### SQLite (SqliteStore)
+
 Tablas principales:
 - `sessions` — sesiones de trabajo de agentes
 - `observations` — memorias persistidas (con `normalized_hash`, `topic_key`, `revision_count`, `duplicate_count`)
@@ -364,6 +384,18 @@ PRAGMA busy_timeout=5000;
 PRAGMA synchronous=NORMAL;
 PRAGMA foreign_keys=ON;
 ```
+
+### PostgreSQL (PostgresStore)
+
+Mismas tablas que SQLite, con diferencias en el FTS:
+
+- **Full-Text Search**: `search_vector tsvector GENERATED ALWAYS AS STORED` en la tabla `observations`
+- **Índices GIN**: `idx_obs_fts` y `idx_obs_fts_active WHERE deleted_at IS NULL`
+- **Fechas**: `TEXT` (ISO-8601) en v1, con casts explícitos `created_at::timestamptz` para queries de tiempo
+- **Auto-increment**: `BIGSERIAL` en lugar de `INTEGER AUTOINCREMENT`
+- **Default timestamps**: `NOW() AT TIME ZONE 'utc'` en lugar de `datetime('now')`
+
+Ver [docs/POSTGRES-SETUP.md](POSTGRES-SETUP.md) para detalles de configuración y migración.
 
 ---
 
