@@ -10,6 +10,7 @@
 //   engram import <file>    Import from JSON
 //   engram sync             Export/import gzip chunks
 //   engram projects         Manage projects
+//   engram obsidian-export   Export memories to Obsidian vault
 //   engram version          Print version
 
 using System.CommandLine;
@@ -19,6 +20,7 @@ using Engram.Mcp;
 using Engram.Server;
 using Engram.Store;
 using Engram.Sync;
+using Engram.Obsidian;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -563,6 +565,72 @@ projectsCmd.AddCommand(projectsListCmd);
 projectsCmd.AddCommand(consolidateCmd);
 projectsCmd.AddCommand(pruneCmd);
 
+// ─── obsidian-export ──────────────────────────────────────────────────────────
+
+var obsidianCmd          = new Command("obsidian-export", "Export memories to an Obsidian vault as markdown files");
+var obsidianVaultOpt     = new Option<string>("--vault", "Path to the Obsidian vault root (required)");
+var obsidianProjectOpt   = new Option<string?>("--project", "Filter export to a single project");
+var obsidianPersonalOpt  = new Option<bool>("--include-personal", "Include scope=personal observations (default: team only)");
+var obsidianForceOpt     = new Option<bool>("--force", "Ignore state file, do a full re-export");
+var obsidianGraphOpt     = new Option<string>("--graph-config", () => "preserve", "Graph config mode: preserve|force|skip (default: preserve)");
+var obsidianLimitOpt     = new Option<int>("--limit", () => 0, "Max observations to export (0 = no limit)");
+obsidianCmd.AddOption(obsidianVaultOpt);
+obsidianCmd.AddOption(obsidianProjectOpt);
+obsidianCmd.AddOption(obsidianPersonalOpt);
+obsidianCmd.AddOption(obsidianForceOpt);
+obsidianCmd.AddOption(obsidianGraphOpt);
+obsidianCmd.AddOption(obsidianLimitOpt);
+obsidianCmd.SetHandler(async (string vault, string? project, bool includePersonal, bool force, string graphConfig, int limit) =>
+{
+    if (string.IsNullOrEmpty(vault))
+    {
+        Console.Error.WriteLine("error: --vault path is required");
+        return;
+    }
+
+    GraphConfigMode graphMode;
+    try
+    {
+        graphMode = GraphConfig.Parse(graphConfig);
+    }
+    catch (ArgumentException ex)
+    {
+        Console.Error.WriteLine($"error: {ex.Message}");
+        return;
+    }
+
+    var storeCfg = StoreConfig.FromEnvironment();
+    using var store = OpenStore(storeCfg);
+    var reader = new StoreReaderAdapter(store);
+
+    var config = new ExportConfig
+    {
+        VaultPath         = vault,
+        Project           = project,
+        IncludePersonal   = includePersonal,
+        Force             = force,
+        GraphConfig       = graphMode,
+        Limit             = limit,
+    };
+
+    var exporter = new Exporter(reader, config);
+    var result = exporter.Export();
+
+    var word = result.Created == 1 ? "file" : "files";
+    Console.WriteLine($"Obsidian export complete:");
+    Console.WriteLine($"  Created:  {result.Created} {word}");
+    Console.WriteLine($"  Updated:  {result.Updated}");
+    Console.WriteLine($"  Deleted:  {result.Deleted}");
+    Console.WriteLine($"  Skipped:  {result.Skipped}");
+    Console.WriteLine($"  Hubs:     {result.HubsCreated}");
+    if (result.Errors.Count > 0)
+    {
+        Console.WriteLine($"  Errors:   {result.Errors.Count}");
+        foreach (var err in result.Errors)
+            Console.Error.WriteLine($"    - {err.Message}");
+    }
+}, obsidianVaultOpt, obsidianProjectOpt, obsidianPersonalOpt, obsidianForceOpt, obsidianGraphOpt, obsidianLimitOpt);
+
 // ─── version ──────────────────────────────────────────────────────────────────
 
 var versionCmd = new Command("version", "Print version");
@@ -580,6 +648,7 @@ root.AddCommand(exportCmd);
 root.AddCommand(importCmd);
 root.AddCommand(syncCmd);
 root.AddCommand(projectsCmd);
+root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);
 
 return await root.InvokeAsync(args);

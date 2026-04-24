@@ -21,5 +21,6 @@
     <ProjectReference Include="../Engram.Server/Engram.Server.csproj" />
     <ProjectReference Include="../Engram.Mcp/Engram.Mcp.csproj" />
     <ProjectReference Include="../Engram.Sync/Engram.Sync.csproj" />
+    <ProjectReference Include="../Engram.Obsidian/Engram.Obsidian.csproj" />
   </ItemGroup>
 </Project>
