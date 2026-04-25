@@ -23,13 +23,14 @@ COPY src/ src/
 COPY tests/ tests/
 
 ARG ENGRAM_VERSION=dev
+# Strip leading 'v' from version tag (NuGet requires semver: "1.3.0" not "v1.3.0")
 RUN dotnet publish src/Engram.Cli/Engram.Cli.csproj \
     -c Release \
     -o /app/publish \
     -p:PublishSingleFile=true \
     -p:PublishTrimmed=false \
     -p:InvariantGlobalization=true \
-    -p:Version=${ENGRAM_VERSION} \
+    -p:Version=${ENGRAM_VERSION#v} \
     --self-contained false
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
