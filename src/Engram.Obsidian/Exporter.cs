@@ -166,6 +166,10 @@ public class Exporter
             // Collect for hub generation
             var ref2 = ObsToRef(obs);
             CollectRefs(ref2, obs, sessionObsRefs, topicObsRefs);
+
+            // Check limit: stop processing if we've reached the max
+            if (_config.Limit > 0 && (result.Created + result.Updated) >= _config.Limit)
+                break;
         }
 
         // ── Generate session hub notes ────────────────────────────────────────

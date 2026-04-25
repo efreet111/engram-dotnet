@@ -331,7 +331,7 @@ The system MUST support filtering export to a single project via `--project`.
 
 The system MUST only export `scope=team` observations by default. `scope=personal` observations require the `--include-personal` flag.
 
-Observations with `scope="project"` (legacy) MUST be treated as `scope="team"` for export purposes.
+Observations with `scope="project"` (legacy) MUST be treated as `scope="personal"` for export purposes, following the two-tier memory model (PR #1) where `NormalizeScope()` maps any non-"team" value to "personal".
 
 #### Scenario: Default export — team only
 
@@ -346,11 +346,11 @@ Observations with `scope="project"` (legacy) MUST be treated as `scope="team"` f
 - WHEN `Export()` is called with `--include-personal`
 - THEN all 8 files are created
 
-#### Scenario: Legacy scope "project" treated as team
+#### Scenario: Legacy scope "project" treated as personal
 
 - GIVEN an observation with `scope = "project"` (legacy)
 - WHEN `Export()` is called without `--include-personal`
-- THEN the observation IS exported (treated as team)
+- THEN the observation is NOT exported (treated as personal)
 
 ---
 
