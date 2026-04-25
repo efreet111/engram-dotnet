@@ -46,6 +46,7 @@ RUN useradd --create-home --shell /bin/bash engram
 RUN mkdir -p /data/engram && chown engram:engram /data/engram
 
 COPY --from=build /app/publish .
+RUN chmod +x ./engram
 
 USER engram
 
@@ -58,4 +59,5 @@ EXPOSE 7437
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7437/health || exit 1
 
-ENTRYPOINT ["dotnet", "engram.dll"]
+# PublishSingleFile with Exe output produces a native executable (no .dll)
+ENTRYPOINT ["./engram"]
