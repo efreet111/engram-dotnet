@@ -243,6 +243,14 @@ engram sync --status                Estado del sync (chunks totales, sincronizad
 
 engram projects list                Listar todos los proyectos
 
+engram obsidian-export              Exportar memorias a un vault de Obsidian
+  --vault <path>                    Ruta al vault de Obsidian (requerido)
+  --project <name>                  Filtrar por proyecto
+  --include-personal                Incluir memorias de scope personal
+  --force                           Re-export completo (ignora estado incremental)
+  --graph-config <mode>             Graph config: preserve|force|skip (default: preserve)
+  --limit <n>                       Máximo de observaciones (0 = sin límite)
+
 engram version                      Mostrar versión
 ```
 
@@ -344,7 +352,7 @@ Authorization: Bearer <token>
 
 ```bash
 dotnet test
-# Store.Tests: 110 | Postgres.Tests: 26 | Mcp.Tests: 34 | Server.Tests: 19 | HttpStore.Tests: 30 — 219 tests en total
+# Store.Tests: 110 | Postgres.Tests: 26 | Mcp.Tests: 34 | Server.Tests: 19 | HttpStore.Tests: 30 | Obsidian.Tests: 61 — 280 tests en total (254 sin Docker)
 ```
 
 ---
