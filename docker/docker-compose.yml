@@ -1,57 +1,57 @@
 version: "3.8"
 
-services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: engram-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: engram
-      POSTGRES_USER: engram
-      POSTGRES_PASSWORD: ${ENGRAM_PG_PASSWORD:-engram-secret}
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U engram -d engram"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# ─────────────────────────────────────────────────────────────────────────────
+# Engram — Docker Compose (PostgreSQL externo de TrueNAS Apps)
+#
+# REQUISITOS:
+#   1. PostgreSQL instalado como App en TrueNAS SCALE
+#   2. Puerto de PostgreSQL mapeado al host (ej: 5432 → 5432)
+#   3. Archivo .env con las credenciales (ver .env.example)
+#
+# USO:
+#   cp .env.example .env          # editar con tus credenciales
+#   docker compose up -d --build  # construir y levantar
+#   docker compose logs -f        # ver logs
+# ─────────────────────────────────────────────────────────────────────────────
 
+services:
   engram:
     image: engram-dotnet:latest
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
       args:
         ENGRAM_VERSION: v1.3.0
     container_name: engram
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
 
     ports:
       - "7437:7437"
 
+    # Permite acceder al PostgreSQL del host (TrueNAS Apps) desde dentro del container
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     volumes:
-      # Montar el dataset de TrueNAS donde se guardan los datos (solo para modo SQLite)
-      # Cambiar la ruta izquierda por el path de tu dataset en TrueNAS
-      # Ejemplo: /mnt/tank/engram:/data/engram
-      - /mnt/tank/engram:/data/engram
+      # Dataset de TrueNAS para datos (SQLite fallback, exports, etc.)
+      # Ajustar la ruta izquierda si tu dataset está en otro lugar
+      - /mnt/Pool_8TB/engram_data:/data/engram
 
     environment:
       # Backend selection: sqlite (default) | postgres
-      ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-sqlite}
+      ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-postgres}
       ENGRAM_DATA_DIR: /data/engram
       ENGRAM_PORT: "7437"
-      # PostgreSQL connection string (required when ENGRAM_DB_TYPE=postgres)
-      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=${ENGRAM_PG_PASSWORD:-engram-secret}"
+
+      # PostgreSQL connection string — apunta al PostgreSQL de TrueNAS Apps
+      # host.docker.internal se resuelve a la IP del host via extra_hosts
+      ENGRAM_PG_CONNECTION: "Host=${ENGRAM_PG_HOST:-host.docker.internal};Port=${ENGRAM_PG_PORT:-5432};Database=${ENGRAM_PG_DATABASE:-engram};Username=${ENGRAM_PG_USER:-engram};Password=${ENGRAM_PG_PASSWORD}"
+
       # Opcional — habilitar auth JWT (descomentar y cambiar el valor)
       # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
+
       # Opcional — CORS si accedés al servidor desde un dashboard web
-      # ENGRAM_CORS_ORIGINS: "http://truenas.local"
+      # ENGRAM_CORS_ORIGINS: "http://truenas.local:8080"
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
@@ -59,6 +59,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-volumes:
-  pg-data:

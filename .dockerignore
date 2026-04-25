@@ -1,0 +1,52 @@
+# Build artifacts
+**/bin/
+**/obj/
+**/*.dll
+**/*.pdb
+**/*.exe
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# SDD artifacts (not needed at runtime)
+sdd/
+.atl/
+design.md
+design_output.md
+design_result.md
+
+# Docker
+docker/
+Dockerfile
+.dockerignore
+
+# Docs
+docs/
+README.md
+LICENSE
+
+# CI
+.github/
+
+# Test results
+**/TestResults/
+*.trx
+coverage/
+
+# Env files (secrets)
+*.env
+*.env.local
+.env.*.local
+docker/.env
+
+# OS
+.DS_Store
+Thumbs.db
