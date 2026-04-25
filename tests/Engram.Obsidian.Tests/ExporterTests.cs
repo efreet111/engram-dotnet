@@ -470,4 +470,61 @@ public class ExporterTests
 
         Assert.Equal(2, result.Created); // Both team and personal
     }
+
+    // ─── Limit ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Export_Limit_StopsAtMaxObservations()
+    {
+        var store = new MockStoreReader
+        {
+            ExportData = new ExportData
+            {
+                Sessions = [new Session { Id = "sess-1", Project = "eng" }],
+                Observations =
+                [
+                    new Observation { Id = 1, SessionId = "sess-1", Type = "bugfix", Title = "Fix one", Content = "fix one", Scope = "team", CreatedAt = "2026-01-01T10:00:00Z", UpdatedAt = "2026-01-01T10:00:00Z", Project = "eng" },
+                    new Observation { Id = 2, SessionId = "sess-1", Type = "decision", Title = "Decision two", Content = "decision two", Scope = "team", CreatedAt = "2026-01-02T10:00:00Z", UpdatedAt = "2026-01-02T10:00:00Z", Project = "eng" },
+                    new Observation { Id = 3, SessionId = "sess-1", Type = "architecture", Title = "Arch three", Content = "arch three", Scope = "team", CreatedAt = "2026-01-03T10:00:00Z", UpdatedAt = "2026-01-03T10:00:00Z", Project = "eng" },
+                    new Observation { Id = 4, SessionId = "sess-1", Type = "pattern", Title = "Pattern four", Content = "pattern four", Scope = "team", CreatedAt = "2026-01-04T10:00:00Z", UpdatedAt = "2026-01-04T10:00:00Z", Project = "eng" },
+                    new Observation { Id = 5, SessionId = "sess-1", Type = "bugfix", Title = "Fix five", Content = "fix five", Scope = "team", CreatedAt = "2026-01-05T10:00:00Z", UpdatedAt = "2026-01-05T10:00:00Z", Project = "eng" },
+                ],
+                Prompts = [],
+            },
+        };
+
+        var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir, Limit = 3 });
+        var result = exporter.Export();
+
+        Assert.Equal(3, result.Created);
+        Assert.Equal(0, result.Skipped); // Remaining 2 were not processed (loop broke)
+
+        // Only 3 files should exist
+        var engDir = Path.Combine(_tempDir, "engram", "eng");
+        var fileCount = Directory.GetFiles(engDir, "*.md", SearchOption.AllDirectories).Length;
+        Assert.Equal(3, fileCount);
+    }
+
+    [Fact]
+    public void Export_LimitZero_NoLimit()
+    {
+        var store = new MockStoreReader
+        {
+            ExportData = new ExportData
+            {
+                Sessions = [new Session { Id = "sess-1", Project = "eng" }],
+                Observations =
+                [
+                    new Observation { Id = 1, SessionId = "sess-1", Type = "bugfix", Title = "Fix one", Content = "fix one", Scope = "team", CreatedAt = "2026-01-01T10:00:00Z", UpdatedAt = "2026-01-01T10:00:00Z", Project = "eng" },
+                    new Observation { Id = 2, SessionId = "sess-1", Type = "decision", Title = "Decision two", Content = "decision two", Scope = "team", CreatedAt = "2026-01-02T10:00:00Z", UpdatedAt = "2026-01-02T10:00:00Z", Project = "eng" },
+                ],
+                Prompts = [],
+            },
+        };
+
+        var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir, Limit = 0 });
+        var result = exporter.Export();
+
+        Assert.Equal(2, result.Created); // All observations exported
+    }
 }
