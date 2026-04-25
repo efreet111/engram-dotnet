@@ -61,3 +61,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # PublishSingleFile with Exe output produces a native executable (no .dll)
 ENTRYPOINT ["./engram"]
+CMD ["serve"]
