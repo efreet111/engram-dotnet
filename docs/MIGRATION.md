@@ -12,10 +12,11 @@ engram-dotnet es **100% compatible** con los datos y plugins del proyecto Go ori
 |---|---|
 | Schema SQLite | ✅ Idéntico |
 | API HTTP (22 endpoints) | ✅ Idéntica |
-| Protocolo MCP (15 herramientas) | ✅ Idéntico |
+| Protocolo MCP (15 herramientas) | ✅ Idéntica |
 | Formato de sync (gzip JSONL) | ✅ Idéntico |
 | Plugins (Claude Code, OpenCode, Gemini, Codex) | ✅ Sin cambios |
 | Archivo `engram.db` | ✅ Portable directamente |
+| Obsidian Export | ✅ Porteado (`engram obsidian-export`) |
 
 ---
 
@@ -79,7 +80,9 @@ Igual — todos los plugins leen `ENGRAM_URL`.
 El proyecto Go incluye una TUI interactiva (`engram tui`) con Bubbletea. **engram-dotnet v1 no incluye TUI.** Está planificada para la Fase 2.
 
 ### Obsidian export
-El proyecto Go incluye `engram obsidian-export`. **engram-dotnet v1 no lo incluye.** Está planificado para la Fase 2.
+✅ **Porteado** — `engram obsidian-export` está disponible con paridad funcional al Go original.
+Soporta export completo, incremental (`--force`), filtro por proyecto (`--project`),
+scope security (`--include-personal`), y graph config (`--graph-config`).
 
 ### Auth JWT
 El proyecto Go no tiene autenticación. engram-dotnet agrega autenticación JWT **opcional**:
