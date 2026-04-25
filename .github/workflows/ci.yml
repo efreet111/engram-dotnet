@@ -7,8 +7,9 @@ on:
     branches: ["main"]
 
 jobs:
-  test:
-    name: Build & Test
+  # ─── SQLite Tests (no Docker required) ──────────────────────────────────────
+  test-sqlite:
+    name: Test — SQLite
     runs-on: ubuntu-latest
 
     steps:
@@ -19,11 +20,64 @@ jobs:
         with:
           dotnet-version: "10.x"
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Build
         run: dotnet build --no-restore -c Release
 
-      - name: Test
-        run: dotnet test --no-build -c Release --logger "console;verbosity=normal"
+      - name: Test (SQLite only — exclude Postgres)
+        run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests" --logger "console;verbosity=normal"
+
+  # ─── PostgreSQL Tests (Testcontainers via Docker) ───────────────────────────
+  test-postgres:
+    name: Test — PostgreSQL
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Verify Docker is available
+        run: |
+          docker --version
+          docker info --format '{{.ServerVersion}}'
+          docker pull postgres:17-alpine
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test (PostgreSQL via Testcontainers)
+        run: dotnet test tests/Engram.Postgres.Tests/Engram.Postgres.Tests.csproj --no-build -c Release --logger "console;verbosity=normal" --logger "trx;LogFileName=test-results.trx"
+        timeout-minutes: 10
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-test-results
+          path: tests/Engram.Postgres.Tests/TestResults/test-results.trx
+          retention-days: 7

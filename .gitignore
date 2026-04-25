@@ -12,3 +12,34 @@ intrusctions.md
 
 # Variables de entorno locales (contienen rutas específicas de cada instalación)
 docker/.env
+
+# Secrets y connection strings — NUNCA commitear credenciales
+*.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.pfx
+
+# Connection string files (PostgreSQL, etc.)
+*.connectionstring
+pg-connection.txt
+**/connection-string.*
+
+# Test results (TRX, coverage)
+*.trx
+**/TestResults/
+coverage/
+*.coverage
+coverage.cobertura.xml
+
+# IDE / Editor
+.idea/
+*.suo
+*.sln.ide
+
+# SDD / AI agent temporary artifacts (root-level only — sdd/ changes are tracked)
+/.atl/
+design.md
+design_output.md
+design_result.md

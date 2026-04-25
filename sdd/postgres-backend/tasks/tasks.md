@@ -35,7 +35,7 @@
 - [ ] 4.4 Port search tests: FTS via `tsvector`, topic-key shortcut, multi-namespace merge, empty results
 - [ ] 4.5 Port prompt tests: `AddPromptAsync`, `RecentPromptsAsync`, `SearchPromptsAsync`
 - [ ] 4.6 Port context & stats tests, export/import tests, merge tests, sync tests
-- [ ] 4.7 Add CI GitHub Actions service for PostgreSQL (or Testcontainers) to run `Engram.Postgres.Tests`
+- [x] 4.7 Add CI GitHub Actions service for PostgreSQL (or Testcontainers) to run `Engram.Postgres.Tests`
 
 ## Phase 5: Documentation and Docker
 
@@ -43,4 +43,4 @@
 - [ ] 5.2 Update `docs/ARCHITECTURE.md`: add `PostgresStore` to diagrams, dependency graph, backend selection section
 - [ ] 5.3 Add PostgreSQL service to `docker/docker-compose.yml` (or create `docker/docker-compose.pg.yml`)
 - [ ] 5.4 Update `README.md` configuration table (already has `ENGRAM_DB_TYPE` and `ENGRAM_PG_CONNECTION` — verify accuracy)
-- [ ] 5.5 Ensure `.gitignore` excludes PG connection strings from logs/output
+- [x] 5.5 Ensure `.gitignore` excludes PG connection strings from logs/output
