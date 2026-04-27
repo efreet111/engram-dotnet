@@ -470,6 +470,24 @@ public sealed class PostgresStore : IStore
         var sql = new StringBuilder();
         var parms = new List<NpgsqlParameter>();
 
+        // When query is empty, skip FTS and return recent observations
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            sql.Append(@"
+                SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                       o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                       o.created_at, o.updated_at, o.deleted_at,
+                       0.0 as rank
+                FROM observations o
+                WHERE o.deleted_at IS NULL");
+            AppendSearchFilter(sql, parms, opts);
+            sql.Append(@"
+                ORDER BY o.created_at DESC
+                LIMIT @limit");
+            parms.Add(new NpgsqlParameter("@limit", opts.Limit > 0 ? opts.Limit : 10));
+            return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+        }
+
         // Topic-key shortcut
         sql.Append(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
@@ -504,6 +522,24 @@ public sealed class PostgresStore : IStore
     {
         var sql = new StringBuilder();
         var parms = new List<NpgsqlParameter>();
+
+        // When query is empty, skip FTS and return recent observations
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            sql.Append(@"
+                SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                       o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                       o.created_at, o.updated_at, o.deleted_at,
+                       0.0 as rank
+                FROM observations o
+                WHERE o.deleted_at IS NULL");
+            AppendProjectInClause(sql, parms, projects);
+            sql.Append(@"
+                ORDER BY o.created_at DESC
+                LIMIT @limit");
+            parms.Add(new NpgsqlParameter("@limit", opts.Limit > 0 ? opts.Limit : 10));
+            return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+        }
 
         // Topic-key shortcut across all projects
         sql.Append(@"
