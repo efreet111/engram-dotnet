@@ -113,24 +113,38 @@ No tenés que hacer nada especial — el agente guarda automáticamente lo impor
 
 ## Paso 3 — Configurar VS Code
 
-### Archivos a instalar
+### Opción A: Config por proyecto (recomendado)
 
-| Fuente (en el repo) | Destino |
-|---|---|
-| `config/vscode/mcp.json` | `~/.config/Code/User/mcp.json` |
-| `config/vscode/settings.json` | Merge manual en `~/.config/Code/User/settings.json` |
-| `config/vscode/prompts/engram.instructions.md` | `~/.config/Code/User/prompts/engram.instructions.md` |
+Crear `.vscode/mcp.json` en la raíz de tu proyecto:
 
-> **Nota sobre settings.json**: no reemplaces todo el archivo — solo mergeá las keys de `config/vscode/settings.json` en tu settings global existente. VS Code guarda tus preferencias personales ahí y no querés perderlas.
+```json
+{
+  "servers": {
+    "engram-team": {
+      "command": "/home/gantz/.local/bin/engram-dotnet",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_URL": "http://192.168.0.178:7437",
+        "ENGRAM_USER": "victor.silgado"
+      },
+      "autoApprove": [
+        "mem_save", "mem_search", "mem_context",
+        "mem_get_observation", "mem_session_summary",
+        "mem_update", "mem_suggest_topic_key",
+        "mem_capture_passive", "mem_session_start", "mem_session_end"
+      ]
+    }
+  }
+}
+```
 
-### Instalación
+> **Importante**: El binario `.NET` no acepta `--tools=agent`. Usá solo `["mcp"]` como args.
+
+### Opción B: Config global de VS Code
 
 ```bash
 # Crear directorio de prompts si no existe
 mkdir -p ~/.config/Code/User/prompts
-
-# MCP config (global — afecta todos los proyectos)
-cp config/vscode/mcp.json ~/.config/Code/User/mcp.json
 
 # Instrucciones para el agente (modo Agent)
 cp config/vscode/prompts/engram.instructions.md ~/.config/Code/User/prompts/engram.instructions.md
@@ -170,17 +184,66 @@ El protocolo engram **solo funciona en modo Agent**, no en modo Ask:
 
 ---
 
+## Paso 4 — Configurar OpenCode Go
+
+Si usás [OpenCode](https://github.com/Gentleman-Programming/opencode) como tu agente de IA principal:
+
+### Configurar en `~/.config/opencode/go.json` (o tu archivo de config)
+
+Agregar el servidor MCP `engram-team` en la sección de MCP:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "engram-team": {
+        "command": "/home/gantz/.local/bin/engram-dotnet",
+        "args": ["mcp"],
+        "env": {
+          "ENGRAM_URL": "http://192.168.0.178:7437",
+          "ENGRAM_USER": "victor.silgado"
+        }
+      }
+    }
+  }
+}
+```
+
+### Diferencia con el Engram Go local
+
+| Server | Comando | Backend | Uso |
+|--------|---------|---------|-----|
+| `engram` (Go) | `/home/linuxbrew/.linuxbrew/bin/engram mcp --tools=agent` | SQLite local (`~/.engram/engram.db`) | Memoria personal local |
+| `engram-team` (.NET) | `/home/gantz/.local/bin/engram-dotnet mcp` | HTTP → PostgreSQL en TrueNAS | Memoria compartida del equipo |
+
+Podés tener **ambos configurados** simultáneamente. El Go para tu memoria personal, el .NET para la del equipo.
+
+### Verificar en OpenCode
+
+1. Abrir OpenCode en cualquier proyecto
+2. Pedirle al agente: `¿qué recordás de sesiones anteriores?`
+3. Debería responder con contexto de PostgreSQL (no de SQLite local)
+4. O pedir: `buscá en memoria "PostgreSQL deployment"` para ver si encuentra datos reales
+
+---
+
 ## Verificar que funciona
 
 Podés verificar la conexión directamente desde la terminal:
 
 ```bash
 # Health check del servidor
-curl $ENGRAM_URL/health
-# → {"status":"ok","service":"engram","version":"1.0.0"}
+curl http://192.168.0.178:7437/health
+# → {"status":"ok","service":"engram","version":"1.1.0"}
 
-# Ver tus proyectos en el servidor (debería estar vacío al principio)
-curl $ENGRAM_URL/context
+# Ver stats (cantidad de memorias en PostgreSQL)
+curl http://192.168.0.178:7437/stats
+
+# Buscar memorias existentes
+curl "http://192.168.0.178:7437/search?q=postgresql&limit=3"
+
+# Ver contexto reciente de un proyecto
+curl "http://192.168.0.178:7437/context?project=engram-dotnet"
 ```
 
 O desde el agente — pedirle que guarde algo:

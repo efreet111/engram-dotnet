@@ -1,14 +1,15 @@
 [← Volver al README](../README.md)
 
-# Deployment
+# Deployment — engram-dotnet
 
 ---
 
-## Opción 1 — TrueNAS SCALE con Docker
+## Opción 1 — TrueNAS SCALE con PostgreSQL externo
 
 ### Prerequisitos
 
-- TrueNAS SCALE con Docker y Docker Compose habilitados
+- TrueNAS SCALE con Docker habilitado
+- PostgreSQL instalado como App en TrueNAS (puerto 5432 mapeado al host)
 - Git disponible en el sistema
 - Acceso SSH al servidor
 
@@ -21,69 +22,82 @@ git clone https://github.com/efreet111/engram-dotnet.git /mnt/Pool_8TB/engram_da
 cd /mnt/Pool_8TB/engram_data
 ```
 
-#### 2. Configurar datos y entorno
-
-Crear el directorio de datos y ajustar permisos:
+#### 2. Configurar variables de entorno
 
 ```bash
-mkdir -p /mnt/Pool_8TB/engram_data/database
-chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+cd docker
+cp .env.example .env
+nano .env
 ```
 
-Crear archivo de entorno:
-
-```bash
-cp docker/.env.example docker/.env
-```
-
-Editar `docker/.env` con la ruta correcta:
+Completar con las credenciales de tu PostgreSQL de TrueNAS:
 
 ```env
-ENGRAM_DATA_PATH=/mnt/Pool_8TB/engram_data/database
-ENGRAM_HOST_PORT=7437
+# PostgreSQL (TrueNAS Apps)
+ENGRAM_PG_HOST=host.docker.internal    # o la IP del TrueNAS
+ENGRAM_PG_PORT=5432
+ENGRAM_PG_DATABASE=postgres            # o la que configuraste en la app
+ENGRAM_PG_USER=postgres                # o la que configuraste en la app
+ENGRAM_PG_PASSWORD=tu_password_aqui
+
+# Backend
+ENGRAM_DB_TYPE=postgres
+
+# Opcional
+# ENGRAM_JWT_SECRET=secreto_seguro
+# ENGRAM_CORS_ORIGINS=http://truenas.local:8080
 ```
 
-> **Nota**: El host monta `ENGRAM_DATA_PATH`; dentro del contenedor, la app lo ve como `ENGRAM_DATA_DIR=/app/database`.
-
-#### 3. Construir la imagen Docker
+#### 3. Construir y levantar
 
 ```bash
-docker compose -f docker/docker-compose.yml build
+cd /mnt/Pool_8TB/engram_data/docker
+sudo docker compose up -d --build
 ```
 
-#### 4. Levantar el servicio
+#### 4. Verificar
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+# Container corriendo
+sudo docker ps --filter name=^engram$
+
+# Logs de arranque
+sudo docker compose logs engram 2>&1 | grep "starting"
+# → [engram] starting HTTP server on :7437 (PostgreSQL)
+
+# Health check
+curl http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.1.0"}
+
+# Stats
+curl http://localhost:7437/stats
 ```
-
-#### 5. Verificar el estado
-
-```bash
-wget -qO- http://localhost:7437/health
-# → {"status":"ok","service":"engram","version":"1.0.0"}
-```
-
-#### 6. Logs en tiempo real
-
-```bash
-docker compose -f docker/docker-compose.yml logs -f
-```
-
-### Variables de entorno opcionales
-
-| Variable             | Descripción                                                                 |
-|----------------------|-----------------------------------------------------------------------------|
-| `ENGRAM_JWT_SECRET`  | Define un secreto para habilitar autenticación JWT                         |
-| `ENGRAM_CORS_ORIGINS`| Lista separada por comas con orígenes permitidos para CORS                  |
 
 ### Actualizar el servicio
 
 ```bash
-docker compose -f docker/docker-compose.yml down
+cd /mnt/Pool_8TB/engram_data
 git pull
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml up -d
+cd docker
+sudo docker compose down
+sudo docker compose up -d --build
+```
+
+### Migrar datos desde Engram Go (SQLite)
+
+Si venís del Engram original en Go:
+
+```bash
+# 1. Exportar desde Go (en tu máquina local)
+curl -s http://127.0.0.1:7437/export -o /tmp/engram-migration.json
+
+# 2. Importar en el servidor .NET (desde tu máquina)
+curl -X POST http://192.168.0.178:7437/import \
+  -H "Content-Type: application/json" \
+  -d @/tmp/engram-migration.json
+
+# 3. Verificar en el servidor
+curl http://192.168.0.178:7437/stats
 ```
 
 ---
@@ -94,64 +108,38 @@ docker compose -f docker/docker-compose.yml up -d
 
 - Linux x64 (Ubuntu 20.04+, Debian 11+, RHEL 8+, etc.)
 - Acceso root o sudo
+- PostgreSQL 15+ instalado (o usar SQLite como fallback)
 
 ### Instalación del binario
 
-#### Opción 1: Descargar binario precompilado
-
 ```bash
+# Descargar binario precompilado
 sudo mkdir -p /opt/engram
 curl -L https://github.com/efreet111/engram-dotnet/releases/latest/download/engram-linux-x64 -o /opt/engram/engram
 sudo chmod +x /opt/engram/engram
 
-# Verificar instalación
+# Verificar
 /opt/engram/engram version
 ```
 
-#### Opción 2: Compilar desde fuente
-
-```bash
-git clone https://github.com/efreet111/engram-dotnet
-cd engram-dotnet
-dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
-sudo mv dist/engram /opt/engram/
-sudo chmod +x /opt/engram/engram
-```
-
-### Configuración
-
-1. Crear directorio de datos:
-
-```bash
-sudo mkdir -p /data/engram
-sudo useradd -r -s /bin/false engram
-sudo chown engram:engram /data/engram
-```
-
-2. Crear archivo de entorno en `/etc/engram/server.env`:
+### Configuración con PostgreSQL
 
 ```bash
 sudo mkdir -p /etc/engram
 sudo tee /etc/engram/server.env > /dev/null <<'EOF'
-ENGRAM_DATA_DIR=/data/engram
+ENGRAM_DB_TYPE=postgres
+ENGRAM_PG_CONNECTION=Host=localhost;Database=engram;Username=engram;Password=secreto
 ENGRAM_PORT=7437
-
-# Opcional
-# ENGRAM_JWT_SECRET=secreto_seguro
-# ENGRAM_CORS_ORIGINS=http://frontend.ejemplo.com
 EOF
 sudo chmod 640 /etc/engram/server.env
-sudo chown root:engram /etc/engram/server.env
 ```
 
 ### Systemd
 
-1. Crear servicio systemd en `/etc/systemd/system/engram.service`:
-
 ```ini
 [Unit]
-Description=Engram — Servidor de IA
-After=network.target
+Description=Engram — Servidor de memoria para IA
+After=network.target postgresql.service
 
 [Service]
 Type=simple
@@ -162,17 +150,9 @@ EnvironmentFile=/etc/engram/server.env
 Restart=on-failure
 RestartSec=5s
 
-# Seguridad
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/data/engram
-
 [Install]
 WantedBy=multi-user.target
 ```
-
-2. Habilitar y arrancar:
 
 ```bash
 sudo systemctl daemon-reload
@@ -181,98 +161,103 @@ sudo systemctl start engram
 sudo systemctl status engram
 ```
 
-### Verificación del servicio
-
-```bash
-curl http://localhost:7437/health
-sudo systemctl status engram
-sudo journalctl -u engram -f
-```
-
-### Actualizar el binario
-
-```bash
-sudo systemctl stop engram
-sudo cp nuevo-engram /opt/engram/engram
-sudo chmod +x /opt/engram/engram
-sudo systemctl start engram
-sudo systemctl status engram
-```
-
 ---
 
-## Reverse proxy con nginx
+## Configuración de clientes MCP
 
-### Configuración
+### VS Code (`.vscode/mcp.json` del proyecto)
 
-```nginx
-server {
-    listen 80;
-    server_name engram.example.com;
-
-    location / {
-        proxy_pass http://localhost:7437;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
+```json
+{
+  "servers": {
+    "engram-team": {
+      "command": "/home/gantz/.local/bin/engram-dotnet",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_URL": "http://192.168.0.178:7437",
+        "ENGRAM_USER": "victor.silgado"
+      },
+      "autoApprove": [
+        "mem_save", "mem_search", "mem_context",
+        "mem_get_observation", "mem_session_summary",
+        "mem_update", "mem_suggest_topic_key",
+        "mem_capture_passive", "mem_session_start", "mem_session_end"
+      ]
     }
+  }
 }
 ```
 
-> **Nota**: Actualizar `server_name` con el dominio real.
+### OpenCode Go (`~/.config/opencode/go.json` o similar)
 
-Reiniciar nginx:
+En la sección de MCP de tu config de OpenCode:
 
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
+```json
+{
+  "mcp": {
+    "servers": {
+      "engram-team": {
+        "command": "/home/gantz/.local/bin/engram-dotnet",
+        "args": ["mcp"],
+        "env": {
+          "ENGRAM_URL": "http://192.168.0.178:7437",
+          "ENGRAM_USER": "victor.silgado"
+        }
+      }
+    }
+  }
+}
 ```
 
----
+### Variables de entorno del cliente
 
-## Configuración en máquinas de desarrollo
+| Variable | Valor | Propósito |
+|----------|-------|-----------|
+| `ENGRAM_URL` | `http://192.168.0.178:7437` | URL del servidor centralizado |
+| `ENGRAM_USER` | `victor.silgado` | Identidad del desarrollador (namespacing) |
 
-Cada usuario debe configurar:
-
-```bash
-export ENGRAM_URL=http://servidor:7437
-export ENGRAM_USER=your.name
-```
+> **Nota**: El binario `.NET` no soporta `--tools=agent` como el Go. Usa solo `mcp` sin flags adicionales.
 
 ---
 
 ## Monitoreo básico
 
-Comandos útiles:
-
 ```bash
 # Ver servicio
-sudo systemctl status engram
-
-# Logs recientes
-sudo journalctl -u engram
+sudo docker ps --filter name=engram
+sudo docker compose logs -f
 
 # Health check
 curl http://localhost:7437/health
 
 # Stats del servidor
 curl http://localhost:7437/stats
+
+# Buscar memorias
+curl "http://localhost:7437/search?q=postgresql&limit=5"
+
+# Contexto reciente
+curl "http://localhost:7437/context?project=engram-dotnet"
 ```
 
 ---
 
 ## Backup de datos
 
-### SQLite
+### PostgreSQL (desde TrueNAS)
 
 ```bash
-cp /data/engram/engram.db /backup/engram-$(date +%Y%m%d).db
+# Export completo via API
+curl http://localhost:7437/export -o /backup/engram-$(date +%Y%m%d).json
+
+# O pg_dump directo (si tenés acceso a la DB)
+pg_dump -h 192.168.0.178 -p 5432 -U postgres engram > /backup/engram-$(date +%Y%m%d).sql
 ```
 
-### Export JSON
+### Importar backup
 
 ```bash
-curl http://localhost:7437/export -o /backup/engram-$(date +%Y%m%d).json
+curl -X POST http://localhost:7437/import \
+  -H "Content-Type: application/json" \
+  -d @/backup/engram-20260427.json
 ```
