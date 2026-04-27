@@ -218,7 +218,6 @@ public static class EngramServer
     private static async Task<IResult> HandleSearch(HttpContext ctx, IStore store)
     {
         var query = ctx.Request.Query["q"].FirstOrDefault() ?? "";
-        if (string.IsNullOrEmpty(query)) return Error("q parameter is required");
 
         var results = await store.SearchAsync(query, new SearchOptions
         {
