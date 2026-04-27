@@ -636,31 +636,97 @@ public sealed class PostgresStore : IStore
 
     public async Task<string> FormatContextAsync(string? project, string? scope)
     {
-        if (!string.IsNullOrEmpty(project))
-            return await FormatContextAsync(new[] { project }, scope);
+        var sessions     = await RecentSessionsAsync(project, 5);
+        var observations = await RecentObservationsAsync(project, scope, 20);
+        var prompts      = await RecentPromptsAsync(project, 10);
 
-        var names = await ListProjectNamesAsync();
-        if (names.Count == 0) return "";
-        return await FormatContextAsync(names, scope);
+        if (sessions.Count == 0 && observations.Count == 0 && prompts.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder("## Memory from Previous Sessions\n\n");
+
+        if (sessions.Count > 0)
+        {
+            sb.Append("### Recent Sessions\n");
+            foreach (var s in sessions)
+            {
+                var sum = s.Summary != null ? $": {Truncate(s.Summary, 200)}" : "";
+                sb.AppendLine($"- **{s.Project}** ({s.StartedAt}){sum} [{s.ObservationCount} observations]");
+            }
+            sb.AppendLine();
+        }
+
+        if (prompts.Count > 0)
+        {
+            sb.Append("### Recent User Prompts\n");
+            foreach (var p in prompts)
+                sb.AppendLine($"- {p.CreatedAt}: {Truncate(p.Content, 200)}");
+            sb.AppendLine();
+        }
+
+        if (observations.Count > 0)
+        {
+            sb.Append("### Recent Observations\n");
+            foreach (var o in observations)
+                sb.AppendLine($"- [{o.Type}] **{o.Title}**: {Truncate(o.Content, 300)}");
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
     }
 
     public async Task<string> FormatContextAsync(IList<string> projects, string? scope)
     {
-        var sb = new StringBuilder();
+        if (projects.Count == 0) return string.Empty;
+
+        var sessions = await RecentSessionsAsync(projects[0], 5);
+
+        var allObservations = new List<Observation>();
         foreach (var proj in projects)
         {
-            var opts = new SearchOptions { Limit = 5, Project = proj, Scope = scope };
-            var results = await SearchAsync("", opts);
-            if (results.Count == 0) continue;
+            var obs = await RecentObservationsAsync(proj, scope, 20);
+            allObservations.AddRange(obs);
+        }
 
-            sb.AppendLine($"## Project: {proj}");
-            foreach (var r in results)
+        var merged = allObservations
+            .OrderByDescending(o => o.UpdatedAt)
+            .Take(20)
+            .ToList();
+
+        var prompts = await RecentPromptsAsync(projects[0], 10);
+
+        if (sessions.Count == 0 && merged.Count == 0 && prompts.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder("## Memory from Previous Sessions\n\n");
+
+        if (sessions.Count > 0)
+        {
+            sb.Append("### Recent Sessions\n");
+            foreach (var s in sessions)
             {
-                var o = r.Observation;
-                sb.AppendLine($"- [{o.Type}] {o.Title} ({o.CreatedAt})");
+                var sum = s.Summary != null ? $": {Truncate(s.Summary, 200)}" : "";
+                sb.AppendLine($"- **{s.Project}** ({s.StartedAt}){sum} [{s.ObservationCount} observations]");
             }
             sb.AppendLine();
         }
+
+        if (prompts.Count > 0)
+        {
+            sb.Append("### Recent User Prompts\n");
+            foreach (var p in prompts)
+                sb.AppendLine($"- {p.CreatedAt}: {Truncate(p.Content, 200)}");
+            sb.AppendLine();
+        }
+
+        if (merged.Count > 0)
+        {
+            sb.Append("### Recent Observations\n");
+            foreach (var o in merged)
+                sb.AppendLine($"- [{o.Type}] **{o.Title}**: {Truncate(o.Content, 300)}");
+            sb.AppendLine();
+        }
+
         return sb.ToString();
     }
 
@@ -1206,6 +1272,13 @@ public sealed class PostgresStore : IStore
         var bytes = new byte[8];
         System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
         return prefix + "-" + Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        if (s == null) return "";
+        if (s.Length <= max) return s;
+        return s[..max] + "...";
     }
 }
 
