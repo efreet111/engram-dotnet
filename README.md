@@ -118,6 +118,34 @@ Todas las opciones se controlan via variables de entorno:
 | `ENGRAM_DB_TYPE` | `sqlite` | Backend de persistencia: `sqlite` \| `postgres` |
 | `ENGRAM_PG_CONNECTION` | — | Connection string de PostgreSQL (requerido si `ENGRAM_DB_TYPE=postgres`). Ej: `Host=db;Database=engram;Username=engram;Password=secret` |
 
+### ¿Qué backend estoy usando?
+
+Engram soporta 3 backends de persistencia. El sistema elige automáticamente según las variables de entorno configuradas:
+
+```
+¿ENGRAM_URL definido?
+  ├─ SÍ  → HttpStore (servidor remoto vía HTTP REST)
+  └─ NO  → ¿ENGRAM_DB_TYPE=postgres?
+             ├─ SÍ  → PostgresStore (base PostgreSQL local del servidor)
+             └─ NO  → SqliteStore (archivo ~/.engram/engram.db) ← default
+```
+
+| Backend | Se activa con | Uso típico |
+|---------|--------------|------------|
+| **SqliteStore** | Ninguna variable especial (default) | Desarrollo local, un solo developer |
+| **PostgresStore** | `ENGRAM_DB_TYPE=postgres` + `ENGRAM_PG_CONNECTION` | Servidor centralizado, múltiples developers |
+| **HttpStore** | `ENGRAM_URL=http://servidor:7437` | Clientes MCP conectados al servidor remoto |
+
+**Verificación rápida**: cualquier endpoint del server incluye el campo `backend`:
+
+```bash
+curl http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
+
+curl http://localhost:7437/stats
+# → {"total_sessions":217,"total_observations":563,"backend":"postgres","projects":[...]}
+```
+
 ### Servidor compartido para equipos (Team Mode)
 
 En modo equipo, una sola instancia centralizada sirve a todo el equipo. Cada desarrollador tiene su identidad (`ENGRAM_USER`) que namespcea sus memorias automáticamente — sin colisiones entre compañeros.

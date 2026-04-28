@@ -29,6 +29,26 @@ Sin engram, cada sesión empieza de cero. Con engram, el agente "recuerda" lo qu
 
 ---
 
+## ¿A dónde van mis datos?
+
+Engram tiene 3 backends. Podés verificar cuál está activo en cualquier momento:
+
+```bash
+curl http://servidor:7437/health
+# → {"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
+#                                                      ^^^^^^^^^^^^^^^^^^^^
+```
+
+| Valor de `backend` | Qué significa | Configuración |
+|---|---|---|
+| `"sqlite"` | Base de datos local (archivo `.db`) | Sin variables especiales |
+| `"postgres"` | Servidor PostgreSQL | `ENGRAM_DB_TYPE=postgres` + `ENGRAM_PG_CONNECTION` |
+| `"http"` | Servidor remoto (tu cliente MCP) | `ENGRAM_URL=http://servidor:7437` |
+
+**Como desarrollador en modo equipo**, tu MCP usa `"http"` — los datos van al servidor PostgreSQL centralizado, no a tu máquina local.
+
+---
+
 ## Prerrequisitos
 
 - URL del servidor engram (te la pasa IT, ej: `http://10.0.0.5:7437`)
