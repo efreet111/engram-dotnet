@@ -151,6 +151,42 @@ Mover 4+8 herramientas de eager a deferred loading para reducir tokens de inicio
 
 ---
 
+## 🔧 Mantenimiento
+
+Tareas operativas que no son features pero mantienen el proyecto sano.
+
+### Arreglar tasks.md de PostgreSQL SDD
+
+El archivo `sdd/postgres-backend/tasks/tasks.md` tiene 28 tareas sin marcar como `[x]` aunque están todas implementadas. Solo se marcaron 4.7 (CI) y 5.5 (.gitignore).
+
+**Esfuerzo**: 30min — marcar las 28 tareas como completadas.
+
+---
+
+### Rebuild del binario local MCP
+
+El binario en `/home/gantz/.local/bin/engram-dotnet` está desactualizado (no incluye los últimos fixes de `FormatContextAsync` y `BackendName`). El `cp` falla porque VS Code tiene el proceso MCP abierto.
+
+**Esfuerzo**: 15min — cerrar VS Code, `dotnet publish`, copiar binario.
+
+---
+
+### Backend Config Switch (Nivel 2 — config file)
+
+Proposal ya creada en `sdd/backend-config-switch/proposal.md`. Permitir un archivo `~/.engram/config.json` para cambiar entre backends con un solo valor.
+
+**Esfuerzo**: 4-6h — parser de config, precedence con env vars, docs.
+
+---
+
+### Limpiar datos de prueba
+
+La sesión `verify-001` y observación ID 1 son datos de prueba del deploy inicial. Se pueden eliminar si no aportan valor.
+
+**Esfuerzo**: 5min — `DELETE FROM observations WHERE id = 1` + cleanup de sesión.
+
+---
+
 ## 🟠 Fase Posterior
 
 ### Obsidian Export — Fase B (con IA)
@@ -180,7 +216,7 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 
 ## 📋 Auditoría de compatibilidad con Go original
 
-Última auditoría: 2026-04-21
+Última auditoría: 2026-04-27
 
 | Feature del Go original | Estado en .NET Port | Notas |
 |------------------------|--------------------|----|
@@ -189,9 +225,10 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | NormalizeScope (team/personal/project legacy) | ✅ Porteado | `SqliteStore.NormalizeScope()` |
 | mem_merge_projects tool | ✅ Porteado | `IStore.MergeProjectsAsync` |
 | SuggestTopicKey | ✅ Porteado | `Normalizers.SuggestTopicKey` |
-| Project drift detection (DetectProject, FindSimilar, Levenshtein) | ❌ No porteado | **Backlog #1** |
+| Project drift detection (DetectProject, FindSimilar, Levenshtein) | ✅ Porteado | PR #2 — CLI `projects list|consolidate|prune` |
 | Tool deferral (deferred loading) | ❌ No porteado | En investigación — SDK .NET no lo soporta nativamente |
 | Obsidian brain exporter | ✅ Porteado | Fase A completo — CLI + exporter + hubs + tests |
-| Cloud/PostgresStore + JWT auth | ⬅️ Removido del Go repo | Repo privado separado — nuestra implementación es independiente |
-| Docker Compose para PG | ⬅️ Removido del Go repo | Lo crearemos en nuestro Docker |
+| Cloud/PostgresStore + JWT auth | ✅ Porteado | PostgresStore implementado + HttpStore para modo remoto |
+| Docker Compose para PG | ✅ Creado | `docker/docker-compose.yml` con PostgreSQL externo |
+| Backend indicator en responses | ✅ Porteado | Campo `backend` en `/health` y `/stats` |
 | TUI (Bubbletea) | ❌ Excluido de v1 | El Go original lo tiene, .NET port no |
