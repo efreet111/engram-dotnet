@@ -108,6 +108,7 @@ public class Stats
     [JsonPropertyName("total_observations")]  public int          TotalObservations { get; set; }
     [JsonPropertyName("total_prompts")]       public int          TotalPrompts      { get; set; }
     [JsonPropertyName("projects")]            public List<string> Projects          { get; set; } = [];
+    [JsonPropertyName("backend")]             public string       Backend           { get; set; } = "";
 }
 
 public class ProjectStats

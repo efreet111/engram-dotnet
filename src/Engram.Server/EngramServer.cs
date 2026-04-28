@@ -61,7 +61,7 @@ public static class EngramServer
 
     internal static void MapRoutes(IEndpointRouteBuilder app, IStore store)
     {
-        app.MapGet("/health",                       (Func<IResult>)HandleHealth);
+        app.MapGet("/health",                       (Func<IStore, IResult>)(HandleHealth));
         app.MapPost("/sessions",                    (Func<HttpContext, Task<IResult>>)((ctx) => HandleCreateSession(ctx, store)));
         app.MapPost("/sessions/{id}/end",           (Func<HttpContext, Task<IResult>>)((ctx) => HandleEndSession(ctx, store)));
         app.MapGet("/sessions/recent",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleRecentSessions(ctx, store)));
@@ -90,8 +90,8 @@ public static class EngramServer
 
     // ─── Handlers ───────────────────────────────────────────────────────────
 
-    private static IResult HandleHealth() =>
-        Json(new { status = "ok", service = "engram", version = "1.1.0" });
+    private static IResult HandleHealth(IStore store) =>
+        Json(new { status = "ok", service = "engram", version = "1.1.0", backend = store.BackendName });
 
     private static async Task<IResult> HandleCreateSession(HttpContext ctx, IStore store)
     {
@@ -308,6 +308,7 @@ public static class EngramServer
     private static async Task<IResult> HandleStats(HttpContext ctx, IStore store)
     {
         var stats = await store.StatsAsync();
+        stats.Backend = store.BackendName;
         return Json(stats);
     }
 

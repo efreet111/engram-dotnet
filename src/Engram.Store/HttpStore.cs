@@ -32,6 +32,7 @@ public sealed class HttpStore : IStore
     private readonly StoreConfig _cfg;
 
     public int MaxObservationLength => _cfg.MaxObservationLength;
+    public string BackendName => "http";
 
     public HttpStore(StoreConfig cfg)
     {

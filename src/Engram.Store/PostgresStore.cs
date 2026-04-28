@@ -31,6 +31,7 @@ public sealed class PostgresStore : IStore
     }
 
     public int MaxObservationLength => _cfg.MaxObservationLength;
+    public string BackendName => "postgres";
 
     public void Dispose() => _db.Dispose();
 

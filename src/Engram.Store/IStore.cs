@@ -46,4 +46,10 @@ public interface IStore : IDisposable
     Task RecordSyncedChunkAsync(string chunkId);
 
     int MaxObservationLength { get; }
+
+    /// <summary>
+    /// Human-readable backend identifier: "sqlite", "postgres", or "http".
+    /// Used in /health and /stats responses so clients know where data is stored.
+    /// </summary>
+    string BackendName { get; }
 }

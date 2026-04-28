@@ -41,6 +41,7 @@ public sealed class SqliteStore : IStore
     }
 
     public int MaxObservationLength => _cfg.MaxObservationLength;
+    public string BackendName => "sqlite";
 
     public void Dispose() => _db.Dispose();
 
