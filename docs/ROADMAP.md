@@ -189,6 +189,39 @@ La sesión `verify-001` y observación ID 1 son datos de prueba del deploy inici
 
 ## 🟠 Fase Posterior
 
+### Offline-First Sync (bidireccional local ↔ servidor)
+
+**Origen**: Discusión del 2026-04-29 — se detectó que con `ENGRAM_URL` todo va directo al servidor y no hay backup local. Si el servidor se ca o no hay conexión, el agente pierde la capacidad de guardar memoria.
+
+**Problema que resuelve**:
+- Trabajar offline (casa, viaje, sin red) y sincronizar cuando hay conexión
+- Backup local automático de todo lo que se escribe en el servidor
+- Colaboración: recibir cambios de otros devs en tu store local
+
+**Infraestructura existente (ya implementada)**:
+- `sync_mutations` journal en SQLite — change log escrito pero **nunca consumido**
+- `sync_state` table — trackea lifecycle por target (`target_key='cloud'`)
+- `sync_id` en cada entidad — identificador estable cross-store
+- `ExportAsync()` / `ImportAsync()` — export/import completo
+- `EngramSync` class — sync file-based con chunks JSONL (sin red)
+
+**Arquitectura propuesta**:
+1. **Siempre** escribe en SQLite local (source of truth primaria)
+2. Si `ENGRAM_URL` está set y hay conexión → `SyncWorker` hace push/pull en background
+3. Server necesita 2 endpoints nuevos: `POST /sync/push` y `GET /sync/pull?since={seq}`
+4. Conflict resolution: last-write-wins por timestamp
+
+**Fases estimadas**:
+- **Fase 1** (Push sync): ~400 líneas — consume `sync_mutations`, envía al servidor
+- **Fase 2** (Pull sync): ~300 líneas — baja cambios de otros devs
+- **Fase 3** (CLI + robustez): ~200 líneas — `engram sync status/push/pull`, backoff, métricas
+
+**Total estimado**: ~900 líneas nuevas, 5-6 archivos afectados
+
+**Prioridad**: Alta para equipos distribuidos. Diferencia un producto hobby de uno enterprise.
+
+---
+
 ### Obsidian Export — Fase B (con IA)
 
 Agente especializado que toma observaciones relacionadas y genera documentos de conocimiento sintetizados:
