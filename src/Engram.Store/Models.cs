@@ -55,6 +55,12 @@ public class Observation
     [JsonPropertyName("created_at")]       public string  CreatedAt      { get; set; } = "";
     [JsonPropertyName("updated_at")]       public string  UpdatedAt      { get; set; } = "";
     [JsonPropertyName("deleted_at")]       public string? DeletedAt      { get; set; }
+    // Upstream parity v1.14: reserved for future decay, expiration, and vector search
+    [JsonPropertyName("review_after")]      public string? ReviewAfter      { get; set; }
+    [JsonPropertyName("expires_at")]        public string? ExpiresAt        { get; set; }
+    [JsonPropertyName("embedding")]         public byte[]? Embedding        { get; set; }
+    [JsonPropertyName("embedding_model")]   public string? EmbeddingModel   { get; set; }
+    [JsonPropertyName("embedding_created_at")] public string? EmbeddingCreatedAt { get; set; }
 }
 
 public class TimelineEntry

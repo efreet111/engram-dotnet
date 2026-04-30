@@ -12,6 +12,7 @@ public class EngramToolsTests : IDisposable
 {
     private readonly SqliteStore  _store;
     private readonly EngramTools  _tools;
+    private readonly WriteQueue   _writeQueue;
     private readonly string       _tempDir;
     private const string SessionId = "mcp-test-session";
 
@@ -20,12 +21,14 @@ public class EngramToolsTests : IDisposable
         _tempDir = Path.Combine(Path.GetTempPath(), "engram-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
         _store = new SqliteStore(new StoreConfig { DataDir = _tempDir });
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" });
+        _writeQueue = new WriteQueue();
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue);
     }
 
     public void Dispose()
     {
         _store.Dispose();
+        _writeQueue.Dispose();
         try { Directory.Delete(_tempDir, recursive: true); } catch { /* best-effort */ }
     }
 

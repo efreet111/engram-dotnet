@@ -42,10 +42,10 @@ public sealed class McpConfig
 /// <summary>
 /// All 15 Engram MCP tools, port-faithful to the Go implementation.
 /// Registered via [McpServerToolType] / [McpServerTool] attributes.
-/// IStore and McpConfig are injected via DI constructor.
+/// IStore, McpConfig, and WriteQueue are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue)
 {
     // ─── mem_search ──────────────────────────────────────────────────────────
 
@@ -147,66 +147,69 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Scope for this observation: team (shared with all devs) or personal (private). Auto-classified from type when omitted.")] string? scope = null,
         [Description("Optional topic identifier for upserts (e.g. architecture/auth-model). Reuses and updates the latest observation in same project+scope.")] string? topic_key = null)
     {
-        type     ??= "manual";
-        scope    ??= AutoClassifyScope(type);
-
-        // ── Normalize project name and capture warning ──
-        var (normalizedProject, normWarning) = Normalizers.NormalizeProjectWithWarning(
-            string.IsNullOrEmpty(project) ? cfg.DefaultProject : project);
-        project    = ResolveProject(normalizedProject, scope);
-        session_id ??= DefaultSessionId(project);
-
-        var suggestedKey = Normalizers.SuggestTopicKey(type, title, content);
-        var truncated    = content.Length > store.MaxObservationLength;
-
-        // ── Check for similar existing projects (only when this project has no observations) ──
-        string? similarWarning = null;
-        if (!string.IsNullOrEmpty(normalizedProject))
+        return await writeQueue.EnqueueAsync<string>(async ct =>
         {
-            try
+            type     ??= "manual";
+            scope    ??= AutoClassifyScope(type);
+
+            // ── Normalize project name and capture warning ──
+            var (normalizedProject, normWarning) = Normalizers.NormalizeProjectWithWarning(
+                string.IsNullOrEmpty(project) ? cfg.DefaultProject : project);
+            project    = ResolveProject(normalizedProject, scope);
+            session_id ??= DefaultSessionId(project);
+
+            var suggestedKey = Normalizers.SuggestTopicKey(type, title, content);
+            var truncated    = content.Length > store.MaxObservationLength;
+
+            // ── Check for similar existing projects (only when this project has no observations) ──
+            string? similarWarning = null;
+            if (!string.IsNullOrEmpty(normalizedProject))
             {
-                var existingNames = await store.ListProjectNamesAsync();
-                var isNew = !existingNames.Contains(normalizedProject);
-                if (isNew && existingNames.Count > 0)
+                try
                 {
-                    var matches = ProjectDetector.FindSimilar(normalizedProject, existingNames, 3);
-                    if (matches.Count > 0)
+                    var existingNames = await store.ListProjectNamesAsync();
+                    var isNew = !existingNames.Contains(normalizedProject);
+                    if (isNew && existingNames.Count > 0)
                     {
-                        var bestMatch = matches[0].Name;
-                        var obsCount = await store.CountObservationsForProjectAsync(bestMatch);
-                        similarWarning = $"⚠️ Project \"{normalizedProject}\" has no memories. Similar project found: \"{bestMatch}\" ({obsCount} memories). Consider using that name instead.";
+                        var matches = ProjectDetector.FindSimilar(normalizedProject, existingNames, 3);
+                        if (matches.Count > 0)
+                        {
+                            var bestMatch = matches[0].Name;
+                            var obsCount = await store.CountObservationsForProjectAsync(bestMatch);
+                            similarWarning = $"⚠️ Project \"{normalizedProject}\" has no memories. Similar project found: \"{bestMatch}\" ({obsCount} memories). Consider using that name instead.";
+                        }
                     }
                 }
+                catch
+                {
+                    // Similar project checking is best-effort — don't fail the save
+                }
             }
-            catch
+
+            await store.CreateSessionAsync(session_id, project, "");
+            await store.AddObservationAsync(new AddObservationParams
             {
-                // Similar project checking is best-effort — don't fail the save
-            }
-        }
+                SessionId = session_id,
+                Type      = type,
+                Title     = title,
+                Content   = content,
+                Project   = project,
+                Scope     = scope,
+                TopicKey  = topic_key,
+            });
 
-        await store.CreateSessionAsync(session_id, project, "");
-        await store.AddObservationAsync(new AddObservationParams
-        {
-            SessionId = session_id,
-            Type      = type,
-            Title     = title,
-            Content   = content,
-            Project   = project,
-            Scope     = scope,
-            TopicKey  = topic_key,
+            var msg = $"Memory saved: \"{title}\" ({type})";
+            if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
+                msg += $"\nSuggested topic_key: {suggestedKey}";
+            if (truncated)
+                msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
+            if (!string.IsNullOrEmpty(normWarning))
+                msg += $"\n{normWarning}";
+            if (!string.IsNullOrEmpty(similarWarning))
+                msg += $"\n{similarWarning}";
+
+            return msg;
         });
-
-        var msg = $"Memory saved: \"{title}\" ({type})";
-        if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
-            msg += $"\nSuggested topic_key: {suggestedKey}";
-        if (truncated)
-            msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
-        if (!string.IsNullOrEmpty(normWarning))
-            msg += $"\n{normWarning}";
-        if (!string.IsNullOrEmpty(similarWarning))
-            msg += $"\n{similarWarning}";
-
-        return msg;
     }
 
     // ─── mem_update ──────────────────────────────────────────────────────────
@@ -226,26 +229,29 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         if (title is null && content is null && type is null && project is null && scope is null && topic_key is null)
             return "Error: provide at least one field to update";
 
-        var ok = await store.UpdateObservationAsync(id, new UpdateObservationParams
+        return await writeQueue.EnqueueAsync<string>(async ct =>
         {
-            Title    = title,
-            Content  = content,
-            Type     = type,
-            Project  = project,
-            Scope    = scope,
-            TopicKey = topic_key,
+            var ok = await store.UpdateObservationAsync(id, new UpdateObservationParams
+            {
+                Title    = title,
+                Content  = content,
+                Type     = type,
+                Project  = project,
+                Scope    = scope,
+                TopicKey = topic_key,
+            });
+
+            if (!ok) return $"Error: observation #{id} not found";
+
+            var obs = await store.GetObservationAsync(id);
+            if (obs is null) return $"Error: observation #{id} not found after update";
+
+            var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
+            if (content is not null && content.Length > store.MaxObservationLength)
+                msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
+
+            return msg;
         });
-
-        if (!ok) return $"Error: observation #{id} not found";
-
-        var obs = await store.GetObservationAsync(id);
-        if (obs is null) return $"Error: observation #{id} not found after update";
-
-        var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
-        if (content is not null && content.Length > store.MaxObservationLength)
-            msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
-
-        return msg;
     }
 
     // ─── mem_suggest_topic_key ───────────────────────────────────────────────
@@ -276,11 +282,14 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
     {
         if (id == 0) return "Error: id is required";
 
-        var ok = await store.DeleteObservationAsync(id);
-        if (!ok) return $"Error: observation #{id} not found";
+        return await writeQueue.EnqueueAsync<string>(async ct =>
+        {
+            var ok = await store.DeleteObservationAsync(id);
+            if (!ok) return $"Error: observation #{id} not found";
 
-        var mode = hard_delete ? "permanently deleted" : "soft-deleted";
-        return $"Memory #{id} {mode}";
+            var mode = hard_delete ? "permanently deleted" : "soft-deleted";
+            return $"Memory #{id} {mode}";
+        });
     }
 
     // ─── mem_save_prompt ─────────────────────────────────────────────────────
@@ -295,15 +304,18 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         project    = ResolveProject(project, Engram.Store.Scopes.Personal);
         session_id ??= DefaultSessionId(project);
 
-        await store.CreateSessionAsync(session_id, project, "");
-        await store.AddPromptAsync(new AddPromptParams
+        return await writeQueue.EnqueueAsync<string>(async ct =>
         {
-            SessionId = session_id,
-            Content   = content,
-            Project   = project,
-        });
+            await store.CreateSessionAsync(session_id, project, "");
+            await store.AddPromptAsync(new AddPromptParams
+            {
+                SessionId = session_id,
+                Content   = content,
+                Project   = project,
+            });
 
-        return $"Prompt saved: \"{Truncate(content, 80)}\"";
+            return $"Prompt saved: \"{Truncate(content, 80)}\"";
+        });
     }
 
     // ─── mem_context ─────────────────────────────────────────────────────────
@@ -478,18 +490,21 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         project    = ResolveProject(project, Engram.Store.Scopes.Team);
         session_id ??= DefaultSessionId(project);
 
-        await store.CreateSessionAsync(session_id, project, "");
-        await store.AddObservationAsync(new AddObservationParams
+        return await writeQueue.EnqueueAsync<string>(async ct =>
         {
-            SessionId = session_id,
-            Type      = "session_summary",
-            Title     = $"Session summary: {project}",
-            Content   = content,
-            Project   = project,
-            Scope     = Engram.Store.Scopes.Team,
-        });
+            await store.CreateSessionAsync(session_id, project, "");
+            await store.AddObservationAsync(new AddObservationParams
+            {
+                SessionId = session_id,
+                Type      = "session_summary",
+                Title     = $"Session summary: {project}",
+                Content   = content,
+                Project   = project,
+                Scope     = Engram.Store.Scopes.Team,
+            });
 
-        return $"Session summary saved for project \"{project}\"";
+            return $"Session summary saved for project \"{project}\"";
+        });
     }
 
     // ─── mem_session_start ───────────────────────────────────────────────────
@@ -502,8 +517,11 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Working directory")] string? directory = null)
     {
         project = ResolveProject(project, Engram.Store.Scopes.Team);
-        await store.CreateSessionAsync(id, project, directory ?? "");
-        return $"Session \"{id}\" started for project \"{project}\"";
+        return await writeQueue.EnqueueAsync<string>(async ct =>
+        {
+            await store.CreateSessionAsync(id, project, directory ?? "");
+            return $"Session \"{id}\" started for project \"{project}\"";
+        });
     }
 
     // ─── mem_session_end ─────────────────────────────────────────────────────
@@ -514,8 +532,11 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         [Description("Session identifier to close")] string id,
         [Description("Summary of what was accomplished")] string? summary = null)
     {
-        await store.EndSessionAsync(id, summary ?? "");
-        return $"Session \"{id}\" completed";
+        return await writeQueue.EnqueueAsync<string>(async ct =>
+        {
+            await store.EndSessionAsync(id, summary ?? "");
+            return $"Session \"{id}\" completed";
+        });
     }
 
     // ─── mem_capture_passive ─────────────────────────────────────────────────
@@ -541,28 +562,31 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         session_id ??= DefaultSessionId(project);
         source     ??= "mcp-passive";
 
-        await store.CreateSessionAsync(session_id, project, "");
-
-        var learnings = PassiveCapture.ExtractLearnings(content);
-        int saved = 0;
-
-        foreach (var learning in learnings)
+        return await writeQueue.EnqueueAsync<string>(async ct =>
         {
-            var title  = learning.Length > 60 ? learning[..60] + "..." : learning;
-            var result = await store.AddObservationAsync(new AddObservationParams
-            {
-                SessionId = session_id,
-                Type      = "passive",
-                Title     = title,
-                Content   = learning,
-                Project   = project,
-                Scope     = Engram.Store.Scopes.Personal,
-                ToolName  = source,
-            });
-            if (result > 0) saved++;
-        }
+            await store.CreateSessionAsync(session_id, project, "");
 
-        return $"Passive capture complete: extracted={learnings.Count} saved={saved} duplicates={learnings.Count - saved}";
+            var learnings = PassiveCapture.ExtractLearnings(content);
+            int saved = 0;
+
+            foreach (var learning in learnings)
+            {
+                var title  = learning.Length > 60 ? learning[..60] + "..." : learning;
+                var result = await store.AddObservationAsync(new AddObservationParams
+                {
+                    SessionId = session_id,
+                    Type      = "passive",
+                    Title     = title,
+                    Content   = learning,
+                    Project   = project,
+                    Scope     = Engram.Store.Scopes.Personal,
+                    ToolName  = source,
+                });
+                if (result > 0) saved++;
+            }
+
+            return $"Passive capture complete: extracted={learnings.Count} saved={saved} duplicates={learnings.Count - saved}";
+        });
     }
 
     // ─── mem_merge_projects ──────────────────────────────────────────────────
@@ -582,14 +606,17 @@ public sealed class EngramTools(IStore store, McpConfig cfg)
         if (sources.Count == 0)
             return "Error: at least one source project name is required in 'from'";
 
-        var result = await store.MergeProjectsAsync(sources, to);
+        return await writeQueue.EnqueueAsync<string>(async ct =>
+        {
+            var result = await store.MergeProjectsAsync(sources, to);
 
-        return $"""
-            Merged {result.SourcesMerged.Count} source(s) into "{result.Canonical}":
-              Observations moved: {result.ObservationsUpdated}
-              Sessions moved:     {result.SessionsUpdated}
-              Prompts moved:      {result.PromptsUpdated}
-            """;
+            return $"""
+                Merged {result.SourcesMerged.Count} source(s) into "{result.Canonical}":
+                  Observations moved: {result.ObservationsUpdated}
+                  Sessions moved:     {result.SessionsUpdated}
+                  Prompts moved:      {result.PromptsUpdated}
+                """;
+        });
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

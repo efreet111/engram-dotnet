@@ -95,6 +95,11 @@ public sealed class SqliteStore : IStore
                 created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 deleted_at      TEXT,
+                review_after    TEXT,
+                expires_at      TEXT,
+                embedding       BLOB,
+                embedding_model TEXT,
+                embedding_created_at TEXT,
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
 
@@ -178,6 +183,12 @@ public sealed class SqliteStore : IStore
         AddColumnIfNotExists("observations", "last_seen_at",    "TEXT");
         AddColumnIfNotExists("observations", "updated_at",      "TEXT NOT NULL DEFAULT ''");
         AddColumnIfNotExists("observations", "deleted_at",      "TEXT");
+        // Upstream parity v1.14: reserved for future decay, expiration, and vector search
+        AddColumnIfNotExists("observations", "review_after",          "TEXT");
+        AddColumnIfNotExists("observations", "expires_at",            "TEXT");
+        AddColumnIfNotExists("observations", "embedding",             "BLOB");
+        AddColumnIfNotExists("observations", "embedding_model",       "TEXT");
+        AddColumnIfNotExists("observations", "embedding_created_at",  "TEXT");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
 
         Exec(@"
