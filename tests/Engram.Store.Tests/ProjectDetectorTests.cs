@@ -274,8 +274,15 @@ public class ProjectDetectorTests
     [Fact]
     public void DetectProjectFull_InGitRepo_ReturnsGitRemoteOrRoot()
     {
-        // This test runs inside the engram-dotnet repo
-        var result = ProjectDetector.DetectProjectFull("/media/gantz/300extra/Proyectos/engram-dotnet");
+        // This test runs inside the repo (works on any machine/CI)
+        var repoRoot = Directory.GetCurrentDirectory();
+        // Walk up until we find .git
+        while (!Directory.Exists(Path.Combine(repoRoot, ".git")) && repoRoot != Path.GetPathRoot(repoRoot))
+            repoRoot = Path.GetDirectoryName(repoRoot)!;
+
+        if (string.IsNullOrEmpty(repoRoot)) return; // Skip if not in a git repo
+
+        var result = ProjectDetector.DetectProjectFull(repoRoot);
         Assert.NotEmpty(result.Project);
         Assert.True(
             result.Source == ProjectSources.GitRemote ||
@@ -287,8 +294,18 @@ public class ProjectDetectorTests
     [Fact]
     public void DetectProjectFull_InGitSubdir_ReturnsGitRemote()
     {
-        // This test runs inside a subdirectory of the engram-dotnet repo
-        var result = ProjectDetector.DetectProjectFull("/media/gantz/300extra/Proyectos/engram-dotnet/src");
+        // This test runs inside a subdirectory of the repo (works on any machine/CI)
+        var repoRoot = Directory.GetCurrentDirectory();
+        while (!Directory.Exists(Path.Combine(repoRoot, ".git")) && repoRoot != Path.GetPathRoot(repoRoot))
+            repoRoot = Path.GetDirectoryName(repoRoot)!;
+
+        if (string.IsNullOrEmpty(repoRoot)) return; // Skip if not in a git repo
+
+        // Find any subdirectory that exists
+        var subdirs = Directory.GetDirectories(repoRoot);
+        if (subdirs.Length == 0) return; // Skip if no subdirs
+
+        var result = ProjectDetector.DetectProjectFull(subdirs[0]);
         Assert.NotEmpty(result.Project);
         Assert.True(
             result.Source == ProjectSources.GitRemote ||
