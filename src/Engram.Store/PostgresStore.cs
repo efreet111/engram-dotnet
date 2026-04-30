@@ -66,7 +66,12 @@ public sealed class PostgresStore : IStore
                 last_seen_at    TEXT,
                 created_at      TEXT    NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
                 updated_at      TEXT    NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
-                deleted_at      TEXT
+                deleted_at      TEXT,
+                review_after    TEXT,
+                expires_at      TEXT,
+                embedding       BYTEA,
+                embedding_model TEXT,
+                embedding_created_at TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_obs_session  ON observations(session_id);
@@ -160,6 +165,19 @@ public sealed class PostgresStore : IStore
             CREATE INDEX IF NOT EXISTS idx_obs_fts ON observations USING GIN(search_vector);
             CREATE INDEX IF NOT EXISTS idx_obs_fts_active ON observations USING GIN(search_vector) WHERE deleted_at IS NULL;
         ");
+
+        // ─── Upstream parity v1.14: reserved columns ───────────────────────────
+
+        if (!ColumnExists("observations", "review_after"))
+            Exec("ALTER TABLE observations ADD COLUMN review_after TEXT");
+        if (!ColumnExists("observations", "expires_at"))
+            Exec("ALTER TABLE observations ADD COLUMN expires_at TEXT");
+        if (!ColumnExists("observations", "embedding"))
+            Exec("ALTER TABLE observations ADD COLUMN embedding BYTEA");
+        if (!ColumnExists("observations", "embedding_model"))
+            Exec("ALTER TABLE observations ADD COLUMN embedding_model TEXT");
+        if (!ColumnExists("observations", "embedding_created_at"))
+            Exec("ALTER TABLE observations ADD COLUMN embedding_created_at TEXT");
 
         // ─── Normalisation (idempotent) ────────────────────────────────────────
 

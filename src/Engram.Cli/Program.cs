@@ -86,6 +86,7 @@ mcpCmd.SetHandler(async (string? project) =>
 
     var mcpBuilder = EngramMcpServer.CreateBuilder(args);
     mcpBuilder.Services.AddSingleton<IStore>(store);
+    mcpBuilder.Services.AddSingleton<Engram.Mcp.WriteQueue>();
     mcpBuilder.Services.AddSingleton(new McpConfig
     {
         DefaultProject = defaultProject,

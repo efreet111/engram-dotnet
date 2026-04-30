@@ -230,4 +230,208 @@ public class ProjectDetectorTests
         else
             Assert.Empty(warning);
     }
+
+    // ─── DetectProjectFull (5-case algorithm) ────────────────────────────────
+
+    [Fact]
+    public void DetectProjectFull_NoGit_FallbackToBasename()
+    {
+        // /tmp is unlikely to be a git repo
+        var result = ProjectDetector.DetectProjectFull("/tmp");
+        Assert.Equal("tmp", result.Project);
+        Assert.Equal(ProjectSources.DirBasename, result.Source);
+        Assert.Equal("/tmp", result.ProjectPath);
+        Assert.Null(result.Warning);
+        Assert.Null(result.Error);
+        Assert.Empty(result.GetAvailableProjects());
+    }
+
+    [Fact]
+    public void DetectProjectFull_EmptyDir_ReturnsUnknown()
+    {
+        var result = ProjectDetector.DetectProjectFull("");
+        Assert.Equal("unknown", result.Project);
+        Assert.Equal(ProjectSources.DirBasename, result.Source);
+    }
+
+    [Fact]
+    public void DetectProjectFull_NullDir_UsesCurrentDirectory()
+    {
+        // Should not throw, uses Directory.GetCurrentDirectory()
+        var result = ProjectDetector.DetectProjectFull(null);
+        Assert.NotNull(result.Project);
+        Assert.NotEmpty(result.Project);
+    }
+
+    [Fact]
+    public void DetectProjectFull_DirStartingWithDash_DoesNotCrash()
+    {
+        var result = ProjectDetector.DetectProjectFull("-my-project");
+        Assert.NotNull(result.Project);
+        Assert.NotEmpty(result.Project);
+    }
+
+    [Fact]
+    public void DetectProjectFull_InGitRepo_ReturnsGitRemoteOrRoot()
+    {
+        // This test runs inside the repo (works on any machine/CI)
+        var repoRoot = Directory.GetCurrentDirectory();
+        // Walk up until we find .git
+        while (!Directory.Exists(Path.Combine(repoRoot, ".git")) && repoRoot != Path.GetPathRoot(repoRoot))
+            repoRoot = Path.GetDirectoryName(repoRoot)!;
+
+        if (string.IsNullOrEmpty(repoRoot)) return; // Skip if not in a git repo
+
+        var result = ProjectDetector.DetectProjectFull(repoRoot);
+        Assert.NotEmpty(result.Project);
+        Assert.True(
+            result.Source == ProjectSources.GitRemote ||
+            result.Source == ProjectSources.GitRoot,
+            $"Expected git_remote or git_root, got {result.Source}");
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
+    public void DetectProjectFull_InGitSubdir_ReturnsGitRemote()
+    {
+        // This test runs inside a subdirectory of the repo (works on any machine/CI)
+        var repoRoot = Directory.GetCurrentDirectory();
+        while (!Directory.Exists(Path.Combine(repoRoot, ".git")) && repoRoot != Path.GetPathRoot(repoRoot))
+            repoRoot = Path.GetDirectoryName(repoRoot)!;
+
+        if (string.IsNullOrEmpty(repoRoot)) return; // Skip if not in a git repo
+
+        // Find any subdirectory that exists
+        var subdirs = Directory.GetDirectories(repoRoot);
+        if (subdirs.Length == 0) return; // Skip if no subdirs
+
+        var result = ProjectDetector.DetectProjectFull(subdirs[0]);
+        Assert.NotEmpty(result.Project);
+        Assert.True(
+            result.Source == ProjectSources.GitRemote ||
+            result.Source == ProjectSources.GitRoot,
+            $"Expected git_remote or git_root, got {result.Source}");
+    }
+
+    // ─── ScanChildren ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ScanChildren_NoGitRepos_ReturnsEmpty()
+    {
+        using var tempDir = new TempDirectory();
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "subdir1"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "subdir2"));
+
+        var children = ProjectDetector.ScanChildren(tempDir.Path);
+        Assert.Empty(children);
+    }
+
+    [Fact]
+    public void ScanChildren_SingleChildRepo_ReturnsOne()
+    {
+        using var tempDir = new TempDirectory();
+        var childPath = Path.Combine(tempDir.Path, "my-app");
+        Directory.CreateDirectory(childPath);
+        Directory.CreateDirectory(Path.Combine(childPath, ".git"));
+
+        var children = ProjectDetector.ScanChildren(tempDir.Path);
+        Assert.Single(children);
+        Assert.Equal("my-app", children[0].Name);
+        Assert.Equal(childPath, children[0].Path);
+    }
+
+    [Fact]
+    public void ScanChildren_MultipleChildRepos_ReturnsAll()
+    {
+        using var tempDir = new TempDirectory();
+
+        var frontend = Path.Combine(tempDir.Path, "frontend");
+        var backend = Path.Combine(tempDir.Path, "backend");
+        Directory.CreateDirectory(Path.Combine(frontend, ".git"));
+        Directory.CreateDirectory(Path.Combine(backend, ".git"));
+
+        var children = ProjectDetector.ScanChildren(tempDir.Path);
+        Assert.Equal(2, children.Count);
+        Assert.Contains(children, c => c.Name == "frontend");
+        Assert.Contains(children, c => c.Name == "backend");
+    }
+
+    [Fact]
+    public void ScanChildren_SkipsNoiseDirectories()
+    {
+        using var tempDir = new TempDirectory();
+
+        // Create noise directories that should be skipped
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "node_modules"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "node_modules", ".git"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "vendor"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "vendor", ".git"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, ".venv"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, ".venv", ".git"));
+
+        // Create a real child repo
+        var realChild = Path.Combine(tempDir.Path, "my-app");
+        Directory.CreateDirectory(Path.Combine(realChild, ".git"));
+
+        var children = ProjectDetector.ScanChildren(tempDir.Path);
+        Assert.Single(children);
+        Assert.Equal("my-app", children[0].Name);
+    }
+
+    [Fact]
+    public void ScanChildren_NonExistentDir_ReturnsEmpty()
+    {
+        var children = ProjectDetector.ScanChildren("/nonexistent/path/xyz");
+        Assert.Empty(children);
+    }
+
+    // ─── NormalizeProject Edge Cases ──────────────────────────────────────────
+
+    [Theory]
+    [InlineData("My  Project", "my  project")]  // Spaces preserved (only -- collapsed)
+    [InlineData("MY__PROJECT", "my_project")]   // __ → _ (NormalizeProjectWithWarning collapses __)
+    [InlineData("  spaced  out  ", "spaced  out")] // Trim + lowercase
+    [InlineData("UPPER-case_MIX", "upper-case_mix")]
+    public void NormalizeProject_HandlesEdgeCases(string input, string expected)
+    {
+        var result = Normalizers.NormalizeProject(input);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void NormalizeProject_Null_ReturnsEmpty()
+    {
+        Assert.Equal("", Normalizers.NormalizeProject(null));
+    }
+
+    [Fact]
+    public void NormalizeProject_Empty_ReturnsEmpty()
+    {
+        Assert.Equal("", Normalizers.NormalizeProject(""));
+    }
+
+    [Fact]
+    public void NormalizeProject_WhitespaceOnly_ReturnsEmpty()
+    {
+        Assert.Equal("", Normalizers.NormalizeProject("   "));
+    }
+}
+
+/// <summary>
+/// Helper class that creates a temporary directory and deletes it on dispose.
+/// </summary>
+internal sealed class TempDirectory : IDisposable
+{
+    public string Path { get; }
+
+    public TempDirectory()
+    {
+        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
+        Directory.CreateDirectory(Path);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(Path, true); } catch { /* best effort */ }
+    }
 }

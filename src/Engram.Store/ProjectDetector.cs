@@ -4,6 +4,52 @@ using System.Text.RegularExpressions;
 namespace Engram.Store;
 
 /// <summary>
+/// Constants for project detection sources.
+/// Mirrors the Go original internal/project package source constants.
+/// </summary>
+public static class ProjectSources
+{
+    public const string GitRemote = "git_remote";
+    public const string GitRoot = "git_root";
+    public const string GitChild = "git_child";
+    public const string Ambiguous = "ambiguous";
+    public const string DirBasename = "dir_basename";
+    public const string ExplicitOverride = "explicit_override";
+    public const string RequestBody = "request_body";
+}
+
+/// <summary>
+/// Result of full project detection with all metadata.
+/// </summary>
+public record DetectionResult(
+    string Project,
+    string Source,
+    string ProjectPath,
+    string? Warning = null,
+    string? Error = null,
+    List<string>? AvailableProjects = null
+)
+{
+    /// <summary>
+    /// Returns AvailableProjects if set, otherwise an empty list.
+    /// </summary>
+    public IReadOnlyList<string> GetAvailableProjects() => AvailableProjects ?? [];
+}
+
+/// <summary>
+/// Directories to skip when scanning for child git repositories.
+/// </summary>
+internal static class NoiseDirectories
+{
+    public static readonly HashSet<string> Set = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", "node_modules", "vendor", ".venv", "__pycache__",
+        ".tox", ".mypy_cache", ".pytest_cache", "venv", "env",
+        ".terraform", ".idea", ".vscode", "target", "build", "dist"
+    };
+}
+
+/// <summary>
 /// Detects and normalizes project names from the working directory.
 /// Priority: git remote origin → git root basename → directory basename.
 /// Mirrors the Go original internal/project package.
@@ -11,33 +57,200 @@ namespace Engram.Store;
 public static class ProjectDetector
 {
     /// <summary>
+    /// Full project detection returning all metadata (5-case algorithm).
+    /// Cases evaluated in order:
+    /// 1. git_remote — cwd is inside a git repo with origin remote
+    /// 2. git_root — cwd IS a git repo root
+    /// 3. git_child — cwd contains exactly ONE child git repo
+    /// 4. ambiguous — cwd contains TWO OR MORE child git repos
+    /// 5. dir_basename — fallback when no git repo exists
+    /// </summary>
+    public static DetectionResult DetectProjectFull(string? workingDir = null)
+    {
+        // Empty or whitespace-only → unknown
+        if (string.IsNullOrWhiteSpace(workingDir))
+        {
+            return new DetectionResult(
+                Project: "unknown",
+                Source: ProjectSources.DirBasename,
+                ProjectPath: string.IsNullOrEmpty(workingDir) ? "" : workingDir!
+            );
+        }
+
+        var dir = workingDir;
+
+        // Guard against arg injection
+        if (dir.StartsWith('-'))
+            dir = "./" + dir;
+
+        // Case 1: git remote origin
+        var remoteUrl = DetectFromGitRemote(dir);
+        if (!string.IsNullOrEmpty(remoteUrl))
+        {
+            var rootPath = DetectGitRootPath(dir);
+            return new DetectionResult(
+                Project: Normalizers.NormalizeProject(remoteUrl),
+                Source: ProjectSources.GitRemote,
+                ProjectPath: string.IsNullOrEmpty(rootPath) ? dir : rootPath
+            );
+        }
+
+        // Case 2: git root
+        var rootPath2 = DetectGitRootPath(dir);
+        if (!string.IsNullOrEmpty(rootPath2))
+        {
+            var isRoot = Path.GetFullPath(dir) == Path.GetFullPath(rootPath2);
+            if (isRoot)
+            {
+                var name = Path.GetFileName(rootPath2);
+                if (!string.IsNullOrEmpty(name) && name != ".")
+                {
+                    return new DetectionResult(
+                        Project: Normalizers.NormalizeProject(name),
+                        Source: ProjectSources.GitRoot,
+                        ProjectPath: rootPath2
+                    );
+                }
+            }
+        }
+
+        // Case 3 & 4: scan for child git repos
+        var children = ScanChildren(dir);
+        if (children.Count == 1)
+        {
+            var child = children[0];
+            return new DetectionResult(
+                Project: Normalizers.NormalizeProject(child.Name),
+                Source: ProjectSources.GitChild,
+                ProjectPath: child.Path,
+                Warning: $"Auto-promoted single child repo '{child.Name}'"
+            );
+        }
+        if (children.Count >= 2)
+        {
+            var names = children.Select(c => Normalizers.NormalizeProject(c.Name)).ToList();
+            return new DetectionResult(
+                Project: "",
+                Source: ProjectSources.Ambiguous,
+                ProjectPath: dir,
+                Error: "Ambiguous project: multiple git repositories found",
+                AvailableProjects: names
+            );
+        }
+
+        // Case 5: dir basename fallback
+        var baseName = Path.GetFileName(dir);
+        if (string.IsNullOrEmpty(baseName) || baseName == ".")
+            baseName = "unknown";
+
+        return new DetectionResult(
+            Project: Normalizers.NormalizeProject(baseName),
+            Source: ProjectSources.DirBasename,
+            ProjectPath: dir
+        );
+    }
+
+    /// <summary>
     /// Detects the project name for a given directory.
     /// Priority: git remote origin repo name → git root basename → dir basename.
     /// The returned name is always non-empty and already normalized (lowercase, trimmed).
     /// </summary>
-    public static string DetectProject(string dir)
+    public static string DetectProject(string? workingDir = null)
     {
-        if (string.IsNullOrEmpty(dir))
-            return "unknown";
+        var result = DetectProjectFull(workingDir);
 
-        // Guard against arg injection: a dir starting with "-" would be
-        // interpreted as a git flag when passed to git -C <dir>.
-        if (dir.StartsWith('-'))
-            dir = "./" + dir;
+        // If ambiguous, return the first available project (backward compat)
+        if (result.Source == ProjectSources.Ambiguous && result.AvailableProjects?.Count > 0)
+            return result.AvailableProjects[0];
 
-        var fromRemote = DetectFromGitRemote(dir);
-        if (!string.IsNullOrEmpty(fromRemote))
-            return Normalizers.NormalizeProject(fromRemote);
+        // If empty project (shouldn't happen with fallback), return unknown
+        return string.IsNullOrEmpty(result.Project) ? "unknown" : result.Project;
+    }
 
-        var fromRoot = DetectFromGitRoot(dir);
-        if (!string.IsNullOrEmpty(fromRoot))
-            return Normalizers.NormalizeProject(fromRoot);
+    /// <summary>
+    /// Scans immediate subdirectories for git repositories.
+    /// Timeout: 200ms per scan. Cap: 20 entries.
+    /// Skips noise directories (.git, node_modules, vendor, etc).
+    /// </summary>
+    internal static List<(string Name, string Path)> ScanChildren(string dir)
+    {
+        var results = new List<(string Name, string Path)>();
+        if (!Directory.Exists(dir)) return results;
 
-        var baseName = Path.GetFileName(dir);
-        if (string.IsNullOrEmpty(baseName) || baseName == ".")
-            return "unknown";
+        string[] subdirs;
+        try
+        {
+            subdirs = Directory.GetDirectories(dir);
+        }
+        catch
+        {
+            return results;
+        }
 
-        return Normalizers.NormalizeProject(baseName);
+        using var cts = new CancellationTokenSource(200);
+
+        foreach (var subdir in subdirs)
+        {
+            if (cts.IsCancellationRequested) break;
+            if (results.Count >= 20) break;
+
+            var name = Path.GetFileName(subdir);
+            if (NoiseDirectories.Set.Contains(name)) continue;
+
+            try
+            {
+                var gitDir = Path.Combine(subdir, ".git");
+                if (Directory.Exists(gitDir) || File.Exists(gitDir))
+                {
+                    results.Add((name, subdir));
+                }
+            }
+            catch
+            {
+                // Skip inaccessible directories
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns the absolute path of the git repository root.
+    /// Returns empty string when git is unavailable or the directory
+    /// is not inside a git repository.
+    /// </summary>
+    private static string DetectGitRootPath(string dir)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"-C \"{dir}\" rev-parse --show-toplevel",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            if (!process.WaitForExit(2000))
+            {
+                try { process.Kill(); } catch { /* best effort */ }
+                return "";
+            }
+            if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
+                return "";
+
+            return output;
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     /// <summary>
@@ -87,36 +300,8 @@ public static class ProjectDetector
     /// </summary>
     public static string DetectFromGitRoot(string dir)
     {
-        try
-        {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = $"-C \"{dir}\" rev-parse --show-toplevel",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                }
-            };
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            if (!process.WaitForExit(2000))
-            {
-                try { process.Kill(); } catch { /* best effort */ }
-                return "";
-            }
-            if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
-                return "";
-
-            return Path.GetFileName(output);
-        }
-        catch
-        {
-            return "";
-        }
+        var rootPath = DetectGitRootPath(dir);
+        return string.IsNullOrEmpty(rootPath) ? "" : Path.GetFileName(rootPath);
     }
 
     /// <summary>
