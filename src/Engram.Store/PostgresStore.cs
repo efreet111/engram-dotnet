@@ -178,6 +178,8 @@ public sealed class PostgresStore : IStore
             Exec("ALTER TABLE observations ADD COLUMN embedding_model TEXT");
         if (!ColumnExists("observations", "embedding_created_at"))
             Exec("ALTER TABLE observations ADD COLUMN embedding_created_at TEXT");
+        if (!ColumnExists("user_prompts", "deleted_at"))
+            Exec("ALTER TABLE user_prompts ADD COLUMN deleted_at TIMESTAMPTZ");
 
         // ─── Normalisation (idempotent) ────────────────────────────────────────
 
@@ -289,6 +291,49 @@ public sealed class PostgresStore : IStore
             });
         }
         return Task.FromResult<IList<SessionSummary>>(list);
+    }
+
+    public Task DeleteSessionAsync(string id)
+    {
+        // 1. Verify session exists
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT project FROM sessions WHERE id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            var result = cmd.ExecuteScalar();
+            if (result == null)
+                throw new SessionNotFoundException(id);
+        }
+
+        // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            var totalObs = Convert.ToInt64(cmd.ExecuteScalar());
+            if (totalObs > 0)
+                throw new SessionDeleteBlockedException(id, (int)totalObs);
+        }
+
+        // 3. Hard-delete associated prompts (Go does hard-delete)
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM user_prompts WHERE session_id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        // 4. Hard-delete the session
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM sessions WHERE id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            var rows = cmd.ExecuteNonQuery();
+            if (rows == 0)
+                throw new SessionDeleteBlockedException(id, -1);
+        }
+
+        return Task.CompletedTask;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -620,11 +665,11 @@ public sealed class PostgresStore : IStore
 
     public Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit)
     {
-        var sql = new StringBuilder("SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts");
+        var sql = new StringBuilder("SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts WHERE deleted_at IS NULL");
         var parms = new List<NpgsqlParameter>();
         if (!string.IsNullOrEmpty(project))
         {
-            sql.Append(" WHERE project = @proj");
+            sql.Append(" AND project = @proj");
             parms.Add(new NpgsqlParameter("@proj", project));
         }
         sql.Append(" ORDER BY created_at DESC LIMIT @limit");
@@ -637,7 +682,7 @@ public sealed class PostgresStore : IStore
         var sql = new StringBuilder(@"
             SELECT id, sync_id, session_id, content, project, created_at
             FROM user_prompts
-            WHERE content ILIKE @q");
+            WHERE content ILIKE @q AND deleted_at IS NULL");
         var parms = new List<NpgsqlParameter> { new("@q", $"%{query}%") };
         if (!string.IsNullOrEmpty(project))
         {
@@ -647,6 +692,29 @@ public sealed class PostgresStore : IStore
         sql.Append(" ORDER BY created_at DESC LIMIT @limit");
         parms.Add(new NpgsqlParameter("@limit", limit));
         return Task.FromResult<IList<Prompt>>(QueryPrompts(sql.ToString(), parms));
+    }
+
+    public Task DeletePromptAsync(long id)
+    {
+        // 1. Verify prompt exists
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT 1 FROM user_prompts WHERE id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            var result = cmd.ExecuteScalar();
+            if (result == null)
+                throw new PromptNotFoundException(id);
+        }
+
+        // 2. Soft-delete
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE user_prompts SET deleted_at = NOW() WHERE id = @id AND deleted_at IS NULL";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        return Task.CompletedTask;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -765,7 +833,7 @@ public sealed class PostgresStore : IStore
         }
         using (var cmd = _db.CreateCommand())
         {
-            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts";
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
             totalPrompts = Convert.ToInt64(cmd.ExecuteScalar());
         }
 
@@ -797,7 +865,7 @@ public sealed class PostgresStore : IStore
             Array.Empty<NpgsqlParameter>());
 
         var prompts = QueryPrompts(
-            "SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts ORDER BY created_at",
+            "SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts WHERE deleted_at IS NULL ORDER BY created_at",
             Array.Empty<NpgsqlParameter>());
 
         return new ExportData

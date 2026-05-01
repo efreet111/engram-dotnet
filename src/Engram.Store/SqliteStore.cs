@@ -190,6 +190,7 @@ public sealed class SqliteStore : IStore
         AddColumnIfNotExists("observations", "embedding_model",       "TEXT");
         AddColumnIfNotExists("observations", "embedding_created_at",  "TEXT");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
+        AddColumnIfNotExists("user_prompts", "deleted_at",      "TEXT");
 
         Exec(@"
             CREATE INDEX IF NOT EXISTS idx_obs_scope         ON observations(scope);
@@ -451,6 +452,44 @@ public sealed class SqliteStore : IStore
         }
 
         return Task.FromResult<IList<SessionSummary>>(results);
+    }
+
+    // ─── Delete Session ────────────────────────────────────────────────────────
+
+    public Task DeleteSessionAsync(string id)
+    {
+        WithTx(tx =>
+        {
+            // 1. Verify session exists
+            var sessionExists = QueryScalar<long?>(tx,
+                "SELECT 1 FROM sessions WHERE id = @id",
+                Param("@id", id));
+            if (!sessionExists.HasValue)
+                throw new SessionNotFoundException(id);
+
+            // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
+            var totalObs = QueryScalar<long>(tx,
+                "SELECT COUNT(*) FROM observations WHERE session_id = @id",
+                Param("@id", id));
+            if (totalObs > 0)
+                throw new SessionDeleteBlockedException(id, (int)totalObs);
+
+            // 3. Hard-delete associated prompts (Go does hard-delete, not soft-delete)
+            Exec(tx,
+                "DELETE FROM user_prompts WHERE session_id = @id",
+                Param("@id", id));
+
+            // 4. Hard-delete the session
+            var rows = ExecRows(tx,
+                "DELETE FROM sessions WHERE id = @id",
+                Param("@id", id));
+
+            // If FK constraint blocked the delete (race condition), treat as blocked
+            if (rows == 0)
+                throw new SessionDeleteBlockedException(id, -1);
+        });
+
+        return Task.CompletedTask;
     }
 
     // ─── Observations ──────────────────────────────────────────────────────────
@@ -884,12 +923,12 @@ public sealed class SqliteStore : IStore
         project = Normalizers.NormalizeProject(project);
         if (limit <= 0) limit = 20;
 
-        var sql   = new StringBuilder("SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts");
+        var sql   = new StringBuilder("SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts WHERE deleted_at IS NULL");
         var parms = new List<SqliteParameter>();
 
         if (!string.IsNullOrEmpty(project))
         {
-            sql.Append(" WHERE project = @proj");
+            sql.Append(" AND project = @proj");
             parms.Add(Param("@proj", project));
         }
 
@@ -908,7 +947,7 @@ public sealed class SqliteStore : IStore
             SELECT p.id, ifnull(p.sync_id,'') as sync_id, p.session_id, p.content, ifnull(p.project,'') as project, p.created_at
             FROM prompts_fts fts
             JOIN user_prompts p ON p.id = fts.rowid
-            WHERE prompts_fts MATCH @fts");
+            WHERE prompts_fts MATCH @fts AND p.deleted_at IS NULL");
         var parms = new List<SqliteParameter> { Param("@fts", ftsQuery) };
 
         if (!string.IsNullOrEmpty(project))
@@ -920,6 +959,26 @@ public sealed class SqliteStore : IStore
         parms.Add(Param("@limit", limit));
 
         return Task.FromResult<IList<Prompt>>(QueryPrompts(sql.ToString(), parms));
+    }
+
+    public Task DeletePromptAsync(long id)
+    {
+        WithTx(tx =>
+        {
+            // 1. Verify prompt exists
+            var promptExists = QueryScalar<long?>(tx,
+                "SELECT 1 FROM user_prompts WHERE id = @id",
+                Param("@id", id));
+            if (!promptExists.HasValue)
+                throw new PromptNotFoundException(id);
+
+            // 2. Soft-delete: set deleted_at
+            Exec(tx,
+                "UPDATE user_prompts SET deleted_at = datetime('now') WHERE id = @id AND deleted_at IS NULL",
+                Param("@id", id));
+        });
+
+        return Task.CompletedTask;
     }
 
     // ─── Context & Stats ───────────────────────────────────────────────────────
@@ -1057,7 +1116,7 @@ public sealed class SqliteStore : IStore
         }
         using (var cmd = _db.CreateCommand())
         {
-            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts";
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
             stats.TotalPrompts = Convert.ToInt32(cmd.ExecuteScalar());
         }
 
@@ -1108,7 +1167,7 @@ public sealed class SqliteStore : IStore
 
         using (var cmd = _db.CreateCommand())
         {
-            cmd.CommandText = "SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts ORDER BY id";
+            cmd.CommandText = "SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts WHERE deleted_at IS NULL ORDER BY id";
             using var r = cmd.ExecuteReader();
             while (r.Read()) data.Prompts.Add(ReadPrompt(r));
         }

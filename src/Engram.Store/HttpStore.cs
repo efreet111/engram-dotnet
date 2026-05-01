@@ -84,6 +84,12 @@ public sealed class HttpStore : IStore
         return await Deserialize<List<SessionSummary>>(resp) ?? [];
     }
 
+    public async Task DeleteSessionAsync(string id)
+    {
+        var resp = await Delete($"sessions/{id}");
+        await EnsureSuccess(resp, "DeleteSession");
+    }
+
     // ─── Observations ─────────────────────────────────────────────────────────
 
     public async Task<long> AddObservationAsync(AddObservationParams p)
@@ -212,6 +218,12 @@ public sealed class HttpStore : IStore
         var resp = await Get($"prompts/search{qs}");
         await EnsureSuccess(resp, "SearchPrompts");
         return await Deserialize<List<Prompt>>(resp) ?? [];
+    }
+
+    public async Task DeletePromptAsync(long id)
+    {
+        var resp = await Delete($"prompts/{id}");
+        await EnsureSuccess(resp, "DeletePrompt");
     }
 
     // ─── Context & Stats ──────────────────────────────────────────────────────
