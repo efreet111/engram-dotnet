@@ -2,98 +2,83 @@
 
 # Roadmap — engram-dotnet
 
-> Ideas y mejoras identificadas para las próximas versiones del proyecto. Este documento es un backlog vivo — las ideas se mueven a issues de GitHub cuando están listas para implementarse.
+> Backlog de mejoras y features planificadas. Este documento es vivo — las ideas se mueven a issues de GitHub cuando están listas para implementación.
+>
+> **Última actualización**: 2026-04-30
+> **Versión actual**: `main` (post PR #7)
 
 ---
 
 ## ✅ Completadas
 
-### Diagramas de flujo + documentación VSCode
-
-Agregar diagramas Mermaid al README y docs existentes para visualizar:
-- Flujo completo: Developer → MCP plugin → EngramTools → HttpStore → Servidor → SQLite
-- Modelo de namespaces team/personal
-- Ciclo de vida de una observación
-
-Actualizar `.vscode/settings.json` con configuración recomendada para el proyecto.
-
-**Estado**: Completo en rama `feat/mermaid-diagrams-vscode-config`.
+| Feature | PR | Descripción |
+|---------|----|-------------|
+| Project Drift Detection | [#2](https://github.com/efreet111/engram-dotnet/pull/2) | DetectProject, FindSimilar, Levenshtein, CLI `projects list\|consolidate\|prune` |
+| PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore con FTS, GIN indexes, 22 métodos IStore, Testcontainers |
+| Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, graph.json, 61 tests |
+| Upstream Parity Phase 1 | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | Project detection 5-case, schema columns, write queue, session activity tracker |
 
 ---
 
-## 🟢 Alta Prioridad — Activas
+## 🚀 Sprint Activo — Upstream Parity
 
-### #1 — Project Drift Detection
+Portear cambios del Go upstream (v1.12 → v1.14.8, 61 commits) en fases incrementales.
 
-Detectar el nombre de proyecto automáticamente desde git remote, normalizar con warnings cuando hay drift, y sugerir consolidación cuando hay nombres similares.
+### Phase 2 — API Parity (proposal: ✅ creada)
 
-**Estado**: ✅ Completo — merged en PR #2.
+> **Proposal**: [`sdd/upstream-parity-phase2/proposal.md`](../sdd/upstream-parity-phase2/proposal.md)
+> **Branch**: `feat/upstream-parity-phase2` (por crear)
+> **Esfuerzo estimado**: 6-8h
 
-**Funcionalidad**:
-- `DetectProject(dir)` — detecta nombre desde git remote origin → git root → filepath.Base (prioridad en ese orden)
-- `FindSimilar(name, existing, maxDistance)` — busqueda por case-insensitive, substring, y Levenshtein distance
-- `NormalizeProject(name)` → `(normalized, warning)` — lowercase + trim + warning si cambió
-- Warning al guardar si el proyecto normalizado difiere del original
-- CLI `engram projects list|consolidate|prune`
+| # | Feature | Alcance | Archivos |
+|---|---------|---------|----------|
+| 1 | `DELETE /sessions/{id}` | Borrar sesión con FK guard (409 si tiene observaciones) | Server, Store |
+| 2 | `DELETE /prompts/{id}` | Soft-delete de prompts | Server, Store |
+| 3 | `mem_current_project` | MCP tool read-only — dice qué proyecto se va a usar | MCP |
+| 4 | Structured error responses | Errores MCP con `error_code`, `available_projects`, `hint` | MCP |
+| 5 | Obsidian `--watch` | Daemon continuo con `--interval` configurable | CLI, Obsidian |
+| 6 | Obsidian `--since` | Filtro por fecha (`30d`, `7d`, `2025-01-01`) | CLI, Obsidian |
+| 7 | Export por proyecto | `GET /export?project=X` — un solo proyecto | Server, Obsidian |
 
-**Por qué**: Los agentes y los devs escriben el nombre del proyecto de formas inconsistentes (`Mi-API`, `mi-api`, `mi_api`). Esto fragmenta la memoria y contamina las búsquedas. El Go original ya lo tiene implementado.
-
-**Referencia**: Go original `internal/project/detect.go` + `internal/project/similar.go`
-
----
-
-### #2 — PostgreSQL backend
-
-Implementar `PostgresStore` como tercer implementor de `IStore`, junto a `SqliteStore` e `HttpStore`.
-
-**Estado**: ✅ Completo — implementado en rama `feat/postgres-backend-impl`.
-
-**Implementación**:
-- `PostgresStore.cs` (~900 líneas) — todos los 22 métodos de `IStore`
-- FTS via `tsvector GENERATED ALWAYS AS STORED` + GIN indexes
-- Deduplicación de 3 caminos (topic_key, hash window, fresh insert)
-- Schema con índices optimizados y partial GIN index `WHERE deleted_at IS NULL`
-- CLI soporta `ENGRAM_DB_TYPE=postgres` + `ENGRAM_PG_CONNECTION`
-- Tests de paridad con Testcontainers.PostgreSql (26 tests)
-- Npgsql 9.0.* como dependencia
-
-**Por qué**: SQLite tiene límites reales de escritura concurrente. Con 5+ desarrolladores activos en simultáneo se genera contención. La interfaz `IStore` ya está diseñada para soportar esto — el trabajo está acotado.
-
-**Documentación de diseño**:
-- [RFC-001 — PostgreSQL Backend](rfcs/RFC-001-postgresql-backend.md) — motivación, diseño técnico, riesgos
-- [PRD-001 — PostgreSQL Backend](rfcs/PRD-001-postgresql-backend.md) — requisitos, criterios de aceptación
-- [ADR-001 — SQL directo sin ORM](adr/ADR-001-no-orm.md) — decisión de no usar EF Core / Dapper
-- [SDD exploration, proposal, spec, tasks](../sdd/postgres-backend/)
+**Out of scope**: Remover `project` de write tools (Phase 3), project envelope (Phase 3).
 
 ---
 
-### #3 — Obsidian Export (Fase A)
+### Phase 3 — Breaking Changes (proposal: ❌ no creada)
 
-Exportar memorias a un vault de Obsidian como archivos `.md` con frontmatter YAML.
+> Cambios que rompen compatibilidad con la API actual. Requieren versión semver mayor o al menos menor con nota de breaking.
 
-**Estado**: ✅ Completo — implementado en rama `feat/obsidian-export`.
+| # | Feature | Por qué es breaking |
+|---|---------|-------------------|
+| 1 | Remover `project` de write tools | Los agentes ya no pasan `project` — se detecta automáticamente via `DetectProjectFull` |
+| 2 | Project envelope en responses | Cada respuesta incluye `{ project, project_source, warning }` — cambia el JSON de salida |
 
-**Implementación**:
-- CLI `engram obsidian-export` con flags: `--vault`, `--project`, `--include-personal`, `--force`, `--graph-config`, `--limit`
-- Cada observación → un archivo `.md` con YAML frontmatter + wikilinks
-- Sesiones y topic clusters → hub notes que generan graph view
-- Mapa de tipos: `architecture/decision → Architecture/`, `bugfix → Bugs & Fixes/`, etc.
-- Scope security: `scope=personal` nunca se exporta sin `--include-personal`
-- Incremental export con state file (`.engram-sync-state.json`)
-- Deleted observation cleanup
-- 61 tests en `Engram.Obsidian.Tests`
-
-**Por qué**: El Go original ya lo tiene implementado (`internal/obsidian/`). Portear esta lógica es directo — no es diseño desde cero, es adaptación. Hace que las memorias sean auditables por humanos.
-
-**Referencia**: Go original `internal/obsidian/` (exporter, hub, slug, markdown, state, watcher)
+**Dependencias**: Requiere Phase 2 completada (structured errors como base).
 
 ---
 
-## 🟡 Media Prioridad
+### Phase 4 — Memory Relations (proposal: ❌ no creada)
 
-### TTL configurable por tipo de observación
+| # | Feature | Descripción |
+|---|---------|-------------|
+| 1 | Memory conflict surfacing | Detectar observaciones contradictorias entre sesiones (mismo topic_key, contenido opuesto) |
+| 2 | Decay con `review_after` / `expires_at` | Usar las columnas de Phase 1 para expiración automática y sugerir revisiones |
 
-Permitir configurar expiración automática por tipo:
+**Dependencias**: Requiere Phase 1 completada (columnas `review_after`, `expires_at` ya existen).
+
+---
+
+## 📋 Backlog — Features Independientes
+
+Features que no dependen del upstream parity y pueden trabajarse en paralelo.
+
+### TTL Configurable por Tipo (proposal: ✅ creada)
+
+> **Proposal**: [`sdd/ttl-configurable/propose/proposal.md`](../sdd/ttl-configurable/propose/proposal.md)
+> **Branch**: `feat/ttl-configurable` (por crear)
+> **Esfuerzo estimado**: 3-4h
+
+Permitir configurar expiración automática por tipo de observación:
 
 | Tipo | TTL sugerido |
 |------|-------------|
@@ -102,24 +87,74 @@ Permitir configurar expiración automática por tipo:
 | `bugfix`, `pattern` | 90 días |
 | `learning`, `discovery` | 60 días |
 
-**Por qué**: Las observaciones se acumulan indefinidamente. Contexto viejo contamina búsquedas y reduce la calidad de las respuestas del agente.
+**Por qué**: Las observaciones se acumulan indefinidamente. Contexto viejo contamina búsquedas.
 
 ---
 
-### Herramienta administrativa acotada
+### Backend Config File (proposal: ✅ creada)
 
-Interfaz simple (TUI o CLI) para gestión de emergencia:
+> **Proposal**: [`sdd/backend-config-switch/proposal.md`](../sdd/backend-config-switch/proposal.md)
+> **Branch**: `feat/backend-config-file` (por crear)
+> **Esfuerzo estimado**: 4-6h
+
+Archivo `~/.engram/config.json` para cambiar entre backends con un solo valor:
+
+```json
+{
+  "backend": "sqlite",
+  "sqlite_path": "~/.engram/engram.db"
+}
+```
+
+Precedencia: env vars > config file > defaults.
+
+---
+
+### Offline-First Sync (proposal: ❌ no creada)
+
+> **Origen**: Discusión 2026-04-29
+> **Esfuerzo estimado**: ~900 líneas, 3 fases
+
+Bidireccional local SQLite ↔ servidor PostgreSQL.
+
+**Problema**: Con `ENGRAM_URL` todo va directo al servidor. Si se cae la red, el agente pierde la capacidad de guardar memoria.
+
+**Arquitectura**:
+1. Siempre escribe en SQLite local (source of truth primaria)
+2. Si `ENGRAM_URL` está set y hay conexión → `SyncWorker` hace push/pull en background
+3. Server necesita: `POST /sync/push` y `GET /sync/pull?since={seq}`
+4. Conflict resolution: last-write-wins por timestamp
+
+**Infraestructura existente** (ya implementada, nunca consumida):
+- `sync_mutations` journal en SQLite
+- `sync_state` table con lifecycle por target
+- `sync_id` en cada entidad
+- `ExportAsync()` / `ImportAsync()`
+- `EngramSync` class con chunks JSONL
+
+**Fases**:
+- **Fase 1** (Push): ~400 líneas — consume `sync_mutations`, envía al servidor
+- **Fase 2** (Pull): ~300 líneas — baja cambios de otros devs
+- **Fase 3** (CLI): ~200 líneas — `engram sync status/push/pull`, backoff, métricas
+
+---
+
+### Herramienta Administrativa CLI (proposal: ❌ no creada)
+
+> **Esfuerzo estimado**: 4-6h
+
+CLI de emergencia para gestión manual:
 - Listar observaciones con filtros (project, scope, type, rango de fechas)
 - Eliminar por ID o por criterio (proyecto entero, rango de fechas)
 - Ver duplicados y observaciones con bajo valor
 
-**Por qué**: El agente decide qué guardar en el flujo normal, pero hay casos donde se necesita limpieza manual — sesiones rotas, datos incorrectos, limpieza antes de archivar un proyecto.
-
-**Alcance**: No es una UI de gestión cotidiana. Es una herramienta de emergencia.
+**Alcance**: No es UI cotidiana. Es herramienta de emergencia para limpieza.
 
 ---
 
-### Observability básica
+### Observability Básica (proposal: ❌ no creada)
+
+> **Esfuerzo estimado**: 2-3h
 
 Endpoint `/metrics` con:
 - Tiempos de respuesta por operación (search, save, context)
@@ -127,141 +162,95 @@ Endpoint `/metrics` con:
 - Queries por segundo
 - Observaciones por proyecto/scope
 
-**Por qué**: Actualmente no hay señales temáscanas de degradación. Con PostgreSQL o SQLite bajo carga, saber cuándo hay un problema antes de que impacte a los agentes es crítico.
-
 ---
 
 ### Tool Deferral (investigación)
 
-Mover 4+8 herramientas de eager a deferred loading para reducir tokens de inicio de sesión en ~40%.
+> **Estado**: En investigación — no empezar hasta tener datos de tokens
 
-**Core (siempre disponibles)**:
-`mem_save`, `mem_search`, `mem_context`, `mem_session_summary`, `mem_get_observation`, `mem_save_prompt`
+Mover herramientas de eager a deferred loading para reducir tokens de inicio de sesión en ~40%.
 
-**Deferred (via ToolSearch)**:
-`mem_update`, `mem_suggest_topic_key`, `mem_session_start`, `mem_session_end`, `mem_stats`, `mem_delete`, `mem_timeline`, `mem_capture_passive`
+**Core** (siempre disponibles): `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`, `mem_get_observation`, `mem_save_prompt`
 
-**Estado**: Bajo investigación. Necesitamos medir el consumo de tokens actual por herramienta ANTES de optimizar. El SDK de .NET (`ModelContextProtocol` v1.2.0) no tiene `WithDeferLoading` como el SDK de Go — se necesitaría implementar via separación de clases o espera a que el SDK lo soporte.
+**Deferred**: `mem_update`, `mem_suggest_topic_key`, `mem_session_start`, `mem_session_end`, `mem_stats`, `mem_delete`, `mem_timeline`, `mem_capture_passive`
 
-**Por qué es importante analizar**: El consumo de tokens de MCP tools es KGEM (Known Good Estimation Metric) pero varía por agente. Sin datos reales de nuestro deployment, corridas de optimización pueden ser prematuras.
+**Bloqueo**: El SDK .NET (`ModelContextProtocol` v1.2.0) no tiene `WithDeferLoading` como el SDK de Go. Se necesitaría implementar via separación de clases.
 
-**Datos de uso actual**: Uso continuo 33%, semanal 13%, mensual 6%. Necesitamos desglosar por herramienta para saber dónde están los tokens.
+**Prerrequisito**: Medir consumo de tokens actual por herramienta antes de optimizar.
 
-**Referencia**: Go original commit `b6b1f6f` — `perf(mcp): defer 4 rare tools to reduce session startup tokens`
+---
+
+## 🟠 Fase Posterior (ideas)
+
+### Obsidian Export — Fase B (con IA)
+
+Agente especializado que genera documentos sintetizados:
+- Agrupa bugfixes relacionados → *"Patrones de error comunes en el módulo X"*
+- Agrupa decisiones de arquitectura → *"Evolución del diseño del sistema de memoria"*
+- Genera glosario técnico del proyecto
+
+Requiere LLM, tiene costo de tokens. Justifica su propio ciclo SDD.
+
+### Python Port
+
+Port del servidor HTTP a Python para equipos con stack Python-first.
+
+**Tiene sentido si**: Quieren embeddings semánticos (buscar por similitud conceptual).
+**NO tiene sentido si**: Solo quieren almacenamiento + FTS5 — el beneficio es marginal.
 
 ---
 
 ## 🔧 Mantenimiento
 
-Tareas operativas que no son features pero mantienen el proyecto sano.
-
-### Arreglar tasks.md de PostgreSQL SDD
-
-El archivo `sdd/postgres-backend/tasks/tasks.md` tiene 28 tareas sin marcar como `[x]` aunque están todas implementadas. Solo se marcaron 4.7 (CI) y 5.5 (.gitignore).
-
-**Esfuerzo**: 30min — marcar las 28 tareas como completadas.
+| Tarea | Esfuerzo | Estado |
+|-------|----------|--------|
+| Limpiar ramas merged remotas | 5min | ✅ Hecho (2026-04-30) |
+| Rebuild binario local MCP | 15min | ⬜ Pendiente — cerrar VS Code, `dotnet publish`, copiar |
+| Limpiar datos de prueba (ID 1, session verify-001) | 5min | ⬜ Pendiente |
 
 ---
 
-### Rebuild del binario local MCP
+## 📋 Auditoría de Compatibilidad con Go Original
 
-El binario en `/home/gantz/.local/bin/engram-dotnet` está desactualizado (no incluye los últimos fixes de `FormatContextAsync` y `BackendName`). El `cp` falla porque VS Code tiene el proceso MCP abierto.
+Última auditoría: 2026-04-30
 
-**Esfuerzo**: 15min — cerrar VS Code, `dotnet publish`, copiar binario.
-
----
-
-### Backend Config Switch (Nivel 2 — config file)
-
-Proposal ya creada en `sdd/backend-config-switch/proposal.md`. Permitir un archivo `~/.engram/config.json` para cambiar entre backends con un solo valor.
-
-**Esfuerzo**: 4-6h — parser de config, precedence con env vars, docs.
-
----
-
-### Limpiar datos de prueba
-
-La sesión `verify-001` y observación ID 1 son datos de prueba del deploy inicial. Se pueden eliminar si no aportan valor.
-
-**Esfuerzo**: 5min — `DELETE FROM observations WHERE id = 1` + cleanup de sesión.
-
----
-
-## 🟠 Fase Posterior
-
-### Offline-First Sync (bidireccional local ↔ servidor)
-
-**Origen**: Discusión del 2026-04-29 — se detectó que con `ENGRAM_URL` todo va directo al servidor y no hay backup local. Si el servidor se ca o no hay conexión, el agente pierde la capacidad de guardar memoria.
-
-**Problema que resuelve**:
-- Trabajar offline (casa, viaje, sin red) y sincronizar cuando hay conexión
-- Backup local automático de todo lo que se escribe en el servidor
-- Colaboración: recibir cambios de otros devs en tu store local
-
-**Infraestructura existente (ya implementada)**:
-- `sync_mutations` journal en SQLite — change log escrito pero **nunca consumido**
-- `sync_state` table — trackea lifecycle por target (`target_key='cloud'`)
-- `sync_id` en cada entidad — identificador estable cross-store
-- `ExportAsync()` / `ImportAsync()` — export/import completo
-- `EngramSync` class — sync file-based con chunks JSONL (sin red)
-
-**Arquitectura propuesta**:
-1. **Siempre** escribe en SQLite local (source of truth primaria)
-2. Si `ENGRAM_URL` está set y hay conexión → `SyncWorker` hace push/pull en background
-3. Server necesita 2 endpoints nuevos: `POST /sync/push` y `GET /sync/pull?since={seq}`
-4. Conflict resolution: last-write-wins por timestamp
-
-**Fases estimadas**:
-- **Fase 1** (Push sync): ~400 líneas — consume `sync_mutations`, envía al servidor
-- **Fase 2** (Pull sync): ~300 líneas — baja cambios de otros devs
-- **Fase 3** (CLI + robustez): ~200 líneas — `engram sync status/push/pull`, backoff, métricas
-
-**Total estimado**: ~900 líneas nuevas, 5-6 archivos afectados
-
-**Prioridad**: Alta para equipos distribuidos. Diferencia un producto hobby de uno enterprise.
+| Feature del Go original | Estado en .NET | Notas |
+|------------------------|:---:|-------|
+| Scoped topic upserts (scope, topic_key, revision_count) | ✅ | |
+| FTS5 con topic_key + direct search fallback | ✅ | |
+| NormalizeScope (team/personal/project legacy) | ✅ | |
+| `mem_merge_projects` tool | ✅ | |
+| SuggestTopicKey | ✅ | |
+| Project drift detection (DetectProject, FindSimilar) | ✅ | PR #2 |
+| Project detection 5-case (git_child, ambiguous) | ✅ | PR #7 |
+| Write queue (Channel<T> serialization) | ✅ | PR #7 |
+| Session activity tracker + nudge | ✅ | PR #7 |
+| Schema columns (review_after, expires_at, embedding) | ✅ | PR #7 |
+| Obsidian exporter | ✅ | PR #4 |
+| PostgreSQL backend | ✅ | PR #3 |
+| Docker Compose para PG | ✅ | |
+| Backend indicator en `/health` y `/stats` | ✅ | PR #7 |
+| **DELETE /sessions/{id}, /prompts/{id}** | ❌ | **Phase 2** |
+| **mem_current_project** | ❌ | **Phase 2** |
+| **Structured error responses** | ❌ | **Phase 2** |
+| **Obsidian --watch, --since, --project** | ❌ | **Phase 2** |
+| Tool deferral (deferred loading) | ❌ | En investigación |
+| TUI (Bubbletea) | ❌ | Excluido de v1 |
+| Memory conflict surfacing | ❌ | **Phase 4** |
+| Decay / auto-expiration | ❌ | **Phase 4** |
 
 ---
 
-### Obsidian Export — Fase B (con IA)
+## 🗺️ Orden Sugerido de Trabajo
 
-Agente especializado que toma observaciones relacionadas y genera documentos de conocimiento sintetizados:
-- Agrupa bugfixes relacionados → *"Patrones de error comunes en el módulo X"*
-- Agrupa decisiones de arquitectura → *"Evolución del diseño del sistema de memoria"*
-- Genera glosario técnico del proyecto
-
-**Consideración**: Requiere LLM, tiene costo de tokens. Justifica su propio ciclo SDD completo.
-
----
-
-### Python port
-
-Port del servidor HTTP a Python para equipos con stack Python-first.
-
-**Cuándo tiene sentido**:
-- Si el equipo quiere embeddings semánticos (buscar por similitud conceptual, no solo keywords)
-- Si el equipo ya trabaja con Python y no quiere introducir .NET
-
-**Cuándo NO tiene sentido**:
-- Como port 1:1 del servidor HTTP actual — el beneficio es marginal
-- Si el caso de uso es solo almacenamiento y búsqueda FTS5
-
----
-
-## 📋 Auditoría de compatibilidad con Go original
-
-Última auditoría: 2026-04-27
-
-| Feature del Go original | Estado en .NET Port | Notas |
-|------------------------|--------------------|----|
-| Scoped topic upserts (scope, topic_key, revision_count, duplicate_count) | ✅ Porteado | `Models.cs`, `SqliteStore.cs` |
-| FTS5 con topic_key + direct search fallback ("/" shortcut) | ✅ Porteado | `MigrateFtsTopicKey()`, `SearchAsync` |
-| NormalizeScope (team/personal/project legacy) | ✅ Porteado | `SqliteStore.NormalizeScope()` |
-| mem_merge_projects tool | ✅ Porteado | `IStore.MergeProjectsAsync` |
-| SuggestTopicKey | ✅ Porteado | `Normalizers.SuggestTopicKey` |
-| Project drift detection (DetectProject, FindSimilar, Levenshtein) | ✅ Porteado | PR #2 — CLI `projects list|consolidate|prune` |
-| Tool deferral (deferred loading) | ❌ No porteado | En investigación — SDK .NET no lo soporta nativamente |
-| Obsidian brain exporter | ✅ Porteado | Fase A completo — CLI + exporter + hubs + tests |
-| Cloud/PostgresStore + JWT auth | ✅ Porteado | PostgresStore implementado + HttpStore para modo remoto |
-| Docker Compose para PG | ✅ Creado | `docker/docker-compose.yml` con PostgreSQL externo |
-| Backend indicator en responses | ✅ Porteado | Campo `backend` en `/health` y `/stats` |
-| TUI (Bubbletea) | ❌ Excluido de v1 | El Go original lo tiene, .NET port no |
+| Orden | Feature | Por qué primero |
+|-------|---------|----------------|
+| 1 | **Phase 2 — API Parity** | Proposal ya existe. Completa la paridad con Go. Aditivo, sin breaking. |
+| 2 | **TTL Configurable** | Proposal ya existe. Independiente. Usa columnas de Phase 1. |
+| 3 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
+| 4 | **Offline-First Sync** | Feature más compleja. Diferencia producto hobby de enterprise. |
+| 5 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
+| 6 | **Phase 4 — Memory Relations** | Requiere Phase 1 columns. Feature avanzada de calidad de memoria. |
+| 7 | **Observability** | Útil pero no bloqueante. |
+| 8 | **Admin CLI** | Herramienta de emergencia, no crítica. |
+| 9 | **Tool Deferral** | Esperar datos de tokens primero. |

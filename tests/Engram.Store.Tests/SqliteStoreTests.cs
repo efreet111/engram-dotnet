@@ -763,4 +763,132 @@ public class SqliteStoreTests : IDisposable
         Assert.Equal(0, result.SessionsDeleted);
         Assert.Equal(0, result.PromptsDeleted);
     }
+
+    // ─── Delete Session ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteSession_EmptySession_Succeeds()
+    {
+        await _store.CreateSessionAsync("sess-empty", "test-project", "/tmp");
+
+        await _store.DeleteSessionAsync("sess-empty");
+
+        var session = await _store.GetSessionAsync("sess-empty");
+        Assert.Null(session);
+    }
+
+    [Fact]
+    public async Task DeleteSession_NotFound_Throws()
+    {
+        await Assert.ThrowsAsync<SessionNotFoundException>(
+            () => _store.DeleteSessionAsync("does-not-exist"));
+    }
+
+    [Fact]
+    public async Task DeleteSession_HasActiveObservations_Throws()
+    {
+        await _store.CreateSessionAsync("sess-with-obs", "test-project", "/tmp");
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "sess-with-obs",
+            Title = "Test",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        var ex = await Assert.ThrowsAsync<SessionDeleteBlockedException>(
+            () => _store.DeleteSessionAsync("sess-with-obs"));
+
+        Assert.Equal(1, ex.ObservationCount);
+        Assert.Contains("active observations", ex.Message);
+
+        // Session still exists
+        var session = await _store.GetSessionAsync("sess-with-obs");
+        Assert.NotNull(session);
+    }
+
+    [Fact]
+    public async Task DeleteSession_DeletesAssociatedPrompts()
+    {
+        await _store.CreateSessionAsync("sess-with-prompts", "test-project", "/tmp");
+        await _store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = "sess-with-prompts",
+            Content = "Prompt 1",
+            Project = "test-project",
+        });
+        await _store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = "sess-with-prompts",
+            Content = "Prompt 2",
+            Project = "test-project",
+        });
+
+        // Delete session should fail because it has no observations but Go checks count > 0
+        // Actually Go allows delete when session has 0 observations (prompts don't block)
+        // But our FK on prompts.session_id will cascade — let's verify
+        // The Go original hard-deletes prompts before deleting session
+        // Since we have 0 observations, delete should succeed
+        await _store.DeleteSessionAsync("sess-with-prompts");
+
+        var session = await _store.GetSessionAsync("sess-with-prompts");
+        Assert.Null(session);
+
+        // Prompts should be hard-deleted (not just soft-deleted)
+        var promptsAfter = await _store.RecentPromptsAsync("test-project", 100);
+        Assert.Empty(promptsAfter);
+    }
+
+    [Fact]
+    public async Task DeleteSession_BlockedBySoftDeletedObservations()
+    {
+        await _store.CreateSessionAsync("sess-soft-del", "test-project", "/tmp");
+        var obsId = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "sess-soft-del",
+            Title = "To delete",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        // Soft-delete the observation
+        await _store.DeleteObservationAsync(obsId);
+
+        // Delete should STILL fail because Go counts ALL observations (including soft-deleted)
+        await Assert.ThrowsAsync<SessionDeleteBlockedException>(
+            () => _store.DeleteSessionAsync("sess-soft-del"));
+    }
+
+    // ─── Delete Prompt ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeletePrompt_Success_SoftDeletes()
+    {
+        await _store.CreateSessionAsync("sess-prompt-del", "test-project", "/tmp");
+        var promptId = await _store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = "sess-prompt-del",
+            Content = "To be deleted",
+            Project = "test-project",
+        });
+
+        // Verify prompt exists
+        var promptsBefore = await _store.RecentPromptsAsync("test-project", 100);
+        Assert.Contains(promptsBefore, p => p.Id == promptId);
+
+        await _store.DeletePromptAsync(promptId);
+
+        // Prompt should be soft-deleted
+        var promptsAfter = await _store.RecentPromptsAsync("test-project", 100);
+        Assert.DoesNotContain(promptsAfter, p => p.Id == promptId);
+    }
+
+    [Fact]
+    public async Task DeletePrompt_NotFound_Throws()
+    {
+        await Assert.ThrowsAsync<PromptNotFoundException>(
+            () => _store.DeletePromptAsync(999999));
+    }
 }

@@ -7,6 +7,7 @@ public interface IStore : IDisposable
     Task EndSessionAsync(string id, string summary);
     Task<Session?> GetSessionAsync(string id);
     Task<IList<SessionSummary>> RecentSessionsAsync(string? project, int limit);
+    Task DeleteSessionAsync(string id);
 
     // Observations
     Task<long> AddObservationAsync(AddObservationParams p);
@@ -15,15 +16,11 @@ public interface IStore : IDisposable
     Task<bool> UpdateObservationAsync(long id, UpdateObservationParams p);
     Task<bool> DeleteObservationAsync(long id);
 
-    // Search
-    Task<IList<SearchResult>> SearchAsync(string query, SearchOptions opts);
-    Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts);
-    Task<TimelineResult?> TimelineAsync(long observationId, int before, int after);
-
     // Prompts
     Task<long> AddPromptAsync(AddPromptParams p);
     Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit);
     Task<IList<Prompt>> SearchPromptsAsync(string query, string? project, int limit);
+    Task DeletePromptAsync(long id);
 
     // Context & stats
     Task<string> FormatContextAsync(string? project, string? scope);

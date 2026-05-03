@@ -196,3 +196,37 @@ public record AddPromptParams
     [JsonPropertyName("content")]    public string  Content   { get; init; } = "";
     [JsonPropertyName("project")]    public string? Project   { get; init; }
 }
+
+// ─── Domain exceptions ────────────────────────────────────────────────────────
+
+public sealed class SessionNotFoundException : Exception
+{
+    public SessionNotFoundException(string sessionId)
+        : base($"session not found: {sessionId}")
+    {
+        SessionId = sessionId;
+    }
+    public string SessionId { get; }
+}
+
+public sealed class SessionDeleteBlockedException : Exception
+{
+    public SessionDeleteBlockedException(string sessionId, int observationCount)
+        : base($"session has {observationCount} active observations, cannot delete")
+    {
+        SessionId = sessionId;
+        ObservationCount = observationCount;
+    }
+    public string SessionId { get; }
+    public int ObservationCount { get; }
+}
+
+public sealed class PromptNotFoundException : Exception
+{
+    public PromptNotFoundException(long promptId)
+        : base($"prompt not found: {promptId}")
+    {
+        PromptId = promptId;
+    }
+    public long PromptId { get; }
+}
