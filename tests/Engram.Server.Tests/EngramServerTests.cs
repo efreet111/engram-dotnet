@@ -120,6 +120,61 @@ public class EngramServerTests : IAsyncDisposable
         Assert.NotNull((string?)json?["ended_at"]);
     }
 
+    // ─── Session deletes ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DELETE_sessions_success_Returns200()
+    {
+        const string sessionId = "sess-to-delete";
+        await SeedSession(sessionId);
+
+        var resp = await _client.DeleteAsync($"/sessions/{sessionId}");
+        resp.EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(sessionId, (string?)json["id"]);
+        Assert.Equal("deleted", (string?)json["status"]);
+
+        var get = await _client.GetAsync($"/sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    [Fact]
+    public async Task DELETE_sessions_nonexistent_Returns404()
+    {
+        var resp = await _client.DeleteAsync("/sessions/ghost-session");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("session not found: ghost-session", (string?)json["error"]);
+    }
+
+    [Fact]
+    public async Task DELETE_sessions_has_observations_Returns409()
+    {
+        const string sessionId = "sess-with-obs";
+        await SeedSession(sessionId);
+
+        var create = await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = sessionId,
+            title      = "blocking observation",
+            content    = "cannot delete",
+            type       = "manual",
+        }, JsonOpts);
+        create.EnsureSuccessStatusCode();
+
+        var resp = await _client.DeleteAsync($"/sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("session has 1 active observations, cannot delete", (string?)json["error"]);
+    }
+
     // ─── Observations ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -299,6 +354,57 @@ public class EngramServerTests : IAsyncDisposable
         var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
         Assert.NotNull(json);
         Assert.NotEmpty(json);
+    }
+
+    // ─── Prompt deletes ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DELETE_prompts_success_Returns200()
+    {
+        const string sessionId = "sess-prompt-delete";
+        await SeedSession(sessionId);
+
+        var create = await _client.PostAsJsonAsync("/prompts", new
+        {
+            session_id = sessionId,
+            content    = "Please delete this prompt",
+            project    = "prompt-proj",
+        }, JsonOpts);
+        create.EnsureSuccessStatusCode();
+
+        var created = await create.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(created);
+        var promptId = (long?)created["id"];
+        Assert.NotNull(promptId);
+        var resp = await _client.DeleteAsync($"/prompts/{promptId.Value}");
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(promptId, (long?)json["id"]);
+        Assert.Equal("deleted", (string?)json["status"]);
+    }
+
+    [Fact]
+    public async Task DELETE_prompts_nonexistent_Returns404()
+    {
+        var resp = await _client.DeleteAsync("/prompts/999999");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("prompt not found: 999999", (string?)json["error"]);
+    }
+
+    [Fact]
+    public async Task DELETE_prompts_invalid_id_Returns400()
+    {
+        var resp = await _client.DeleteAsync("/prompts/abc");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid prompt id", (string?)json["error"]);
     }
 
     // ─── Export / Import ──────────────────────────────────────────────────────

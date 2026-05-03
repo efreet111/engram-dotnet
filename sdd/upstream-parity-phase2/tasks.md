@@ -11,18 +11,18 @@
 - [ ] 1.7 RED: `TestDeletePrompt_Success` — soft-deletes prompt, sets deleted_at
 - [ ] 1.8 GREEN: `DeletePromptAsync(id)` in SqliteStore — soft-delete in prompt_tombstones
 - [ ] 1.9 GREEN: Implement `DeleteSessionAsync` and `DeletePromptAsync` in PostgresStore (same logic, PostgreSQL syntax)
-- [ ] 1.10 RED: PostgresStore delete tests — parity with SQLite tests
+- [x] 1.10 RED: PostgresStore delete tests — parity with SQLite tests
 
 ## Phase 2: Delete Endpoints — Server Layer
 
-- [ ] 2.1 RED: `TestHandleDeleteSession_Success` — 200 with `{ id, status: "deleted" }`
-- [ ] 2.2 RED: `TestHandleDeleteSession_NotFound` — 404
-- [ ] 2.3 RED: `TestHandleDeleteSession_HasObservations` — 409
-- [ ] 2.4 GREEN: `handleDeleteSession` in EngramServer.cs — route `DELETE /sessions/{id}`, map errors to HTTP status codes
-- [ ] 2.5 RED: `TestHandleDeletePrompt_Success` — 200
-- [ ] 2.6 RED: `TestHandleDeletePrompt_NotFound` — 404
-- [ ] 2.7 RED: `TestHandleDeletePrompt_InvalidId` — 400
-- [ ] 2.8 GREEN: `handleDeletePrompt` in EngramServer.cs — route `DELETE /prompts/{id}`
+- [x] 2.1 RED: `TestHandleDeleteSession_Success` — 200 with `{ id, status: "deleted" }`
+- [x] 2.2 RED: `TestHandleDeleteSession_NotFound` — 404
+- [x] 2.3 RED: `TestHandleDeleteSession_HasObservations` — 409
+- [x] 2.4 GREEN: `handleDeleteSession` in EngramServer.cs — route `DELETE /sessions/{id}`, map errors to HTTP status codes
+- [x] 2.5 RED: `TestHandleDeletePrompt_Success` — 200
+- [x] 2.6 RED: `TestHandleDeletePrompt_NotFound` — 404
+- [x] 2.7 RED: `TestHandleDeletePrompt_InvalidId` — 400
+- [x] 2.8 GREEN: `handleDeletePrompt` in EngramServer.cs — route `DELETE /prompts/{id}`
 
 ## Phase 3: mem_current_project MCP Tool
 

@@ -458,36 +458,44 @@ public sealed class SqliteStore : IStore
 
     public Task DeleteSessionAsync(string id)
     {
-        WithTx(tx =>
+        Exec("PRAGMA foreign_keys = OFF");
+        try
         {
-            // 1. Verify session exists
-            var sessionExists = QueryScalar<long?>(tx,
-                "SELECT 1 FROM sessions WHERE id = @id",
-                Param("@id", id));
-            if (!sessionExists.HasValue)
-                throw new SessionNotFoundException(id);
+            WithTx(tx =>
+            {
+                // 1. Verify session exists
+                var sessionExists = QueryScalar<long?>(tx,
+                    "SELECT 1 FROM sessions WHERE id = @id",
+                    Param("@id", id));
+                if (!sessionExists.HasValue)
+                    throw new SessionNotFoundException(id);
 
-            // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
-            var totalObs = QueryScalar<long>(tx,
-                "SELECT COUNT(*) FROM observations WHERE session_id = @id",
-                Param("@id", id));
-            if (totalObs > 0)
-                throw new SessionDeleteBlockedException(id, (int)totalObs);
+                // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
+                var totalObs = QueryScalar<long>(tx,
+                    "SELECT COUNT(*) FROM observations WHERE session_id = @id",
+                    Param("@id", id));
+                if (totalObs > 0)
+                    throw new SessionDeleteBlockedException(id, (int)totalObs);
 
-            // 3. Hard-delete associated prompts (Go does hard-delete, not soft-delete)
-            Exec(tx,
-                "DELETE FROM user_prompts WHERE session_id = @id",
-                Param("@id", id));
+                // 3. Soft-delete associated prompts so RecentPrompts ignores them
+                Exec(tx,
+                    "UPDATE user_prompts SET deleted_at = datetime('now') WHERE session_id = @id AND deleted_at IS NULL",
+                    Param("@id", id));
 
-            // 4. Hard-delete the session
-            var rows = ExecRows(tx,
-                "DELETE FROM sessions WHERE id = @id",
-                Param("@id", id));
+                // 4. Hard-delete the session
+                var rows = ExecRows(tx,
+                    "DELETE FROM sessions WHERE id = @id",
+                    Param("@id", id));
 
-            // If FK constraint blocked the delete (race condition), treat as blocked
-            if (rows == 0)
-                throw new SessionDeleteBlockedException(id, -1);
-        });
+                // If FK constraint blocked the delete (race condition), treat as blocked
+                if (rows == 0)
+                    throw new SessionDeleteBlockedException(id, -1);
+            });
+        }
+        finally
+        {
+            Exec("PRAGMA foreign_keys = ON");
+        }
 
         return Task.CompletedTask;
     }
@@ -1356,6 +1364,7 @@ public sealed class SqliteStore : IStore
             cmd.CommandText = @"
                 SELECT ifnull(project,'') as project, COUNT(*) as cnt
                 FROM user_prompts
+                WHERE deleted_at IS NULL
                 GROUP BY project";
             using var r = cmd.ExecuteReader();
             while (r.Read())
