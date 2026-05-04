@@ -905,4 +905,21 @@ public class SqliteStoreTests : IDisposable
         await Assert.ThrowsAsync<PromptNotFoundException>(
             () => _store.DeletePromptAsync(999999));
     }
+
+    [Fact]
+    public async Task NormalizeScope_Project_NormalizesToPersonal()
+    {
+        await SeedSession();
+        var id = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title = "Scope normalization test",
+            Content = "Test legacy project scope normalization",
+            Scope = "project"
+        });
+
+        var obs = await _store.GetObservationAsync(id);
+
+        Assert.Equal("personal", obs.Scope);
+    }
 }

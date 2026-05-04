@@ -193,9 +193,9 @@ public class ProjectDetectorTests
     [Fact]
     public void NormalizeProjectWithWarning_Change_ReturnsWarning()
     {
-        var (normalized, warning) = Normalizers.NormalizeProjectWithWarning("My-API");
+        var (normalized, warning) = Normalizers.NormalizeProjectWithWarning("My_API");
         Assert.Equal("my-api", normalized);
-        Assert.Contains("My-API", warning);
+        Assert.Contains("My_API", warning);
         Assert.Contains("my-api", warning);
     }
 
@@ -216,10 +216,10 @@ public class ProjectDetectorTests
     }
 
     [Theory]
-    [InlineData("My-Project", "my-project", true)]
-    [InlineData("my-project", "my-project", false)]
-    [InlineData("MY_PROJECT", "my_project", true)]
-    [InlineData("  my-project  ", "my-project", true)]
+    [InlineData("My-Project", "my-project", false)]   // only lowercase, no structural change → no warning
+    [InlineData("my-project", "my-project", false)]   // already normalized
+    [InlineData("MY_PROJECT", "my-project", true)]    // underscore → dash
+    [InlineData("  my-project  ", "my-project", false)] // trim only, no structural change → no warning
     public void NormalizeProjectWithWarning_ConsistentBehavior(
         string input, string expected, bool shouldWarn)
     {
@@ -388,10 +388,10 @@ public class ProjectDetectorTests
     // ─── NormalizeProject Edge Cases ──────────────────────────────────────────
 
     [Theory]
-    [InlineData("My  Project", "my  project")]  // Spaces preserved (only -- collapsed)
-    [InlineData("MY__PROJECT", "my_project")]   // __ → _ (NormalizeProjectWithWarning collapses __)
-    [InlineData("  spaced  out  ", "spaced  out")] // Trim + lowercase
-    [InlineData("UPPER-case_MIX", "upper-case_mix")]
+    [InlineData("My  Project", "my-project")]       // spaces → dash
+    [InlineData("MY__PROJECT", "my-project")]       // __ → single dash
+    [InlineData("  spaced  out  ", "spaced-out")]   // trim + spaces → dash
+    [InlineData("UPPER-case_MIX", "upper-case-mix")] // underscore → dash
     public void NormalizeProject_HandlesEdgeCases(string input, string expected)
     {
         var result = Normalizers.NormalizeProject(input);

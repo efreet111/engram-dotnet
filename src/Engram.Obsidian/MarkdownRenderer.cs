@@ -31,7 +31,7 @@ public static class MarkdownRenderer
         sb.AppendLine("---");
         sb.AppendLine($"id: {obs.Id}");
         sb.AppendLine($"type: {obs.Type}");
-        sb.AppendLine($"project: {project}");
+        sb.AppendLine(string.IsNullOrEmpty(project) ? "project: \"\"" : $"project: {project}");
         sb.AppendLine($"scope: {obs.Scope}");
         sb.AppendLine(string.IsNullOrEmpty(topicKey)
             ? "topic_key: \"\""

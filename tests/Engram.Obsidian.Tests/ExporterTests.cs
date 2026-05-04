@@ -337,7 +337,7 @@ public class ExporterTests
     }
 
     [Fact]
-    public void Export_GraphConfigZeroValue_DefaultsToSkip()
+    public void Export_GraphConfigZeroValue_DefaultsToPreserve()
     {
         var store = new MockStoreReader();
         var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir });
