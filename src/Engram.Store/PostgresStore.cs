@@ -295,42 +295,74 @@ public sealed class PostgresStore : IStore
 
     public Task DeleteSessionAsync(string id)
     {
-        // 1. Verify session exists
-        using (var cmd = _db.CreateCommand())
+        using var tx = _db.BeginTransaction();
+        try
         {
-            cmd.CommandText = "SELECT project FROM sessions WHERE id = @id";
-            cmd.Parameters.AddWithValue("@id", id);
-            var result = cmd.ExecuteScalar();
-            if (result == null)
-                throw new SessionNotFoundException(id);
-        }
+            // 1. Verify session exists
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = "SELECT project FROM sessions WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", id);
+                var result = cmd.ExecuteScalar();
+                if (result == null)
+                    throw new SessionNotFoundException(id);
+            }
 
-        // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
-        using (var cmd = _db.CreateCommand())
-        {
-            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id";
-            cmd.Parameters.AddWithValue("@id", id);
-            var totalObs = Convert.ToInt64(cmd.ExecuteScalar());
-            if (totalObs > 0)
-                throw new SessionDeleteBlockedException(id, (int)totalObs);
-        }
+            // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id";
+                cmd.Parameters.AddWithValue("@id", id);
+                var totalObs = Convert.ToInt64(cmd.ExecuteScalar());
+                if (totalObs > 0)
+                    throw new SessionDeleteBlockedException(id, (int)totalObs);
+            }
 
-        // 3. Hard-delete associated prompts (Go does hard-delete)
-        using (var cmd = _db.CreateCommand())
-        {
-            cmd.CommandText = "DELETE FROM user_prompts WHERE session_id = @id";
-            cmd.Parameters.AddWithValue("@id", id);
-            cmd.ExecuteNonQuery();
-        }
+            // 3. Soft-delete associated prompts so RecentPrompts excludes them
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = "UPDATE user_prompts SET deleted_at = NOW() AT TIME ZONE 'utc' WHERE session_id = @id AND deleted_at IS NULL";
+                cmd.Parameters.AddWithValue("@id", id);
+                cmd.ExecuteNonQuery();
+            }
 
-        // 4. Hard-delete the session
-        using (var cmd = _db.CreateCommand())
+            // 4. Hard-delete the session. Temporarily disable FK triggers so soft-deleted prompts can keep their session_id.
+            using var disable = _db.CreateCommand();
+            disable.CommandText = "SET session_replication_role = replica";
+            disable.ExecuteNonQuery();
+            try
+            {
+                using var cmd = _db.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = "DELETE FROM sessions WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", id);
+                var rows = cmd.ExecuteNonQuery();
+                if (rows == 0)
+                    throw new SessionDeleteBlockedException(id, -1);
+            }
+            finally
+            {
+                using var enable = _db.CreateCommand();
+                enable.CommandText = "SET session_replication_role = origin";
+                enable.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+        }
+        catch
         {
-            cmd.CommandText = "DELETE FROM sessions WHERE id = @id";
-            cmd.Parameters.AddWithValue("@id", id);
-            var rows = cmd.ExecuteNonQuery();
-            if (rows == 0)
-                throw new SessionDeleteBlockedException(id, -1);
+            try
+            {
+                tx.Rollback();
+            }
+            catch
+            {
+                // Ignore rollback failures
+            }
+            throw;
         }
 
         return Task.CompletedTask;
@@ -1101,6 +1133,7 @@ public sealed class PostgresStore : IStore
             cmd.CommandText = @"
                 SELECT COALESCE(project,'') as project, COUNT(*) as cnt
                 FROM user_prompts
+                WHERE deleted_at IS NULL
                 GROUP BY project";
             using var r = cmd.ExecuteReader();
             while (r.Read())

@@ -1,4 +1,6 @@
+using System;
 using Engram.Store;
+using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -69,6 +71,18 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
             Project = project,
             TopicKey = topicKey,
         });
+
+    private async Task<int> CountSoftDeletedPromptsAsync(string sessionId)
+    {
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        using var cmd = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM user_prompts WHERE session_id = @session AND deleted_at IS NOT NULL",
+            conn);
+        cmd.Parameters.AddWithValue("session", sessionId);
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result ?? 0);
+    }
 
     // ─── Sessions ─────────────────────────────────────────────────────────────
 
@@ -281,6 +295,128 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
 
         Assert.True(stats.TotalSessions >= 1);
         Assert.True(stats.TotalObservations >= 1);
+    }
+
+    // ─── Delete Session / Prompt ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteSession_EmptySession_Succeeds()
+    {
+        var sessionId = $"sess-empty-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+
+        await _fixture.Store.DeleteSessionAsync(sessionId);
+
+        var session = await _fixture.Store.GetSessionAsync(sessionId);
+        Assert.Null(session);
+    }
+
+    [Fact]
+    public async Task DeleteSession_NotFound_Throws()
+    {
+        await Assert.ThrowsAsync<SessionNotFoundException>(
+            () => _fixture.Store.DeleteSessionAsync("does-not-exist"));
+    }
+
+    [Fact]
+    public async Task DeleteSession_HasActiveObservations_Throws()
+    {
+        var sessionId = $"sess-with-obs-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+        await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = sessionId,
+            Title = "Test",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        var ex = await Assert.ThrowsAsync<SessionDeleteBlockedException>(
+            () => _fixture.Store.DeleteSessionAsync(sessionId));
+
+        Assert.Equal(1, ex.ObservationCount);
+        Assert.Contains("active observations", ex.Message);
+
+        var session = await _fixture.Store.GetSessionAsync(sessionId);
+        Assert.NotNull(session);
+    }
+
+    [Fact]
+    public async Task DeleteSession_DeletesAssociatedPrompts()
+    {
+        var sessionId = $"sess-with-prompts-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+        await _fixture.Store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = sessionId,
+            Content = "Prompt 1",
+            Project = "test-project",
+        });
+        await _fixture.Store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = sessionId,
+            Content = "Prompt 2",
+            Project = "test-project",
+        });
+
+        await _fixture.Store.DeleteSessionAsync(sessionId);
+
+        var session = await _fixture.Store.GetSessionAsync(sessionId);
+        Assert.Null(session);
+
+        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        Assert.Empty(promptsAfter);
+        var deletedCount = await CountSoftDeletedPromptsAsync(sessionId);
+        Assert.Equal(2, deletedCount);
+    }
+
+    [Fact]
+    public async Task DeleteSession_BlockedBySoftDeletedObservations()
+    {
+        var sessionId = $"sess-soft-del-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+        var obsId = await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = sessionId,
+            Title = "To delete",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        await _fixture.Store.DeleteObservationAsync(obsId);
+
+        await Assert.ThrowsAsync<SessionDeleteBlockedException>(
+            () => _fixture.Store.DeleteSessionAsync(sessionId));
+    }
+
+    [Fact]
+    public async Task DeletePrompt_Success_SoftDeletes()
+    {
+        var sessionId = $"sess-prompt-del-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+        var promptId = await _fixture.Store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = sessionId,
+            Content = "To be deleted",
+            Project = "test-project",
+        });
+
+        var promptsBefore = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        Assert.Contains(promptsBefore, p => p.Id == promptId);
+
+        await _fixture.Store.DeletePromptAsync(promptId);
+
+        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        Assert.DoesNotContain(promptsAfter, p => p.Id == promptId);
+    }
+
+    [Fact]
+    public async Task DeletePrompt_NotFound_Throws()
+    {
+        await Assert.ThrowsAsync<PromptNotFoundException>(
+            () => _fixture.Store.DeletePromptAsync(999_999));
     }
 
     // ─── Export / Import ──────────────────────────────────────────────────────

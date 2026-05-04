@@ -15,6 +15,9 @@ public interface IStore : IDisposable
     Task<IList<Observation>> RecentObservationsAsync(string? project, string? scope, int limit);
     Task<bool> UpdateObservationAsync(long id, UpdateObservationParams p);
     Task<bool> DeleteObservationAsync(long id);
+    Task<IList<SearchResult>> SearchAsync(string query, SearchOptions opts);
+    Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts);
+    Task<TimelineResult?> TimelineAsync(long observationId, int before, int after);
 
     // Prompts
     Task<long> AddPromptAsync(AddPromptParams p);

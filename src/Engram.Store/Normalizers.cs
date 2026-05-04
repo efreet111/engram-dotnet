@@ -39,10 +39,12 @@ public static class Normalizers
     public static (string normalized, string warning) NormalizeProjectWithWarning(string? project)
     {
         if (string.IsNullOrWhiteSpace(project)) return ("", "");
-        var n = project.Trim().ToLowerInvariant();
+        var originalNormalized = project.Trim().ToLowerInvariant();
+        // replace underscores and whitespace with hyphens
+        var n = Regex.Replace(originalNormalized, @"[_\s]+", "-");
+        // collapse consecutive hyphens
         while (n.Contains("--")) n = n.Replace("--", "-");
-        while (n.Contains("__")) n = n.Replace("__", "_");
-        if (n == project) return (n, "");
+        if (n == originalNormalized) return (n, "");
         return (n, $"⚠️ Project name normalized: \"{project}\" → \"{n}\"");
     }
 

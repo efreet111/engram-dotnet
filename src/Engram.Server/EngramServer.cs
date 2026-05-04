@@ -66,6 +66,7 @@ public static class EngramServer
         app.MapPost("/sessions/{id}/end",           (Func<HttpContext, Task<IResult>>)((ctx) => HandleEndSession(ctx, store)));
         app.MapGet("/sessions/recent",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleRecentSessions(ctx, store)));
         app.MapGet("/sessions/{id}",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleGetSession(ctx, store)));
+        app.MapDelete("/sessions/{id}",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleDeleteSession(ctx, store)));
         app.MapPost("/observations",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleAddObservation(ctx, store)));
         app.MapPost("/observations/passive",        (Func<HttpContext, Task<IResult>>)((ctx) => HandlePassiveCapture(ctx, store)));
         app.MapGet("/observations/recent",          (Func<HttpContext, Task<IResult>>)((ctx) => HandleRecentObservations(ctx, store)));
@@ -77,6 +78,7 @@ public static class EngramServer
         app.MapPost("/prompts",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleAddPrompt(ctx, store)));
         app.MapGet("/prompts/recent",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleRecentPrompts(ctx, store)));
         app.MapGet("/prompts/search",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleSearchPrompts(ctx, store)));
+        app.MapDelete("/prompts/{id}",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleDeletePrompt(ctx, store)));
         app.MapGet("/context",                      (Func<HttpContext, Task<IResult>>)((ctx) => HandleContext(ctx, store)));
         app.MapGet("/export",                       (Func<HttpContext, Task<IResult>>)((ctx) => HandleExport(ctx, store)));
         app.MapPost("/import",                      (Func<HttpContext, Task<IResult>>)((ctx) => HandleImport(ctx, store)));
@@ -125,6 +127,26 @@ public static class EngramServer
         var session = await store.GetSessionAsync(id);
         if (session is null) return Results.NotFound(new { error = $"session {id} not found" });
         return Json(session);
+    }
+
+    private static async Task<IResult> HandleDeleteSession(HttpContext ctx, IStore store)
+    {
+        var id = ctx.Request.RouteValues["id"]?.ToString() ?? "";
+
+        try
+        {
+            await store.DeleteSessionAsync(id);
+        }
+        catch (SessionNotFoundException)
+        {
+            return Error($"session not found: {id}", 404);
+        }
+        catch (SessionDeleteBlockedException ex)
+        {
+            return Error($"session has {ex.ObservationCount} active observations, cannot delete", 409);
+        }
+
+        return Json(new { id, status = "deleted" });
     }
 
     private static async Task<IResult> HandleAddObservation(HttpContext ctx, IStore store)
@@ -272,6 +294,24 @@ public static class EngramServer
         var limit   = QueryInt(ctx, "limit", 10);
         var result  = await store.SearchPromptsAsync(query, project, limit);
         return Json(result);
+    }
+
+    private static async Task<IResult> HandleDeletePrompt(HttpContext ctx, IStore store)
+    {
+        var idValue = ctx.Request.RouteValues["id"]?.ToString() ?? "";
+        if (!long.TryParse(idValue, out var id))
+            return Error("invalid prompt id", 400);
+
+        try
+        {
+            await store.DeletePromptAsync(id);
+        }
+        catch (PromptNotFoundException)
+        {
+            return Error($"prompt not found: {id}", 404);
+        }
+
+        return Json(new { id, status = "deleted" });
     }
 
     private static async Task<IResult> HandleContext(HttpContext ctx, IStore store)

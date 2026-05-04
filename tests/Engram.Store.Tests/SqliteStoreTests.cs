@@ -1,4 +1,5 @@
 using Engram.Store;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Engram.Store.Tests;
@@ -47,6 +48,17 @@ public class SqliteStoreTests : IDisposable
             Project   = project,
             TopicKey  = topicKey,
         });
+
+    private int CountSoftDeletedPrompts(string sessionId)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE session_id = @session AND deleted_at IS NOT NULL";
+        cmd.Parameters.AddWithValue("@session", sessionId);
+        return System.Convert.ToInt32(cmd.ExecuteScalar());
+    }
 
     // ─── Sessions ─────────────────────────────────────────────────────────────
 
@@ -835,9 +847,11 @@ public class SqliteStoreTests : IDisposable
         var session = await _store.GetSessionAsync("sess-with-prompts");
         Assert.Null(session);
 
-        // Prompts should be hard-deleted (not just soft-deleted)
+        // Prompts should be soft-deleted: they vanish from RecentPrompts but still have deleted_at set
         var promptsAfter = await _store.RecentPromptsAsync("test-project", 100);
         Assert.Empty(promptsAfter);
+        var deletedCount = CountSoftDeletedPrompts("sess-with-prompts");
+        Assert.Equal(2, deletedCount);
     }
 
     [Fact]
@@ -890,5 +904,22 @@ public class SqliteStoreTests : IDisposable
     {
         await Assert.ThrowsAsync<PromptNotFoundException>(
             () => _store.DeletePromptAsync(999999));
+    }
+
+    [Fact]
+    public async Task NormalizeScope_Project_NormalizesToPersonal()
+    {
+        await SeedSession();
+        var id = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title = "Scope normalization test",
+            Content = "Test legacy project scope normalization",
+            Scope = "project"
+        });
+
+        var obs = await _store.GetObservationAsync(id);
+
+        Assert.Equal("personal", obs.Scope);
     }
 }

@@ -8,14 +8,16 @@ public class NormalizersTests
     // ─── NormalizeProject ─────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("MyProject",        "myproject")]           // lowercased
-    [InlineData("my_project",       "my_project")]          // underscores preserved
-    [InlineData("My-Project",       "my-project")]          // hyphen preserved, lowercased
-    [InlineData("MY PROJECT",       "my project")]          // spaces preserved, lowercased
-    [InlineData("  my project  ",   "my project")]          // trimmed
-    [InlineData("proj--foo",        "proj-foo")]            // double-dash collapsed
-    [InlineData("proj__foo",        "proj_foo")]            // double-underscore collapsed
-    [InlineData("proj123",          "proj123")]             // alphanumeric unchanged
+[InlineData("MyProject",        "myproject")]           // lowercased
+[InlineData("my_project",       "my-project")]          // underscore to hyphen
+[InlineData("My-Project",       "my-project")]          // hyphen preserved, lowercased
+[InlineData("MY PROJECT",       "my-project")]          // space to hyphen, lowercased
+[InlineData("  my project  ",   "my-project")]          // trimmed and space to hyphen
+[InlineData("proj--foo",        "proj-foo")]            // double-dash collapsed
+[InlineData("proj__foo",        "proj-foo")]            // double-underscore to hyphen
+[InlineData("proj123",          "proj123")]             // alphanumeric unchanged
+[InlineData("my  project",      "my-project")]          // multiple spaces collapsed and hyphen
+[InlineData("My_Project_Name",  "my-project-name")]     // multiple underscores and case
     public void NormalizeProject_TrimLowercaseAndCollapseRepeated(string input, string expected)
     {
         var result = Normalizers.NormalizeProject(input);
