@@ -45,8 +45,9 @@ public sealed class McpConfig
 /// IStore, McpConfig, and WriteQueue are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity)
 {
+    private readonly SessionActivity _activity = activity;
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -59,6 +60,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Max results (default: 10, max: 20)")] int limit = 10)
     {
         var clampedLimit = Math.Clamp(limit, 1, 20);
+        var activityScope = scope ?? Engram.Store.Scopes.Personal;
+        var activitySessionId = ResolveActivitySessionId(project, activityScope);
+        _activity.RecordToolCall(activitySessionId);
 
         IList<SearchResult> results;
 
@@ -91,7 +95,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         }
 
         if (results.Count == 0)
-            return $"No memories found for: \"{query}\"";
+            return AppendActivityNudge($"No memories found for: \"{query}\"", activitySessionId);
 
         var sb = new StringBuilder();
         sb.AppendLine($"Found {results.Count} memories:");
@@ -113,7 +117,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         if (anyTruncated)
             sb.AppendLine("---\nResults above are previews (300 chars). To read the full content of a specific memory, call mem_get_observation(id: <ID>).");
 
-        return sb.ToString().TrimEnd();
+        return AppendActivityNudge(sb.ToString().TrimEnd(), activitySessionId);
     }
 
     // ─── mem_save ────────────────────────────────────────────────────────────
@@ -197,6 +201,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 Scope     = scope,
                 TopicKey  = topic_key,
             });
+
+            _activity.RecordSave(session_id);
 
             var msg = $"Memory saved: \"{title}\" ({type})";
             if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
@@ -327,6 +333,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Filter observations by scope: team, personal, or omit for both")] string? scope = null,
         [Description("Number of observations to retrieve (default: 20)")] int limit = 20)
     {
+        var activityScope = scope ?? Engram.Store.Scopes.Personal;
+        var activitySessionId = ResolveActivitySessionId(project, activityScope);
+        _activity.RecordToolCall(activitySessionId);
+
         // Wide-read: fetch from both team/{project} and {user}/{project} when user is set
         var teamProject     = ResolveProject(project, Engram.Store.Scopes.Team);
         var personalProject = ResolveProject(project, Engram.Store.Scopes.Personal);
@@ -344,13 +354,19 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             context = await store.FormatContextAsync(teamProject, scope);
         }
 
+        string response;
         if (string.IsNullOrEmpty(context))
-            return "No previous session memories found.";
+        {
+            response = "No previous session memories found.";
+        }
+        else
+        {
+            var stats    = await store.StatsAsync();
+            var projects2 = stats.Projects.Count > 0 ? string.Join(", ", stats.Projects) : "none";
+            response = $"{context}\n---\nMemory stats: {stats.TotalSessions} sessions, {stats.TotalObservations} observations across projects: {projects2}";
+        }
 
-        var stats    = await store.StatsAsync();
-        var projects2 = stats.Projects.Count > 0 ? string.Join(", ", stats.Projects) : "none";
-
-        return $"{context}\n---\nMemory stats: {stats.TotalSessions} sessions, {stats.TotalObservations} observations across projects: {projects2}";
+        return AppendActivityNudge(response, activitySessionId);
     }
 
     // ─── mem_stats ───────────────────────────────────────────────────────────
@@ -503,7 +519,12 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 Scope     = Engram.Store.Scopes.Team,
             });
 
-            return $"Session summary saved for project \"{project}\"";
+            var response = $"Session summary saved for project \"{project}\"";
+            var score = _activity.ActivityScore(session_id);
+            if (!string.IsNullOrEmpty(score))
+                response += $"\n{score}";
+
+            return response;
         });
     }
 
@@ -519,6 +540,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         project = ResolveProject(project, Engram.Store.Scopes.Team);
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
+            _activity.RecordToolCall(DefaultSessionId(project));
             await store.CreateSessionAsync(id, project, directory ?? "");
             return $"Session \"{id}\" started for project \"{project}\"";
         });
@@ -535,6 +557,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
             await store.EndSessionAsync(id, summary ?? "");
+            _activity.ClearSession(id);
             return $"Session \"{id}\" completed";
         });
     }
@@ -560,6 +583,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
         project    = ResolveProject(project, Engram.Store.Scopes.Personal);
         session_id ??= DefaultSessionId(project);
+        _activity.RecordToolCall(session_id);
         source     ??= "mcp-passive";
 
         return await writeQueue.EnqueueAsync<string>(async ct =>
@@ -639,6 +663,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     private string ResolveProject(string? project)
         => ResolveProject(project, Engram.Store.Scopes.Personal);
 
+    private string ResolveActivitySessionId(string? project, string scope)
+        => DefaultSessionId(ResolveProject(project, scope));
+
     /// <summary>
     /// Auto-classifies the scope based on observation type.
     /// Team types: architecture, decision, bugfix, pattern, session_summary,
@@ -662,4 +689,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";
+
+    private string AppendActivityNudge(string baseResponse, string sessionId)
+    {
+        var nudge = _activity.NudgeIfNeeded(sessionId);
+        return string.IsNullOrEmpty(nudge) ? baseResponse : baseResponse + nudge;
+    }
 }

@@ -303,116 +303,310 @@ Read tools MUST NOT use the write queue:
 
 ---
 
-# 4. Session Activity Tracker
+# 4. Session Activity Tracker (CORRECTED — Go Upstream Parity)
 
 ## Purpose
 
 Track tool call and save activity per session to provide feedback to the agent about memory hygiene.
 
+**Note**: This section was corrected by delta spec `specs/04-session-activity-delta.md` to match Go upstream (`internal/mcp/activity.go`). The original requirements had 8 deviations from upstream behavior.
+
 ## Requirements
 
-### REQ-ACT-001: SessionActivity Interface
+### REQ-ACT-001: SessionActivity Class (CORRECTED)
 
 ```csharp
-public interface ISessionActivity
+namespace Engram.Mcp;
+
+public sealed class SessionActivity
 {
-    void RecordToolCall(string sessionId);
-    void RecordSave(string sessionId);
-    void ClearSession(string sessionId);
-    string? NudgeIfNeeded(string sessionId, TimeSpan? threshold = null);
-    string ActivityScore(string sessionId);
+    private readonly object _lock = new();
+    private readonly Dictionary<string, SessionStats> _sessions = new();
+    private readonly TimeSpan _nudgeAfter = TimeSpan.FromMinutes(10);
+    private readonly Func<DateTimeOffset> _now;
+
+    // Public constructor uses DateTimeOffset.Now
+    public SessionActivity() : this(() => DateTimeOffset.Now) { }
+
+    // Internal constructor for testability (injectable nowFunc)
+    internal SessionActivity(Func<DateTimeOffset> nowFunc) => _now = nowFunc;
+
+    public void RecordToolCall(string sessionId);
+    public void RecordSave(string sessionId);
+    public void ClearSession(string sessionId);
+    public string? NudgeIfNeeded(string sessionId);
+    public string ActivityScore(string sessionId);
+
+    private sealed record SessionStats(
+        DateTimeOffset StartedAt,
+        int ToolCallCount,
+        int SaveCount,
+        DateTimeOffset LastSaveAt
+    );
 }
 ```
 
-### REQ-ACT-002: SessionStats Tracking
+**Corrections from original spec:**
+- ✅ Concrete class `SessionActivity` (NO `ISessionActivity` interface)
+- ✅ Uses `lock` + `Dictionary` (port of Go's `sync.Mutex` + `map`)
+- ✅ `nowFunc` injectable for testability
+- ✅ NO `TimeSpan? threshold` parameter — hardcoded 10 minutes
+
+---
+
+### REQ-ACT-002: SessionStats Fields (CORRECTED)
 
 Track per session:
-- `ToolCalls`: total tool calls made
-- `Saves`: total save operations (mem_save, mem_session_summary, etc.)
-- `LastSave`: timestamp of last save
-- `LastToolCall`: timestamp of last tool call
 
-Stats are stored in-memory (`ConcurrentDictionary<string, SessionStats>`).
+| Field | Type | Description |
+|-------|------|-------------|
+| `StartedAt` | `DateTimeOffset` | When session was created (first tool call) |
+| `ToolCallCount` | `int` | Total tool calls made |
+| `SaveCount` | `int` | Total save operations |
+| `LastSaveAt` | `DateTimeOffset` | Timestamp of last save (default if none) |
 
-### REQ-ACT-003: Nudge Logic
+**Corrections from original spec:**
+- ✅ NO `LastToolCall` field — Go doesn't track it
+- ✅ `StartedAt` used as fallback when `LastSaveAt` is default
 
-A nudge is triggered when ALL conditions are met:
-- `saves == 0` AND `tool_calls > 10`
-- OR `saves > 0` AND `tool_calls > 20` AND `(saves / tool_calls) < 0.1` (save ratio < 10%)
-- AND `last_save` is more than 5 minutes ago (or never)
+---
 
-Default threshold: `tool_calls > 10` for zero-save sessions.
+### REQ-ACT-003: Nudge Logic (CORRECTED — CRITICAL)
 
-Nudge message examples:
-- `"Low save rate (3 saves in 45 tool calls). Consider saving key decisions with mem_save."`
-- `"No saves recorded in this session (45 tool calls). Consider using mem_save for important observations."`
+```csharp
+public string? NudgeIfNeeded(string sessionId)
+{
+    lock (_lock)
+    {
+        // 1. Unknown session → no nudge
+        if (!_sessions.TryGetValue(sessionId, out var s))
+            return "";
 
-### REQ-ACT-004: Activity Score Format
+        var now = _now();
 
-`ActivityScore` returns a formatted string:
+        // 2. Session too young (< 10 min) → no nudge
+        if (now - s.StartedAt < _nudgeAfter)
+            return "";
+
+        // 3. Idle session (≤5 tool calls, 0 saves) → no nudge
+        if (s.SaveCount == 0 && s.ToolCallCount <= 5)
+            return "";
+
+        // 4. Check time since last save (or session start if no saves)
+        var lastRef = s.LastSaveAt == default ? s.StartedAt : s.LastSaveAt;
+        var elapsed = now - lastRef;
+
+        if (elapsed < _nudgeAfter)
+            return "";
+
+        // 5. NUDGE: return message with minutes elapsed
+        var minutes = (int)elapsed.TotalMinutes;
+        return $"\n\n⚠️ No mem_save calls for this project in {minutes} minutes. Did you make any decisions, fix bugs, or discover something worth persisting?";
+    }
+}
 ```
-"Activity: 45 tool calls, 3 saves (6.7% save rate)"
+
+**Decision tree:**
+
+```
+session exists? ──NO──> return ""
+     │
+    YES
+     │
+     v
+now - startedAt < 10 min? ──YES──> return ""
+     │
+    NO
+     │
+     v
+saveCount == 0 AND toolCallCount <= 5? ──YES──> return ""  (idle session)
+     │
+    NO
+     │
+     v
+now - lastRef < 10 min? ──YES──> return ""
+     │
+    NO
+     │
+     v
+return nudge message with minutes
 ```
 
-### REQ-ACT-005: Integration in MCP Tools
+Where `lastRef = lastSaveAt` if non-default, else `startedAt`.
 
-- **All tools**: call `activity.RecordToolCall(sessionId)` before execution
-- **Write tools**: call `activity.RecordSave(sessionId)` after successful write
-- **mem_session_end**: include activity score and nudge message in response
+**Corrections from original spec:**
+- ✅ **Time-based only**: 10 minutes since last save (or session start)
+- ✅ **Idle detection**: ≤5 tool calls + 0 saves = no nudge (avoids nagging new sessions)
+- ❌ NO ratio calculation (`saves/tool_calls`)
+- ❌ NO `tool_calls > 10` / `tool_calls > 20` thresholds
+- ❌ NO "5 minutes ago" check
 
-### REQ-ACT-006: Configurable Threshold
+---
 
-The nudge threshold is configurable via environment variable:
-- `ENGRAM_ACTIVITY_NUDGE_THRESHOLD=10` (default)
-- If not set, default is 10 tool calls
+### REQ-ACT-004: ActivityScore Format (CORRECTED)
 
-### REQ-ACT-007: Thread Safety
+```csharp
+public string ActivityScore(string sessionId)
+{
+    lock (_lock)
+    {
+        // Unknown session → empty string
+        if (!_sessions.TryGetValue(sessionId, out var s))
+            return "";
 
-All operations MUST be thread-safe:
-- Use `ConcurrentDictionary` for session storage
-- Use `Interlocked.Increment` for counters
-- No locks required for read operations
+        // Pluralization
+        var callLabel = s.ToolCallCount == 1 ? "tool call" : "tool calls";
+        var saveLabel = s.SaveCount == 1 ? "save" : "saves";
+
+        var score = $"Session activity: {s.ToolCallCount} {callLabel}, {s.SaveCount} {saveLabel}";
+
+        // High activity warning
+        if (s.SaveCount == 0 && s.ToolCallCount > 5)
+            score += " — high activity with no saves, consider persisting important decisions";
+
+        return score;
+    }
+}
+```
+
+**Examples:**
+
+| Tool Calls | Saves | Output |
+|------------|-------|--------|
+| 0 | 0 | `""` (unknown session) |
+| 1 | 1 | `"Session activity: 1 tool call, 1 save"` |
+| 8 | 0 | `"Session activity: 8 tool calls, 0 saves — high activity with no saves, consider persisting important decisions"` |
+| 12 | 3 | `"Session activity: 12 tool calls, 3 saves"` |
+
+**Corrections from original spec:**
+- ✅ Returns `""` for unknown sessions (NOT `"Activity: 0 tool calls, 0 saves (0.0% save rate)"`)
+- ✅ Prefix: `"Session activity: "` (not `"Activity: "`)
+- ✅ Proper singular/plural: `"1 tool call"` vs `"2 tool calls"`
+- ✅ Warning text: `" — high activity with no saves, consider persisting important decisions"`
+- ❌ NO save ratio percentage (`"(6.7% save rate)"`)
+
+---
+
+### REQ-ACT-005: Integration in MCP Tools (CORRECTED)
+
+| Tool | Go Action | Implementation |
+|------|-----------|----------------|
+| `mem_search` | `RecordToolCall` + `NudgeIfNeeded` in response | Call both, append nudge to response text |
+| `mem_context` | `RecordToolCall` + `NudgeIfNeeded` in response | Call both, append nudge to response text |
+| `mem_session_start` | `RecordToolCall` | Call once |
+| `mem_capture_passive` | `RecordToolCall` | Call once |
+| `mem_save` | `RecordSave` | Call on successful save |
+| `mem_session_summary` | `ActivityScore` in response | Append score to response text |
+| `mem_session_end` | `ClearSession` | Call to free memory |
+
+**Tools that do NOT register activity** (same as Go):
+- `mem_update`, `mem_delete`, `mem_save_prompt`, `mem_stats`, `mem_timeline`, `mem_get_observation`, `mem_judge`
+
+**Corrections from original spec:**
+- ✅ Nudge in `mem_search` + `mem_context` (visible during work)
+- ✅ Activity score in `mem_session_summary` (end-of-session summary)
+- ❌ NO nudge in `mem_session_end`
+- ❌ NO activity score in `mem_session_end`
+
+---
+
+### REQ-ACT-006: Configuration (CORRECTED)
+
+**NO environment variables.**
+
+The nudge threshold is **hardcoded**:
+
+```csharp
+private readonly TimeSpan _nudgeAfter = TimeSpan.FromMinutes(10);
+```
+
+**Corrections from original spec:**
+- ❌ NO `ENGRAM_ACTIVITY_NUDGE_THRESHOLD` env var
+- ❌ NO configurable threshold
+- ✅ Always 10 minutes (matches Go upstream)
+
+**Rationale:** Go upstream hardcodes this value. Consistency > configurability for this feature.
+
+---
+
+### REQ-ACT-007: Thread Safety (CORRECTED)
+
+```csharp
+public sealed class SessionActivity
+{
+    private readonly object _lock = new();
+    private readonly Dictionary<string, SessionStats> _sessions = new();
+
+    public void RecordToolCall(string sessionId)
+    {
+        lock (_lock)
+        {
+            var s = GetOrCreate(sessionId);
+            s.ToolCallCount++;
+        }
+    }
+
+    // ... all methods use the same lock
+}
+```
+
+**Corrections from original spec:**
+- ✅ `lock` + plain `Dictionary` (direct port of Go's `sync.Mutex` + `map`)
+- ❌ NO `ConcurrentDictionary<string, SessionStats>`
+- ❌ NO `Interlocked.Increment`
+
+**Rationale:** Go uses `sync.Mutex` to protect the map. The C# equivalent is `lock` + `Dictionary`. This is simpler and matches the upstream pattern exactly.
 
 ## Scenarios
 
-### Scenario: Nudge on zero-save session
+### Scenario: Nudge after 10 minutes without save
 
-**Given** a session with 45 tool calls and 0 saves
-**And** last tool call was 6 minutes ago
-**When** `NudgeIfNeeded(sessionId)` is called
-**Then** returns `"No saves recorded in this session (45 tool calls). Consider using mem_save for important observations."`
+**Given** a session with 6 tool calls at T=0
+**And** no saves recorded
+**When** time advances 15 minutes
+**And** `NudgeIfNeeded(sessionId)` is called
+**Then** returns `"\n\n⚠️ No mem_save calls for this project in 15 minutes. Did you make any decisions, fix bugs, or discover something worth persisting?"`
 
-### Scenario: No nudge on healthy session
+### Scenario: Save resets nudge timer
 
-**Given** a session with 45 tool calls and 12 saves (26.7% save rate)
-**When** `NudgeIfNeeded(sessionId)` is called
-**Then** returns `null`
+**Given** a session with 6 tool calls at T=0
+**When** time advances 15 minutes
+**And** `RecordSave(sessionId)` is called
+**And** `NudgeIfNeeded(sessionId)` is called immediately
+**Then** returns `""` (save reset the timer)
 
-### Scenario: Activity score in mem_session_end
+### Scenario: No nudge for idle session
 
-**Given** a session with 45 tool calls and 3 saves
-**When** `mem_session_end` is called
-**Then** response includes:
-```json
-{
-  "status": "session_ended",
-  "session_id": "abc123",
-  "activity": {
-    "tool_calls": 45,
-    "saves": 3,
-    "save_ratio": "6.7%",
-    "score": "Activity: 45 tool calls, 3 saves (6.7% save rate)",
-    "nudge": "Low save rate (3 saves in 45 tool calls). Consider saving key decisions with mem_save."
-  }
-}
-```
+**Given** a session with only 3 tool calls (no saves)
+**When** time advances 20 minutes
+**And** `NudgeIfNeeded(sessionId)` is called
+**Then** returns `""` (idle session: ≤5 tool calls + 0 saves)
 
-### Scenario: Session not found
+### Scenario: Activity score with high activity warning
+
+**Given** a session with 8 tool calls and 0 saves
+**When** `ActivityScore(sessionId)` is called
+**Then** returns `"Session activity: 8 tool calls, 0 saves — high activity with no saves, consider persisting important decisions"`
+
+### Scenario: Activity score after save (warning disappears)
+
+**Given** a session with 8 tool calls and 0 saves
+**When** `RecordSave(sessionId)` is called
+**And** `ActivityScore(sessionId)` is called
+**Then** returns `"Session activity: 8 tool calls, 1 save"` (no warning)
+
+### Scenario: Unknown session returns empty string
 
 **Given** no activity recorded for session "xyz"
 **When** `ActivityScore("xyz")` is called
-**Then** returns `"Activity: 0 tool calls, 0 saves (0.0% save rate)"`
+**Then** returns `""`
 **And** no exception is thrown
+
+### Scenario: Activity score in mem_session_summary
+
+**Given** a session with 12 tool calls and 3 saves
+**When** `mem_session_summary` is called
+**Then** response includes `"Session activity: 12 tool calls, 3 saves"`
 
 ---
 
