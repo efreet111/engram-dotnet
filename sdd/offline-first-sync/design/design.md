@@ -1,9 +1,10 @@
 # Design: Offline-First Sync
 
 **Change**: `offline-first-sync`
-**Version**: 1.0.0
+**Version**: 1.0.1
 **Phase**: Design
 **Status**: Draft
+**RFC**: [RFC-001: Architecture — Chunk + Mutation Hybrid](../../docs/RFCs/RFC-001-offline-first-sync-architecture.md)
 
 ---
 
@@ -40,12 +41,15 @@
 
 ┌─────────────────────────────────────────────────────┐
 │  Engram.Server                           Cloud only │
-│  POST /sync/mutations/push                          │
-│  GET  /sync/mutations/pull                          │
+│  POST /sync/mutations/push  ──▶ Mutation protocol   │
+│  GET  /sync/mutations/pull  ◀── (Phase 1: primary)  │
+│  POST /sync/chunks/push     ──▶ Chunk protocol      │
+│  GET  /sync/chunks/pull     ◀── (Phase 2+: bulk)    │
 │  ┌──────────────────────────────────────────────┐   │
-│  │ ICloudMutationStore (PG, new tables)         │   │
-│  │ cloud_mutations | cloud_sync_audit_log       │   │
-│  │ cloud_project_controls                       │   │
+│  │ ICloudMutationStore │ ICloudChunkStore       │   │
+│  │ cloud_mutations     │ cloud_chunks           │   │
+│  │ cloud_sync_audit_log│ (schema Phase 1,       │   │
+│  │ cloud_project_controls│  impl Phase 2+)       │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 ```
@@ -159,13 +163,38 @@ public interface ICloudMutationStore
 }
 ```
 
+### AD-4b: ICloudChunkStore (server-side, forward compatibility)
+
+**Choice**: Separate interface `ICloudChunkStore` for chunk storage — Phase 1 includes schema only, full implementation deferred to Phase 2+ if needed.
+
+**Rationale** (from Go upstream analysis): Go cloudstore.go has BOTH mutation-based sync (operational) and chunk-based sync (bulk/recovery). Our design starts with mutations (Phase 1) but includes chunk table schema for forward compatibility.
+
+**Deferred to Phase 2**: Full chunk protocol implementation. Phase 1 mutations-only is acceptable for typical team sizes (<10k observations). Chunk protocol needed for:
+- Initial sync of large projects (>50k observations)
+- Disaster recovery scenarios
+- Cross-version migration
+
+```csharp
+public interface ICloudChunkStore
+{
+    Task WriteChunkAsync(string project, string chunkId, string createdBy, 
+                         DateTime clientCreatedAt, byte[] payload);
+    Task<byte[]?> ReadChunkAsync(string project, string chunkId);
+    Task<bool> ChunkExistsAsync(string project, string chunkId);
+    // Phase 2+: Backfill mutations from chunks, dashboard read model, etc.
+}
+```
+
+**File**: `src/Engram.Store/ICloudChunkStore.cs` (new — schema only in Phase 1)
+
 New PG tables (additive migrations — `AddCloudMutationMigrations()` called from `PostgresStore.Migrate()` if a `cloud_migrations_applied` flag is not set):
 
-| Table | Columns | Indexes |
-|-------|---------|---------|
-| `cloud_mutations` | `seq BIGSERIAL PK`, `project TEXT NOT NULL`, `entity TEXT NOT NULL`, `entity_key TEXT NOT NULL`, `op TEXT NOT NULL`, `payload JSONB NOT NULL`, `created_by TEXT DEFAULT ''`, `occurred_at TIMESTAMPTZ DEFAULT NOW()` | `idx_cm_project_seq ON cloud_mutations(project, seq)` |
-| `cloud_sync_audit_log` | `id BIGSERIAL PK`, `project TEXT NOT NULL`, `action TEXT NOT NULL`, `outcome TEXT NOT NULL`, `contributor TEXT DEFAULT ''`, `entry_count INT DEFAULT 0`, `reason_code TEXT DEFAULT ''`, `created_at TIMESTAMPTZ DEFAULT NOW()` | `idx_csal_project ON cloud_sync_audit_log(project, created_at)` |
-| `cloud_project_controls` | `project TEXT PK`, `sync_enabled BOOL DEFAULT true`, `pause_reason TEXT DEFAULT ''`, `updated_at TIMESTAMPTZ DEFAULT NOW()` | PK only |
+| Table | Columns | Indexes | Protocol |
+|-------|---------|---------|----------|
+| `cloud_mutations` | `seq BIGSERIAL PK`, `project TEXT NOT NULL`, `entity TEXT NOT NULL`, `entity_key TEXT NOT NULL`, `op TEXT NOT NULL`, `payload JSONB NOT NULL`, `created_by TEXT DEFAULT ''`, `occurred_at TIMESTAMPTZ DEFAULT NOW()` | `idx_cm_project_seq ON cloud_mutations(project, seq)` | **Mutation** (primary) |
+| `cloud_sync_audit_log` | `id BIGSERIAL PK`, `project TEXT NOT NULL`, `action TEXT NOT NULL`, `outcome TEXT NOT NULL`, `contributor TEXT DEFAULT ''`, `entry_count INT DEFAULT 0`, `reason_code TEXT DEFAULT ''`, `created_at TIMESTAMPTZ DEFAULT NOW()` | `idx_csal_project ON cloud_sync_audit_log(project, created_at)` | Audit |
+| `cloud_project_controls` | `project TEXT PK`, `sync_enabled BOOL DEFAULT true`, `pause_reason TEXT DEFAULT ''`, `updated_at TIMESTAMPTZ DEFAULT NOW()` | PK only | Control |
+| `cloud_chunks` | `chunk_id TEXT PK`, `project TEXT NOT NULL`, `payload JSONB NOT NULL`, `created_by TEXT DEFAULT ''`, `client_created_at TIMESTAMPTZ`, `sessions_count INT DEFAULT 0`, `observations_count INT DEFAULT 0`, `prompts_count INT DEFAULT 0` | `idx_cc_project ON cloud_chunks(project, chunk_id)` | **Chunk** (bulk/recovery) |
 
 ---
 
@@ -277,8 +306,9 @@ New local SQLite table (additive migration in `SqliteStore.Migrate()`):
 | `src/Engram.Sync/ILocalSyncStore.cs` | **NEW** | Store interface subset |
 | `src/Engram.Sync/SyncManagerConfig.cs` | **NEW** | Config record |
 | `src/Engram.Sync/SyncPhase.cs` | **NEW** | Phase enum |
-| `src/Engram.Store/ICloudMutationStore.cs` | **NEW** | Server-side cloud store interface |
-| `src/Engram.Store/PostgresStore.cs` | **MODIFY** | Add cloud tables + implement `ICloudMutationStore` |
+| `src/Engram.Store/ICloudMutationStore.cs` | **NEW** | Server-side cloud store interface (mutations) |
+| `src/Engram.Store/ICloudChunkStore.cs` | **NEW** | Server-side cloud store interface (chunks — schema only Phase 1) |
+| `src/Engram.Store/PostgresStore.cs` | **MODIFY** | Add cloud tables + implement `ICloudMutationStore` + `ICloudChunkStore` (schema) |
 | `src/Engram.Store/SqliteStore.cs` | **MODIFY** | Add `sync_apply_deferred` + implement `ILocalSyncStore` |
 | `src/Engram.Server/CloudSyncEndpoints.cs` | **NEW** | Push/pull endpoint handlers |
 | `src/Engram.Server/Dtos/MutationDtos.cs` | **NEW** | Request/response DTOs |
@@ -289,6 +319,7 @@ New local SQLite table (additive migration in `SqliteStore.Migrate()`):
 1. **Auth**: Go cloudserver uses bearer JWT. .NET EngramServer currently uses `X-Engram-User` header. Should cloud endpoints use JWT middleware (`AddAuthentication().AddJwtBearer()`) or keep the simple header? — Proposal says Phase 1 task 1.5, deferred to implementation.
 2. **Engram.Sync.csproj**: Needs `Microsoft.Extensions.Hosting.Abstractions` package reference for `BackgroundService`. Must add to project file.
 3. **Lease owner**: Go uses `fmt.Sprintf("autosync-%d", time.Now().UnixNano())`. For .NET, `Environment.MachineName` + process ID is sufficient.
+4. **Chunk protocol in Phase 1?** Decision: Include schema only (table creation). Full chunk implementation (endpoints, transport) deferred to Phase 2+ if needed. See [RFC-001 §Open Questions](../../docs/RFCs/RFC-001-offline-first-sync-architecture.md#open-questions) for rationale.
 
 ## 5. Rollback
 

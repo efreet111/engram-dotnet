@@ -1,9 +1,10 @@
 # Tasks: Offline-First Sync
 
 **Change**: `offline-first-sync`
-**Version**: 1.0.0
+**Version**: 1.0.1
 **Status**: Draft
-**Design**: `sdd/offline-first-sync/design` (7 ADs, 11 new files)
+**Design**: `sdd/offline-first-sync/design` (7 ADs, 12 new files)
+**RFC**: [RFC-001: Architecture — Chunk + Mutation Hybrid](../../../docs/RFCs/RFC-001-offline-first-sync-architecture.md)
 
 ---
 
@@ -13,8 +14,10 @@
 
 - [ ] 1.1.1 Add `Microsoft.Extensions.Hosting.Abstractions` to `Engram.Sync.csproj`
 - [ ] 1.1.2 Create `ICloudMutationStore.cs` in `src/Engram.Store/` (interface with 4 methods: InsertMutationBatchAsync, ListMutationsSinceAsync, IsProjectSyncEnabledAsync, InsertAuditEntryAsync)
-- [ ] 1.1.3 Add `cloud_mutations`, `cloud_sync_audit_log`, `cloud_project_controls` tables to `PostgresStore.cs` as additive migrations
+- [ ] 1.1.3 Add `cloud_mutations`, `cloud_sync_audit_log`, `cloud_project_controls`, `cloud_chunks` tables to `PostgresStore.cs` as additive migrations
 - [ ] 1.1.4 Implement `ICloudMutationStore` in `PostgresStore.cs`
+- [ ] 1.1.5 Create `ICloudChunkStore.cs` in `src/Engram.Store/` (interface — schema only, Phase 1)
+- [ ] 1.1.6 Implement `ICloudChunkStore` schema methods (table creation, existence check) in `PostgresStore.cs` (full chunk protocol deferred to Phase 2+)
 
 ### MutationTransport
 
@@ -124,4 +127,14 @@ Phase 4:
 
 ---
 
-## Total: 43 tasks across 4 phases
+## Total: 45 tasks across 4 phases
+
+### Task Count by Phase
+
+| Phase | Tasks | Focus |
+|-------|-------|-------|
+| Phase 1 | 25 | Infrastructure + Transport + Endpoints + Local Store + Tests |
+| Phase 2 | 14 | SyncManager Core + Cycles + Deferred + DI + Tests |
+| Phase 3 | 5 | Enrollment + Conflicts |
+| Phase 4 | 4 | Observability |
+| **Total** | **45** | **32–44h estimated** |
