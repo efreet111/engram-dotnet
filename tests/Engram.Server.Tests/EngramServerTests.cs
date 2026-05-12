@@ -175,6 +175,93 @@ public class EngramServerTests : IAsyncDisposable
         Assert.Equal("session has 1 active observations, cannot delete", (string?)json["error"]);
     }
 
+
+    // ─── Multi-User Isolation ─────────────────────────────────────────────────
+    // Tests ensuring that personal data is scoped by the X-Engram-User header.
+
+    [Fact]
+    public async Task Observations_With_Different_Users_Are_Isolated_In_Personal_Scope()
+    {
+        await SeedSession("s-multi", "proj-isolation");
+
+        // User A saves a personal note
+        var reqA = new HttpRequestMessage(HttpMethod.Post, "/observations");
+        reqA.Headers.Add("X-Engram-User", "user-alpha");
+        reqA.Content = JsonContent.Create(new
+        {
+            session_id = "s-multi",
+            title      = "Alpha's Secret",
+            content    = "Only for Alpha",
+            scope      = "personal",
+            project    = "proj-isolation"
+        }, options: JsonOpts);
+
+        var respA = await _client.SendAsync(reqA);
+        respA.EnsureSuccessStatusCode();
+
+        // User B saves a personal note
+        var reqB = new HttpRequestMessage(HttpMethod.Post, "/observations");
+        reqB.Headers.Add("X-Engram-User", "user-beta");
+        reqB.Content = JsonContent.Create(new
+        {
+            session_id = "s-multi",
+            title      = "Beta's Secret",
+            content    = "Only for Beta",
+            scope      = "personal",
+            project    = "proj-isolation"
+        }, options: JsonOpts);
+
+        var respB = await _client.SendAsync(reqB);
+        respB.EnsureSuccessStatusCode();
+
+        // User Alpha requests recent observations — should NOT see Beta's note
+        var queryA = new HttpRequestMessage(HttpMethod.Get, "/observations/recent?project=proj-isolation&scope=personal");
+        queryA.Headers.Add("X-Engram-User", "user-alpha");
+        var respQueryA = await _client.SendAsync(queryA);
+        var obsA = await respQueryA.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        
+        Assert.Single(obsA);
+        Assert.Equal("Alpha's Secret", (string?)obsA?[0]?["title"]);
+
+        // User Beta requests recent observations — should NOT see Alpha's note
+        var queryB = new HttpRequestMessage(HttpMethod.Get, "/observations/recent?project=proj-isolation&scope=personal");
+        queryB.Headers.Add("X-Engram-User", "user-beta");
+        var respQueryB = await _client.SendAsync(queryB);
+        var obsB = await respQueryB.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+
+        Assert.Single(obsB);
+        Assert.Equal("Beta's Secret", (string?)obsB?[0]?["title"]);
+    }
+
+    [Fact]
+    public async Task Observations_In_Team_Scope_Are_Shared_Across_Users()
+    {
+        await SeedSession("s-team", "proj-team");
+
+        // User A saves a team note
+        var reqA = new HttpRequestMessage(HttpMethod.Post, "/observations");
+        reqA.Headers.Add("X-Engram-User", "user-alpha");
+        reqA.Content = JsonContent.Create(new
+        {
+            session_id = "s-team",
+            title      = "Shared Wisdom",
+            content    = "For everyone",
+            scope      = "team",
+            project    = "proj-team"
+        }, options: JsonOpts);
+
+        await _client.SendAsync(reqA);
+
+        // User Beta requests recent team observations — should see Alpha's note
+        var queryB = new HttpRequestMessage(HttpMethod.Get, "/observations/recent?project=proj-team&scope=team");
+        queryB.Headers.Add("X-Engram-User", "user-beta");
+        var respQueryB = await _client.SendAsync(queryB);
+        var obsB = await respQueryB.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+
+        Assert.Single(obsB);
+        Assert.Equal("Shared Wisdom", (string?)obsB?[0]?["title"]);
+    }
+
     // ─── Observations ─────────────────────────────────────────────────────────
 
     [Fact]

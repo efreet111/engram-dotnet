@@ -42,6 +42,7 @@ flowchart LR
     M1 -->|HTTP REST + X-Engram-User| S[engram serve\nASP.NET Core / Kestrel]
     M2 -->|HTTP REST + X-Engram-User| S
     M3 -->|HTTP REST + X-Engram-User| S
+    S -->|Normalize Scope| S
     S -->|IStore| DB[(Backend)]
     DB -->|SQLite| SS[SqliteStore]
     DB -->|PostgreSQL| PS[PostgresStore]
@@ -307,56 +308,31 @@ Las únicas diferencias visibles desde el exterior:
 - `PostgresStore` conecta a PostgreSQL con schema auto-creado
 - `HttpStore` hace requests HTTP al servidor centralizado con header `X-Engram-User`
 
-### Namespacing automático con ENGRAM_USER — Modelo team/personal
+### Aislamiento Multi-Usuario (X-Engram-User)
 
-`McpConfig` resuelve el proyecto namespaceado antes de cada llamada a `IStore`. El modelo tiene **dos niveles de scope**:
+El servidor implementa aislamiento de memoria personal mediante el header de identidad `X-Engram-User`.
 
-| Scope | Namespace en DB | Visibilidad |
-|---|---|---|
-| `team` | `team/{project}` | Compartido con todos los desarrolladores del equipo |
-| `personal` | `{user}/{project}` | Privado del desarrollador (ENGRAM_USER) |
+#### Identidad del desarrollador
+El cliente MCP (`HttpStore`) envía automáticamente la identidad del usuario:
+1.  Usa el valor de la variable de entorno `ENGRAM_USER`.
+2.  Si no está definida, usa el usuario del sistema operativo (`Environment.UserName`).
 
-```csharp
-// Agente llama: mem_save(project: "mi-api", type: "architecture")
-// AutoClassifyScope("architecture") → "team"
-// McpConfig.ResolveNamespacedProject("mi-api", "team") → "team/mi-api"
-// IStore recibe: project = "team/mi-api"
+#### Aislamiento de Scope en el Servidor
+Cuando el servidor recibe una petición, normaliza el `scope` de la observación o búsqueda:
 
-// Agente llama: mem_save(project: "mi-api", type: "tool_use")
-// AutoClassifyScope("tool_use") → "personal"
-// McpConfig.ResolveNamespacedProject("mi-api", "personal") → "victor.silgado/mi-api"
-// IStore recibe: project = "victor.silgado/mi-api"
-```
+- **`team`**: Se mantiene compartido para todos los usuarios.
+- **`personal`**: Se transforma internamente a `personal:{userId}`.
 
-#### Auto-clasificación de scope por tipo
-
-Cuando el agente no especifica `scope`, `AutoClassifyScope(type)` lo decide:
-
-| Default: `team` | Default: `personal` |
-|---|---|
-| `architecture`, `decision`, `bugfix` | `tool_use`, `file_change` |
-| `pattern`, `session_summary`, `config` | `command`, `file_read` |
-| `discovery`, `learning`, `manual` | `search`, `passive` |
-
-#### Wide-read en mem_context y mem_search
-
-- `mem_context` siempre lee **ambos** namespaces (`team/` y `{user}/`) y mergea por `updated_at DESC`, etiquetando cada observación `[team]` o `[personal]`.
-- `mem_search` sin `scope` explícito busca en ambos namespaces simultáneamente.
-- `mem_search` con `scope` explícito filtra solo ese namespace.
-
-#### Compatibilidad retroactiva
-
-El valor legacy `scope="project"` en registros existentes se normaliza a `"personal"` vía `NormalizeScope()` en runtime. No se requiere migración masiva de datos.
+Esto garantiza que las memorias personales de `usuario-a` no sean visibles para `usuario-b`, incluso si están trabajando en el mismo proyecto, mientras que las decisiones de arquitectura (`team`) siguen siendo compartidas.
 
 ```csharp
-// SqliteStore.NormalizeScope
-"team"     → "team"
-"personal" → "personal"
-"project"  → "personal"   // legacy
-null/""    → "personal"   // default
+// EngramServer.NormalizeScope logic
+string NormalizeScope(string? scope, string user) =>
+    scope == "team" ? "team" : $"personal:{user}";
 ```
 
-El agente nunca necesita conocer su usuario ni el prefijo — el namespacing es completamente transparente.
+#### Compatibilidad Legacy
+Si el header `X-Engram-User` no está presente, el servidor usa la identidad `global`. Las instalaciones locales de una sola instancia siguen funcionando sin cambios, ya que todas operan bajo el usuario por defecto.
 
 ---
 
@@ -373,6 +349,7 @@ Tablas principales:
 - `sync_chunks` — registro de chunks sincronizados (idempotencia)
 - `sync_mutations` — cola de mutaciones pendientes de sync
 - `sync_state` / `sync_enrolled_projects` — estado del sync
+- `sync_apply_deferred` — FK misses de mutaciones pull (Phase 1, nuevo)
 
 Tabla FTS5:
 - `observations_fts` — índice full-text (title, content, tool_name, type, project, topic_key)
@@ -396,6 +373,79 @@ Mismas tablas que SQLite, con diferencias en el FTS:
 - **Default timestamps**: `NOW() AT TIME ZONE 'utc'` en lugar de `datetime('now')`
 
 Ver [docs/POSTGRES-SETUP.md](POSTGRES-SETUP.md) para detalles de configuración y migración.
+
+---
+
+## Offline-First Sync
+
+> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](OFFLINE-FIRST-SYNC.md)
+> **SDD**: [`sdd/offline-first-sync/`](sdd/offline-first-sync/)
+> **Phase**: Planned (PR #14 pending)
+> **Effort**: 32–44h across 4 phases
+
+Bidirectional mutation-based sync between local SQLite and cloud PostgreSQL server.
+Full architecture in SDD design document.
+
+### Components
+
+```
+Engram.Sync/
+├── Transport/
+│   ├── IMutationTransport.cs         ← HTTP client interface
+│   ├── MutationTransport.cs          ← IHttpClientFactory impl
+│   └── MutationTransportException.cs ← Error with status code
+├── SyncManager.cs                    ← BackgroundService (IHostedService)
+├── SyncManagerConfig.cs              ← Config (debounce, batch sizes, backoff)
+├── SyncPhase.cs                      ← Enum: Idle/Pushing/Pulling/etc
+└── ILocalSyncStore.cs               ← Store interface subset
+
+Engram.Server/
+├── CloudSyncEndpoints.cs            ← /sync/mutations/push + /sync/mutations/pull
+└── Dtos/MutationDtos.cs             ← PushRequest, PullResponse DTOs
+
+Engram.Store/
+├── ICloudMutationStore.cs           ← Server-side cloud store interface
+├── PostgresStore.cs                 ← + cloud_mutations, cloud_sync_audit_log, cloud_project_controls
+└── SqliteStore.cs                   ← + sync_apply_deferred, ILocalSyncStore impl
+```
+
+### New Tables (Phase 1)
+
+| Table | Backend | Purpose |
+|-------|---------|---------|
+| `cloud_mutations` | PostgreSQL | Server-side append-only mutation journal |
+| `cloud_sync_audit_log` | PostgreSQL | Audit trail for push rejections |
+| `cloud_project_controls` | PostgreSQL | Per-project `sync_enabled` + pause reason |
+| `sync_apply_deferred` | SQLite | FK misses from pulled mutations (retry before next pull) |
+
+### API Endpoints
+
+| Route | Method | Phase |
+|-------|--------|-------|
+| `/sync/mutations/push` | POST | 1 |
+| `/sync/mutations/pull` | GET | 1 |
+| `/sync/enroll` | POST | 3 |
+| `/sync/pause` | POST | 3 |
+| `/sync/status` | GET | 4 |
+
+### Sync Flow
+
+```
+Online (server source of truth):
+  SyncManager → PushMutationsAsync → POST /sync/mutations/push
+             → AckSeqs → PullMutationsAsync → GET /sync/mutations/pull
+             → ApplyPulledMutation → ReplayDeferred
+
+Offline (local source of truth):
+  Local writes → EnqueueSyncMutation → sync_mutations queue
+  On reconnect → SyncManager drains queue → PushMutationsAsync
+```
+
+### Conflict Resolution
+
+**Last-write-wins** via `occurred_at` timestamp ordering.
+**FK misses** → `sync_apply_deferred` table → `ReplayDeferredAsync` before next pull cycle.
+Cursor **NEVER halts** on FK miss.
 
 ---
 

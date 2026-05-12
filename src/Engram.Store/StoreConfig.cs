@@ -32,10 +32,12 @@ public class StoreConfig
 
     /// <summary>
     /// Identifies the developer using this client (env: ENGRAM_USER).
-    /// Used to namespace memories in the shared server — stored as a project prefix "user/project".
-    /// Set by IT per machine. Example: victor.silgado
+    /// Used to namespace memories in the shared server.
+    /// Falls back to the OS user name if the environment variable is not set.
+    /// Example: victor.silgado
     /// </summary>
-    public string? User { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_USER");
+    public string User { get; init; } = 
+        Environment.GetEnvironmentVariable("ENGRAM_USER") ?? Environment.UserName;
 
     /// <summary>
     /// Database backend type (env: ENGRAM_DB_TYPE). Values: "sqlite" (default) or "postgres".

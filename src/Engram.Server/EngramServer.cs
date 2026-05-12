@@ -89,6 +89,8 @@ public static class EngramServer
         app.MapPost("/projects/prune",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectPrune(ctx, store)));
         app.MapGet("/sync/status",                  (Func<IResult>)HandleSyncStatus);
     }
+    
+    internal const string UserHeader = "X-Engram-User";
 
     // ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -155,7 +157,10 @@ public static class EngramServer
         if (body is null || string.IsNullOrEmpty(body.SessionId) || string.IsNullOrEmpty(body.Title) || string.IsNullOrEmpty(body.Content))
             return Error("session_id, title, and content are required");
 
-        var id = await store.AddObservationAsync(body);
+        var userId = GetUserId(ctx);
+        var p      = body with { Scope = NormalizeScope(body.Scope, userId) };
+
+        var id = await store.AddObservationAsync(p);
         return Results.Created("", new { id, status = "saved" });
     }
 
@@ -195,7 +200,9 @@ public static class EngramServer
         var project = ctx.Request.Query["project"].FirstOrDefault();
         var scope   = ctx.Request.Query["scope"].FirstOrDefault();
         var limit   = QueryInt(ctx, "limit", 20);
-        var result  = await store.RecentObservationsAsync(project, scope, limit);
+
+        var userId  = GetUserId(ctx);
+        var result  = await store.RecentObservationsAsync(project, NormalizeScope(scope, userId), limit);
         return Json(result);
     }
 
@@ -242,11 +249,12 @@ public static class EngramServer
         var query = ctx.Request.Query["q"].FirstOrDefault() ?? "";
         if (string.IsNullOrEmpty(query)) return Error("q parameter is required");
 
+        var userId = GetUserId(ctx);
         var results = await store.SearchAsync(query, new SearchOptions
         {
             Type    = ctx.Request.Query["type"].FirstOrDefault(),
             Project = ctx.Request.Query["project"].FirstOrDefault(),
-            Scope   = ctx.Request.Query["scope"].FirstOrDefault(),
+            Scope   = NormalizeScope(ctx.Request.Query["scope"].FirstOrDefault(), userId),
             Limit   = QueryInt(ctx, "limit", 10),
         });
 
@@ -318,7 +326,9 @@ public static class EngramServer
     {
         var project = ctx.Request.Query["project"].FirstOrDefault();
         var scope   = ctx.Request.Query["scope"].FirstOrDefault();
-        var context = await store.FormatContextAsync(project, scope);
+        var userId  = GetUserId(ctx);
+        
+        var context = await store.FormatContextAsync(project, NormalizeScope(scope, userId));
         return Json(new { context });
     }
 
@@ -426,6 +436,24 @@ public static class EngramServer
     {
         var v = ctx.Request.Query[key].FirstOrDefault();
         return int.TryParse(v, out var n) ? n : defaultVal;
+    }
+
+    private static string GetUserId(HttpContext ctx)
+    {
+        var id = ctx.Request.Headers[UserHeader].FirstOrDefault();
+        return string.IsNullOrWhiteSpace(id) ? "global" : id.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeScope(string? scope, string userId)
+    {
+        if (string.IsNullOrWhiteSpace(scope)) return null;
+        var s = scope.Trim().ToLowerInvariant();
+        
+        // "project" is legacy alias for personal
+        if (s == "personal" || s == "project")
+            return $"personal:{userId}";
+            
+        return s;
     }
 
     // ─── Request bodies ─────────────────────────────────────────────────────

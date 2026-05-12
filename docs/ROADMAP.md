@@ -4,7 +4,7 @@
 
 > Backlog de mejoras y features planificadas. Este documento es vivo — las ideas se mueven a issues de GitHub cuando están listas para implementación.
 >
-> **Última actualización**: 2026-05-11
+> **Última actualización**: 2026-05-12
 > **Versión actual**: `main` (post PR #11 — Session Activity Phase 4 merged)
 
 ---
@@ -35,6 +35,40 @@ Operational diagnostics and repair tools — port from Go upstream (`internal/di
 | 3 | `engram doctor` CLI | Comando unificado `check` + `repair` con output estructurado |
 
 **Go source**: `internal/diagnostic/`, `cmd/engram/doctor.go` (~1264 líneas Go → ~800cs .NET)
+
+---
+
+### Offline-First Sync (planned)
+
+> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](OFFLINE-FIRST-SYNC.md)
+> **Branch**: [`feat/offline-first-sync`](https://github.com/efreet111/engram-dotnet/tree/feat/offline-first-sync)
+> **PR**: [#14](https://github.com/efreet111/engram-dotnet/pull/14)
+> **SDD Artifact**: [`sdd/offline-first-sync/`](sdd/offline-first-sync/)
+> **Esfuerzo estimado**: **32-44h** (4 fases)
+
+Team sync: local SQLite ↔ PostgreSQL server (TrueNAS `192.168.0.178:7437`).
+Local es source of truth offline, server es source of truth online. Last-write-wins.
+
+> ⚠️ **Estimaciones corregidas vs propuesta original**. Análisis comparativo contra Go upstream reveló que Phase 1 y Phase 2 estaban subestimadas.
+
+| Fase | Contenido | Esfuerzo | Artefactos |
+|------|-----------|----------|------------|
+| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | [`proposal.md`](sdd/offline-first-sync/propose/proposal.md) §Phase 1 |
+| 2 | Autosync manager + debounce + backoff | **12-16h** | [`design.md`](sdd/offline-first-sync/design/design.md) §AD-5 |
+| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 3 |
+| 4 | Dashboard + observability + CLI | **4-6h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 4 |
+
+**Go reference**: `internal/sync/sync.go` (1324l), `internal/cloud/remote/transport.go` (421l),
+`internal/cloud/autosync/manager.go` (703l), `internal/cloud/cloudserver/mutations.go` (349l)
+
+**API contracts** (alineados con Go upstream):
+```
+POST /sync/mutations/push   → body: { entries: [...] }, response: { accepted_seqs, project, project_source, project_path }
+GET  /sync/mutations/pull  → query: since_seq, project, limit → response: { mutations, has_more, latest_seq, project, project_source, project_path }
+```
+
+**7 Architecture Decisions documentadas** en [`design.md`](sdd/offline-first-sync/design/design.md):
+AD-1 Transport location, AD-2 IHttpClientFactory, AD-3 CloudEndpoints separation, AD-4 ICloudMutationStore, AD-5 SyncManager BackgroundService, AD-6 ILocalSyncStore, AD-7 FK deferral
 
 ---
 
@@ -116,32 +150,29 @@ Precedencia: env vars > config file > defaults.
 
 ---
 
-### Offline-First Sync (proposal: ❌ no creada)
+### Offline-First Sync (proposal: ✅ creada)
 
-> **Origen**: Discusión 2026-04-29
-> **Esfuerzo estimado**: ~900 líneas, 3 fases
+> **Proposal**: [`sdd/offline-first-sync/propose/proposal.md`](sdd/offline-first-sync/propose/proposal.md)
+> **Branch**: `feat/offline-first-sync`
+> **Esfuerzo estimado**: 22-30h (4 fases)
 
-Bidireccional local SQLite ↔ servidor PostgreSQL.
+Bidireccional local SQLite ↔ servidor PostgreSQL (TrueNAS `192.168.0.178:7437`).
 
 **Problema**: Con `ENGRAM_URL` todo va directo al servidor. Si se cae la red, el agente pierde la capacidad de guardar memoria.
 
 **Arquitectura**:
-1. Siempre escribe en SQLite local (source of truth primaria)
-2. Si `ENGRAM_URL` está set y hay conexión → `SyncWorker` hace push/pull en background
-3. Server necesita: `POST /sync/push` y `GET /sync/pull?since={seq}`
+1. Offline: escribe en SQLite local, registra `sync_mutations`
+2. Online: `SyncManager` hace push/pull en background
+3. Server: `POST /sync/mutations/push` y `GET /sync/mutations/pull?since_seq=N`
 4. Conflict resolution: last-write-wins por timestamp
 
-**Infraestructura existente** (ya implementada, nunca consumida):
-- `sync_mutations` journal en SQLite
-- `sync_state` table con lifecycle por target
-- `sync_id` en cada entidad
-- `ExportAsync()` / `ImportAsync()`
-- `EngramSync` class con chunks JSONL
-
 **Fases**:
-- **Fase 1** (Push): ~400 líneas — consume `sync_mutations`, envía al servidor
-- **Fase 2** (Pull): ~300 líneas — baja cambios de otros devs
-- **Fase 3** (CLI): ~200 líneas — `engram sync status/push/pull`, backoff, métricas
+- **Fase 1** (6-8h): Mutation journal + server endpoints (MVP)
+- **Fase 2** (8-10h): Autosync manager + debounce + backoff
+- **Fase 3** (4-6h): Enrollment + last-write-wins
+- **Fase 4** (4-6h): Dashboard + observability + CLI
+
+**Go reference**: `internal/sync/sync.go`, `internal/cloud/remote/transport.go`, `internal/cloud/autosync/manager.go`
 
 ---
 
@@ -235,12 +266,12 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | Orden | Feature | Por qué primero |
 |-------|---------|----------------|
 | 1 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. |
-| 2 | **TTL Configurable** | Proposal ya existe. Independiente. |
-| 3 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
-| 4 | **Upstream Phase 2 (resume)** | ~18/50 tasks done, 4-6h para completar. |
-| 5 | **Offline-First Sync** | Feature más compleja. Diferencia hobby de enterprise. |
-| 6 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
-| 7 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
-| 8 | **Observability** | Útil pero no bloqueante. |
-| 9 | **Admin CLI** | Herramienta de emergencia, no crítica. |
+| 2 | **Offline-First Sync** | Team necesita sync. ~22-30h, 4 fases. Prioridad alta para equipo. |
+| 3 | **TTL Configurable** | Proposal ya existe. Independiente. |
+| 4 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
+| 5 | **Upstream Phase 2 (resume)** | ~18/50 tasks done, 4-6h para completar. |
+| 6 | **Offline-First Sync (Phase 2-4)** | Autosync, debounce, enrollment, dashboard. |
+| 7 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
+| 8 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
+| 9 | **Observability** | Útil pero no bloqueante. |
 | 10 | **Tool Deferral** | SDK .NET no soporta — en investigación. |
