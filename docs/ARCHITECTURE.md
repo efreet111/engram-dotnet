@@ -349,6 +349,7 @@ Tablas principales:
 - `sync_chunks` — registro de chunks sincronizados (idempotencia)
 - `sync_mutations` — cola de mutaciones pendientes de sync
 - `sync_state` / `sync_enrolled_projects` — estado del sync
+- `sync_apply_deferred` — FK misses de mutaciones pull (Phase 1, nuevo)
 
 Tabla FTS5:
 - `observations_fts` — índice full-text (title, content, tool_name, type, project, topic_key)
@@ -372,6 +373,79 @@ Mismas tablas que SQLite, con diferencias en el FTS:
 - **Default timestamps**: `NOW() AT TIME ZONE 'utc'` en lugar de `datetime('now')`
 
 Ver [docs/POSTGRES-SETUP.md](POSTGRES-SETUP.md) para detalles de configuración y migración.
+
+---
+
+## Offline-First Sync
+
+> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](OFFLINE-FIRST-SYNC.md)
+> **SDD**: [`sdd/offline-first-sync/`](sdd/offline-first-sync/)
+> **Phase**: Planned (PR #14 pending)
+> **Effort**: 32–44h across 4 phases
+
+Bidirectional mutation-based sync between local SQLite and cloud PostgreSQL server.
+Full architecture in SDD design document.
+
+### Components
+
+```
+Engram.Sync/
+├── Transport/
+│   ├── IMutationTransport.cs         ← HTTP client interface
+│   ├── MutationTransport.cs          ← IHttpClientFactory impl
+│   └── MutationTransportException.cs ← Error with status code
+├── SyncManager.cs                    ← BackgroundService (IHostedService)
+├── SyncManagerConfig.cs              ← Config (debounce, batch sizes, backoff)
+├── SyncPhase.cs                      ← Enum: Idle/Pushing/Pulling/etc
+└── ILocalSyncStore.cs               ← Store interface subset
+
+Engram.Server/
+├── CloudSyncEndpoints.cs            ← /sync/mutations/push + /sync/mutations/pull
+└── Dtos/MutationDtos.cs             ← PushRequest, PullResponse DTOs
+
+Engram.Store/
+├── ICloudMutationStore.cs           ← Server-side cloud store interface
+├── PostgresStore.cs                 ← + cloud_mutations, cloud_sync_audit_log, cloud_project_controls
+└── SqliteStore.cs                   ← + sync_apply_deferred, ILocalSyncStore impl
+```
+
+### New Tables (Phase 1)
+
+| Table | Backend | Purpose |
+|-------|---------|---------|
+| `cloud_mutations` | PostgreSQL | Server-side append-only mutation journal |
+| `cloud_sync_audit_log` | PostgreSQL | Audit trail for push rejections |
+| `cloud_project_controls` | PostgreSQL | Per-project `sync_enabled` + pause reason |
+| `sync_apply_deferred` | SQLite | FK misses from pulled mutations (retry before next pull) |
+
+### API Endpoints
+
+| Route | Method | Phase |
+|-------|--------|-------|
+| `/sync/mutations/push` | POST | 1 |
+| `/sync/mutations/pull` | GET | 1 |
+| `/sync/enroll` | POST | 3 |
+| `/sync/pause` | POST | 3 |
+| `/sync/status` | GET | 4 |
+
+### Sync Flow
+
+```
+Online (server source of truth):
+  SyncManager → PushMutationsAsync → POST /sync/mutations/push
+             → AckSeqs → PullMutationsAsync → GET /sync/mutations/pull
+             → ApplyPulledMutation → ReplayDeferred
+
+Offline (local source of truth):
+  Local writes → EnqueueSyncMutation → sync_mutations queue
+  On reconnect → SyncManager drains queue → PushMutationsAsync
+```
+
+### Conflict Resolution
+
+**Last-write-wins** via `occurred_at` timestamp ordering.
+**FK misses** → `sync_apply_deferred` table → `ReplayDeferredAsync` before next pull cycle.
+Cursor **NEVER halts** on FK miss.
 
 ---
 

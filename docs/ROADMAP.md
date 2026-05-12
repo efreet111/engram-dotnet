@@ -4,7 +4,7 @@
 
 > Backlog de mejoras y features planificadas. Este documento es vivo — las ideas se mueven a issues de GitHub cuando están listas para implementación.
 >
-> **Última actualización**: 2026-05-11
+> **Última actualización**: 2026-05-12
 > **Versión actual**: `main` (post PR #11 — Session Activity Phase 4 merged)
 
 ---
@@ -40,21 +40,35 @@ Operational diagnostics and repair tools — port from Go upstream (`internal/di
 
 ### Offline-First Sync (planned)
 
-> **Proposal**: [`sdd/offline-first-sync/propose/proposal.md`](sdd/offline-first-sync/propose/proposal.md)
-> **Branch**: `feat/offline-first-sync`
-> **Esfuerzo estimado**: 22-30h (4 fases)
+> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](OFFLINE-FIRST-SYNC.md)
+> **Branch**: [`feat/offline-first-sync`](https://github.com/efreet111/engram-dotnet/tree/feat/offline-first-sync)
+> **PR**: [#14](https://github.com/efreet111/engram-dotnet/pull/14)
+> **SDD Artifact**: [`sdd/offline-first-sync/`](sdd/offline-first-sync/)
+> **Esfuerzo estimado**: **32-44h** (4 fases)
 
 Team sync: local SQLite ↔ PostgreSQL server (TrueNAS `192.168.0.178:7437`).
 Local es source of truth offline, server es source of truth online. Last-write-wins.
 
-| Fase | Contenido | Esfuerzo |
-|------|-----------|----------|
-| 1 | Mutation journal + server endpoints (MVP push/pull) | 6-8h |
-| 2 | Autosync manager + debounce + backoff | 8-10h |
-| 3 | Enrollment + conflict resolution (last-write-wins) | 4-6h |
-| 4 | Dashboard + observability + CLI | 4-6h |
+> ⚠️ **Estimaciones corregidas vs propuesta original**. Análisis comparativo contra Go upstream reveló que Phase 1 y Phase 2 estaban subestimadas.
 
-**Go reference**: `internal/sync/sync.go`, `internal/cloud/remote/transport.go`, `internal/cloud/autosync/manager.go`
+| Fase | Contenido | Esfuerzo | Artefactos |
+|------|-----------|----------|------------|
+| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | [`proposal.md`](sdd/offline-first-sync/propose/proposal.md) §Phase 1 |
+| 2 | Autosync manager + debounce + backoff | **12-16h** | [`design.md`](sdd/offline-first-sync/design/design.md) §AD-5 |
+| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 3 |
+| 4 | Dashboard + observability + CLI | **4-6h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 4 |
+
+**Go reference**: `internal/sync/sync.go` (1324l), `internal/cloud/remote/transport.go` (421l),
+`internal/cloud/autosync/manager.go` (703l), `internal/cloud/cloudserver/mutations.go` (349l)
+
+**API contracts** (alineados con Go upstream):
+```
+POST /sync/mutations/push   → body: { entries: [...] }, response: { accepted_seqs, project, project_source, project_path }
+GET  /sync/mutations/pull  → query: since_seq, project, limit → response: { mutations, has_more, latest_seq, project, project_source, project_path }
+```
+
+**7 Architecture Decisions documentadas** en [`design.md`](sdd/offline-first-sync/design/design.md):
+AD-1 Transport location, AD-2 IHttpClientFactory, AD-3 CloudEndpoints separation, AD-4 ICloudMutationStore, AD-5 SyncManager BackgroundService, AD-6 ILocalSyncStore, AD-7 FK deferral
 
 ---
 
