@@ -1749,7 +1749,13 @@ public sealed class SqliteStore : IStore
     private static string NormalizeScope(string? scope)
     {
         var v = (scope ?? "").Trim().ToLowerInvariant();
-        return v == Scopes.Team ? Scopes.Team : Scopes.Personal;
+        if (v == Scopes.Team) return Scopes.Team;
+        
+        // If it already has a namespace (personal:user), keep it
+        if (v.StartsWith("personal:") || v.StartsWith("project:"))
+            return v;
+
+        return Scopes.Personal;
     }
 
     private static string NewSyncId(string prefix)

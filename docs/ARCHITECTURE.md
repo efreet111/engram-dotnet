@@ -42,6 +42,7 @@ flowchart LR
     M1 -->|HTTP REST + X-Engram-User| S[engram serve\nASP.NET Core / Kestrel]
     M2 -->|HTTP REST + X-Engram-User| S
     M3 -->|HTTP REST + X-Engram-User| S
+    S -->|Normalize Scope| S
     S -->|IStore| DB[(Backend)]
     DB -->|SQLite| SS[SqliteStore]
     DB -->|PostgreSQL| PS[PostgresStore]
@@ -307,56 +308,31 @@ Las únicas diferencias visibles desde el exterior:
 - `PostgresStore` conecta a PostgreSQL con schema auto-creado
 - `HttpStore` hace requests HTTP al servidor centralizado con header `X-Engram-User`
 
-### Namespacing automático con ENGRAM_USER — Modelo team/personal
+### Aislamiento Multi-Usuario (X-Engram-User)
 
-`McpConfig` resuelve el proyecto namespaceado antes de cada llamada a `IStore`. El modelo tiene **dos niveles de scope**:
+El servidor implementa aislamiento de memoria personal mediante el header de identidad `X-Engram-User`.
 
-| Scope | Namespace en DB | Visibilidad |
-|---|---|---|
-| `team` | `team/{project}` | Compartido con todos los desarrolladores del equipo |
-| `personal` | `{user}/{project}` | Privado del desarrollador (ENGRAM_USER) |
+#### Identidad del desarrollador
+El cliente MCP (`HttpStore`) envía automáticamente la identidad del usuario:
+1.  Usa el valor de la variable de entorno `ENGRAM_USER`.
+2.  Si no está definida, usa el usuario del sistema operativo (`Environment.UserName`).
 
-```csharp
-// Agente llama: mem_save(project: "mi-api", type: "architecture")
-// AutoClassifyScope("architecture") → "team"
-// McpConfig.ResolveNamespacedProject("mi-api", "team") → "team/mi-api"
-// IStore recibe: project = "team/mi-api"
+#### Aislamiento de Scope en el Servidor
+Cuando el servidor recibe una petición, normaliza el `scope` de la observación o búsqueda:
 
-// Agente llama: mem_save(project: "mi-api", type: "tool_use")
-// AutoClassifyScope("tool_use") → "personal"
-// McpConfig.ResolveNamespacedProject("mi-api", "personal") → "victor.silgado/mi-api"
-// IStore recibe: project = "victor.silgado/mi-api"
-```
+- **`team`**: Se mantiene compartido para todos los usuarios.
+- **`personal`**: Se transforma internamente a `personal:{userId}`.
 
-#### Auto-clasificación de scope por tipo
-
-Cuando el agente no especifica `scope`, `AutoClassifyScope(type)` lo decide:
-
-| Default: `team` | Default: `personal` |
-|---|---|
-| `architecture`, `decision`, `bugfix` | `tool_use`, `file_change` |
-| `pattern`, `session_summary`, `config` | `command`, `file_read` |
-| `discovery`, `learning`, `manual` | `search`, `passive` |
-
-#### Wide-read en mem_context y mem_search
-
-- `mem_context` siempre lee **ambos** namespaces (`team/` y `{user}/`) y mergea por `updated_at DESC`, etiquetando cada observación `[team]` o `[personal]`.
-- `mem_search` sin `scope` explícito busca en ambos namespaces simultáneamente.
-- `mem_search` con `scope` explícito filtra solo ese namespace.
-
-#### Compatibilidad retroactiva
-
-El valor legacy `scope="project"` en registros existentes se normaliza a `"personal"` vía `NormalizeScope()` en runtime. No se requiere migración masiva de datos.
+Esto garantiza que las memorias personales de `usuario-a` no sean visibles para `usuario-b`, incluso si están trabajando en el mismo proyecto, mientras que las decisiones de arquitectura (`team`) siguen siendo compartidas.
 
 ```csharp
-// SqliteStore.NormalizeScope
-"team"     → "team"
-"personal" → "personal"
-"project"  → "personal"   // legacy
-null/""    → "personal"   // default
+// EngramServer.NormalizeScope logic
+string NormalizeScope(string? scope, string user) =>
+    scope == "team" ? "team" : $"personal:{user}";
 ```
 
-El agente nunca necesita conocer su usuario ni el prefijo — el namespacing es completamente transparente.
+#### Compatibilidad Legacy
+Si el header `X-Engram-User` no está presente, el servidor usa la identidad `global`. Las instalaciones locales de una sola instancia siguen funcionando sin cambios, ya que todas operan bajo el usuario por defecto.
 
 ---
 

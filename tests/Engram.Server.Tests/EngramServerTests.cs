@@ -177,6 +177,7 @@ public class EngramServerTests : IAsyncDisposable
 
 
     // ─── Multi-User Isolation ─────────────────────────────────────────────────
+    // Tests ensuring that personal data is scoped by the X-Engram-User header.
 
     [Fact]
     public async Task Observations_With_Different_Users_Are_Isolated_In_Personal_Scope()

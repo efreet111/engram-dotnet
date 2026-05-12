@@ -156,7 +156,8 @@ ENGRAM_DATA_DIR=<ENGRAM_DATA_PATH> ./engram serve
 
 # En cada máquina de desarrollo
 export ENGRAM_URL=http://servidor.interno:7437
-export ENGRAM_USER=nombre.apellido       # ← namespcea tus memorias en el servidor
+# Opcional: define tu identidad (default: tu usuario de Linux/macOS)
+export ENGRAM_USER=nombre.apellido
 ```
 
 El binario `engram mcp` detecta `ENGRAM_URL` automáticamente y actúa como proxy HTTP hacia el servidor centralizado — sin SQLite local.
