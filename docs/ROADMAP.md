@@ -4,8 +4,8 @@
 
 > Backlog de mejoras y features planificadas. Este documento es vivo — las ideas se mueven a issues de GitHub cuando están listas para implementación.
 >
-> **Última actualización**: 2026-04-30
-> **Versión actual**: `main` (post PR #7)
+> **Última actualización**: 2026-05-11
+> **Versión actual**: `main` (post PR #11 — Session Activity Phase 4 merged)
 
 ---
 
@@ -13,10 +13,11 @@
 
 | Feature | PR | Descripción |
 |---------|----|-------------|
-| Project Drift Detection | [#2](https://github.com/efreet111/engram-dotnet/pull/2) | DetectProject, FindSimilar, Levenshtein, CLI `projects list\|consolidate\|prune` |
+| Upstream Parity Phase 2 — API Parity (Delete, mem_current_project, Structured Errors, Obsidian --watch/--since/--project) | [#8](https://github.com/efreet111/engram-dotnet/pull/8), [#11](https://github.com/efreet111/engram-dotnet/pull/11) | Delete endpoints (sessions/prompts), MemCurrentProject MCP tool, Structured MCP errors, Obsidian watch/since/project filters, ExportProjectAsync, EngramServer DELETE routes |
+| Upstream Parity Phase 1 — Session Activity Tracker | [#11](https://github.com/efreet111/engram-dotnet/pull/11) | SessionActivity tracker, nudge prompts, activity scores, upstream conflict surfacing |
+| Upstream Parity Phase 1 — Project Detection Fixes | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | DetectProject, FindSimilar, Levenshtein, CLI `projects list\|consolidate\|prune` |
 | PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore con FTS, GIN indexes, 22 métodos IStore, Testcontainers |
 | Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, graph.json, 61 tests |
-| Upstream Parity Phase 1 | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | Project detection 5-case, schema columns, write queue, session activity tracker |
 
 ---
 
@@ -24,23 +25,22 @@
 
 Portear cambios del Go upstream (v1.12 → v1.14.8, 61 commits) en fases incrementales.
 
-### Phase 2 — API Parity (proposal: ✅ creada)
+### Phase 2 — API Parity (in progress — ~18/45 tasks complete)
 
 > **Proposal**: [`sdd/upstream-parity-phase2/proposal.md`](../sdd/upstream-parity-phase2/proposal.md)
-> **Branch**: `feat/upstream-parity-phase2` (por crear)
+> **Branch**: `feat/upstream-parity-phase2`
 > **Esfuerzo estimado**: 6-8h
+> **Progress**: Store layer ✅ (DeleteSessionAsync, DeletePromptAsync), Server layer ✅ (DELETE routes), MCP tools ⚠️ (mem_current_project done, structured errors partial), Obsidian ⚠️ (watch/since/project filters done, integration tests pending)
 
-| # | Feature | Alcance | Archivos |
-|---|---------|---------|----------|
-| 1 | `DELETE /sessions/{id}` | Borrar sesión con FK guard (409 si tiene observaciones) | Server, Store |
-| 2 | `DELETE /prompts/{id}` | Soft-delete de prompts | Server, Store |
-| 3 | `mem_current_project` | MCP tool read-only — dice qué proyecto se va a usar | MCP |
-| 4 | Structured error responses | Errores MCP con `error_code`, `available_projects`, `hint` | MCP |
-| 5 | Obsidian `--watch` | Daemon continuo con `--interval` configurable | CLI, Obsidian |
-| 6 | Obsidian `--since` | Filtro por fecha (`30d`, `7d`, `2025-01-01`) | CLI, Obsidian |
-| 7 | Export por proyecto | `GET /export?project=X` — un solo proyecto | Server, Obsidian |
-
-**Out of scope**: Remover `project` de write tools (Phase 3), project envelope (Phase 3).
+| # | Feature | Status | Archivos |
+|---|---------|--------|----------|
+| 1 | `DELETE /sessions/{id}` | ✅ Done | Server, Store |
+| 2 | `DELETE /prompts/{id}` | ✅ Done | Server, Store |
+| 3 | `mem_current_project` | ✅ Done | MCP |
+| 4 | Structured error responses | ⚠️ Partial — McpErrors.cs done, integration pending | MCP |
+| 5 | Obsidian `--watch` | ⚠️ Partial — watch loop done, tests pending | CLI, Obsidian |
+| 6 | Obsidian `--since` | ⚠️ Partial — filter done, tests pending | CLI, Obsidian |
+| 7 | Export by project | ⚠️ Partial — ExportProjectAsync done, integration tests pending | Server, Store, Obsidian |
 
 ---
 
@@ -205,47 +205,15 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | Tarea | Esfuerzo | Estado |
 |-------|----------|--------|
 | Limpiar ramas merged remotas | 5min | ✅ Hecho (2026-04-30) |
-| Rebuild binario local MCP | 15min | ⬜ Pendiente — cerrar VS Code, `dotnet publish`, copiar |
+| Rebuild binario local MCP | 15min | ✅ Hecho (2026-05-11) — SessionActivity integrated |
 | Limpiar datos de prueba (ID 1, session verify-001) | 5min | ⬜ Pendiente |
-
----
-
-## 📋 Auditoría de Compatibilidad con Go Original
-
-Última auditoría: 2026-04-30
-
-| Feature del Go original | Estado en .NET | Notas |
-|------------------------|:---:|-------|
-| Scoped topic upserts (scope, topic_key, revision_count) | ✅ | |
-| FTS5 con topic_key + direct search fallback | ✅ | |
-| NormalizeScope (team/personal/project legacy) | ✅ | |
-| `mem_merge_projects` tool | ✅ | |
-| SuggestTopicKey | ✅ | |
-| Project drift detection (DetectProject, FindSimilar) | ✅ | PR #2 |
-| Project detection 5-case (git_child, ambiguous) | ✅ | PR #7 |
-| Write queue (Channel<T> serialization) | ✅ | PR #7 |
-| Session activity tracker + nudge | ✅ | PR #7 |
-| Schema columns (review_after, expires_at, embedding) | ✅ | PR #7 |
-| Obsidian exporter | ✅ | PR #4 |
-| PostgreSQL backend | ✅ | PR #3 |
-| Docker Compose para PG | ✅ | |
-| Backend indicator en `/health` y `/stats` | ✅ | PR #7 |
-| **DELETE /sessions/{id}, /prompts/{id}** | ❌ | **Phase 2** |
-| **mem_current_project** | ❌ | **Phase 2** |
-| **Structured error responses** | ❌ | **Phase 2** |
-| **Obsidian --watch, --since, --project** | ❌ | **Phase 2** |
-| Tool deferral (deferred loading) | ❌ | En investigación |
-| TUI (Bubbletea) | ❌ | Excluido de v1 |
-| Memory conflict surfacing | ❌ | **Phase 4** |
-| Decay / auto-expiration | ❌ | **Phase 4** |
-
----
+| Publicar release notes post PR #11 | 10min | ⬜ Pendiente — Session Activity Phase 4 |
 
 ## 🗺️ Orden Sugerido de Trabajo
 
 | Orden | Feature | Por qué primero |
 |-------|---------|----------------|
-| 1 | **Phase 2 — API Parity** | Proposal ya existe. Completa la paridad con Go. Aditivo, sin breaking. |
+| 1 | **Phase 2 — API Parity** | ~18/45 tasks complete. Proposal existe. Store + Server layers ✅. |
 | 2 | **TTL Configurable** | Proposal ya existe. Independiente. Usa columnas de Phase 1. |
 | 3 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
 | 4 | **Offline-First Sync** | Feature más compleja. Diferencia producto hobby de enterprise. |
@@ -253,4 +221,4 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | 6 | **Phase 4 — Memory Relations** | Requiere Phase 1 columns. Feature avanzada de calidad de memoria. |
 | 7 | **Observability** | Útil pero no bloqueante. |
 | 8 | **Admin CLI** | Herramienta de emergencia, no crítica. |
-| 9 | **Tool Deferral** | Esperar datos de tokens primero. |
+| 9 | **Tool Deferral** | Esperar datos de tokens primero — SDK .NET no soporta. |
