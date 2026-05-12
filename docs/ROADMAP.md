@@ -139,7 +139,22 @@ Bidireccional local SQLite ↔ servidor PostgreSQL.
 
 ---
 
+### Phase 5 — Multi-User Isolation (proposal: ✅ creada)
+> **RFC**: [`docs/rfcs/RFC-002-multi-user-isolation.md`](docs/rfcs/RFC-002-multi-user-isolation.md)
+> **Esfuerzo estimado**: 4-5h
+
+Aislamiento de scopes personales mediante identidad del usuario.
+
+| # | Feature | Descripción |
+|---|---------|-------------|
+| 1 | `X-Engram-User` Header | Captura de identidad en middleware/handlers |
+| 2 | Internal Namespacing | Transformación de `personal` -> `personal:{user}` |
+| 3 | Multi-tenant tests | Tests de integración con múltiples identidades |
+
+---
+
 ### Herramienta Administrativa CLI (proposal: ❌ no creada)
+
 
 > **Esfuerzo estimado**: 4-6h
 
