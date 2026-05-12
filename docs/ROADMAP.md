@@ -21,56 +21,62 @@
 
 ---
 
-## 🚀 Sprint Activo — Upstream Parity
+## 🚀 Sprint Activo — Doctor Diagnostic
 
-Portear cambios del Go upstream (v1.12 → v1.14.8, 61 commits) en fases incrementales.
+> **Proposal**: [`sdd/doctor-diagnostic/proposal.md`](sdd/doctor-diagnostic/propose/proposal.md)
+> **Esfuerzo estimado**: 4-6h
 
-### Phase 2 — API Parity (in progress — ~18/45 tasks complete)
+Operational diagnostics and repair tools — port from Go upstream (`internal/diagnostic/` + `cmd/engram/doctor.go`).
 
-> **Proposal**: [`sdd/upstream-parity-phase2/proposal.md`](../sdd/upstream-parity-phase2/proposal.md)
-> **Branch**: `feat/upstream-parity-phase2`
-> **Esfuerzo estimado**: 6-8h
-> **Progress**: Store layer ✅ (DeleteSessionAsync, DeletePromptAsync), Server layer ✅ (DELETE routes), MCP tools ⚠️ (mem_current_project done, structured errors partial), Obsidian ⚠️ (watch/since/project filters done, integration tests pending)
+| # | Feature | Descripción |
+|---|---------|-------------|
+| 1 | Check registry | Ejecutar checks individuales (DB integrity, sync state, orphan chunks) |
+| 2 | Repair actions | Auto-fix para problemas detectables (reconstruir índice, limpiar orphans) |
+| 3 | `engram doctor` CLI | Comando unificado `check` + `repair` con output estructurado |
 
-| # | Feature | Status | Archivos |
-|---|---------|--------|----------|
-| 1 | `DELETE /sessions/{id}` | ✅ Done | Server, Store |
-| 2 | `DELETE /prompts/{id}` | ✅ Done | Server, Store |
-| 3 | `mem_current_project` | ✅ Done | MCP |
-| 4 | Structured error responses | ⚠️ Partial — McpErrors.cs done, integration pending | MCP |
-| 5 | Obsidian `--watch` | ⚠️ Partial — watch loop done, tests pending | CLI, Obsidian |
-| 6 | Obsidian `--since` | ⚠️ Partial — filter done, tests pending | CLI, Obsidian |
-| 7 | Export by project | ⚠️ Partial — ExportProjectAsync done, integration tests pending | Server, Store, Obsidian |
+**Go source**: `internal/diagnostic/`, `cmd/engram/doctor.go` (~1264 líneas Go → ~800cs .NET)
 
 ---
 
-### Phase 3 — Breaking Changes (proposal: ❌ no creada)
+## 📋 Backlog — Features Prioritarias
 
-> Cambios que rompen compatibilidad con la API actual. Requieren versión semver mayor o al menos menor con nota de breaking.
+### Upstream Parity Phase 2 — API Parity (backlog, ~18/50 tasks done)
+
+> Moved to `sdd/archive/2026-05-11-upstream-parity-phase2-backlog/`
+> Remaining work: ~27 RED unit tests + integration. ~4-6h effort.
+
+| Lo que ya está hecho | Lo que falta |
+|---------------------|--------------|
+| `DeleteSessionAsync`, `DeletePromptAsync` (Store) | RED test cycle for all handlers |
+| `handleDeleteSession`, `handleDeletePrompt` (Server) | Structured error integration in tools |
+| `McpErrors.cs`, `ExportProjectAsync` | Watch mode integration tests |
+| Obsidian `--since`, `--project` filters (partial) | Full `?project=` integration in server |
+
+**Resume strategy**: Start with Phase 3 tests (mem_current_project) — feature is already done.
+
+### Phase 3 — Breaking Changes (Go: ✅ done, .NET: ❌ pending)
+
+> Cambios que rompen compatibilidad con la API actual. Requieren versión semver mayor.
+> **Go upstream**: `internal/mcp/mcp.go` — project envelope + remove project from write tools
 
 | # | Feature | Por qué es breaking |
 |---|---------|-------------------|
 | 1 | Remover `project` de write tools | Los agentes ya no pasan `project` — se detecta automáticamente via `DetectProjectFull` |
 | 2 | Project envelope en responses | Cada respuesta incluye `{ project, project_source, warning }` — cambia el JSON de salida |
 
-**Dependencias**: Requiere Phase 2 completada (structured errors como base).
+**Dependencias**: Requiere Phase 2 (structured errors como base).
 
 ---
 
-### Phase 4 — Memory Relations (proposal: ❌ no creada)
+### Phase 4 — Memory Relations (Go: ✅ Phases 1-4, .NET: ❌ pending)
 
 | # | Feature | Descripción |
 |---|---------|-------------|
-| 1 | Memory conflict surfacing | Detectar observaciones contradictorias entre sesiones (mismo topic_key, contenido opuesto) |
-| 2 | Decay con `review_after` / `expires_at` | Usar las columnas de Phase 1 para expiración automática y sugerir revisiones |
+| 1 | Memory conflict surfacing | Detectar observaciones contradictorias (mismo topic_key, contenido opuesto) |
+| 2 | Decay con `review_after` / `expires_at` | Usar las columnas de Phase 1 para expiración automática |
 
-**Dependencias**: Requiere Phase 1 completada (columnas `review_after`, `expires_at` ya existen).
-
----
-
-## 📋 Backlog — Features Independientes
-
-Features que no dependen del upstream parity y pueden trabajarse en paralelo.
+**Go upstream**: `internal/store/store.go` + `internal/mcp/mcp.go` — BM25Floor, Limit, memory_relations table
+**Dependencias**: Columnas `review_after`, `expires_at` ya existen ✅
 
 ### TTL Configurable por Tipo (proposal: ✅ creada)
 
@@ -220,20 +226,21 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | Tarea | Esfuerzo | Estado |
 |-------|----------|--------|
 | Limpiar ramas merged remotas | 5min | ✅ Hecho (2026-04-30) |
-| Rebuild binario local MCP | 15min | ✅ Hecho (2026-05-11) — SessionActivity integrated |
-| Limpiar datos de prueba (ID 1, session verify-001) | 5min | ⬜ Pendiente |
-| Publicar release notes post PR #11 | 10min | ⬜ Pendiente — Session Activity Phase 4 |
+| Rebuild binario local MCP | 15min | ✅ Hecho (2026-05-11) |
+| Archivar upstream-parity-phase1 y phase2 | 10min | ✅ Hecho (2026-05-11) |
+| Publicar release notes post PR #11 | 10min | ✅ Hecho (2026-05-11) — CHANGELOG.md creado |
 
 ## 🗺️ Orden Sugerido de Trabajo
 
 | Orden | Feature | Por qué primero |
 |-------|---------|----------------|
-| 1 | **Phase 2 — API Parity** | ~18/45 tasks complete. Proposal existe. Store + Server layers ✅. |
-| 2 | **TTL Configurable** | Proposal ya existe. Independiente. Usa columnas de Phase 1. |
+| 1 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. |
+| 2 | **TTL Configurable** | Proposal ya existe. Independiente. |
 | 3 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
-| 4 | **Offline-First Sync** | Feature más compleja. Diferencia producto hobby de enterprise. |
-| 5 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
-| 6 | **Phase 4 — Memory Relations** | Requiere Phase 1 columns. Feature avanzada de calidad de memoria. |
-| 7 | **Observability** | Útil pero no bloqueante. |
-| 8 | **Admin CLI** | Herramienta de emergencia, no crítica. |
-| 9 | **Tool Deferral** | Esperar datos de tokens primero — SDK .NET no soporta. |
+| 4 | **Upstream Phase 2 (resume)** | ~18/50 tasks done, 4-6h para completar. |
+| 5 | **Offline-First Sync** | Feature más compleja. Diferencia hobby de enterprise. |
+| 6 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
+| 7 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
+| 8 | **Observability** | Útil pero no bloqueante. |
+| 9 | **Admin CLI** | Herramienta de emergencia, no crítica. |
+| 10 | **Tool Deferral** | SDK .NET no soporta — en investigación. |
