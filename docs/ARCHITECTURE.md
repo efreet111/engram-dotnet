@@ -223,14 +223,16 @@ engram-dotnet/
 │       └── Program.cs             ← Comandos: serve, mcp, search, promote, projects, obsidian-export, etc.
 │                                     Switch automático: ENGRAM_URL → HttpStore | ENGRAM_DB_TYPE → PostgresStore | SqliteStore
 ├── tests/
-│   ├── Engram.Store.Tests/        ← Unitarios + integración (110)
-│   ├── Engram.Postgres.Tests/     ← Paridad con Testcontainers (26)
-│   ├── Engram.Server.Tests/       ← HTTP con WebApplicationFactory (19)
-│   ├── Engram.Mcp.Tests/          ← Herramientas MCP + McpConfig (34)
-│   ├── Engram.HttpStore.Tests/    ← HttpStore end-to-end (30)
-│   ├── Engram.Obsidian.Tests/     ← Export, hubs, slug, graph (47)
-│   ├── Engram.Verification.Tests/ ← Spec parser, verifier, traceability (30)
-│   └── Engram.MdGeneration.Tests/ ← Templates, slugs, promotion (28)
+│   ├── Engram.Store.Tests/        ← Unitarios + integración (99 tests en 4 files)
+│   ├── Engram.Postgres.Tests/     ← Paridad con Testcontainers (32 tests)
+│   ├── Engram.Server.Tests/       ← HTTP con WebApplicationFactory (27 tests)
+│   ├── Engram.Mcp.Tests/          ← Herramientas MCP + McpConfig (52 tests)
+│   ├── Engram.HttpStore.Tests/    ← HttpStore end-to-end (30 tests)
+│   ├── Engram.Obsidian.Tests/     ← Export, hubs, slug, graph (47 tests)
+│   ├── Engram.Verification.Tests/ ← Spec parser, verifier, traceability (28 tests)
+│   └── Engram.MdGeneration.Tests/ ← Templates, slugs, promotion (17 tests)
+
+**Total**: 332 tests (322 Facts + 10 Theories) en 28 archivos.
 └── config/
     ├── cursor/
     │   ├── mcp.json               ← Config MCP para Cursor
