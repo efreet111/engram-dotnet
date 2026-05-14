@@ -4,8 +4,8 @@
 
 > Backlog de mejoras y features planificadas. Este documento es vivo — las ideas se mueven a issues de GitHub cuando están listas para implementación.
 >
-> **Última actualización**: 2026-05-12
-> **Versión actual**: `main` (post PR #11 — Session Activity Phase 4 merged)
+> **Última actualización**: 2026-05-13
+> **Versión actual**: `main` (post PR #11, Promotion Level 2 merged)
 
 ---
 
@@ -13,20 +13,25 @@
 
 | Feature | PR | Descripción |
 |---------|----|-------------|
-| Upstream Parity Phase 2 — API Parity (Delete, mem_current_project, Structured Errors, Obsidian --watch/--since/--project) | [#8](https://github.com/efreet111/engram-dotnet/pull/8), [#11](https://github.com/efreet111/engram-dotnet/pull/11) | Delete endpoints (sessions/prompts), MemCurrentProject MCP tool, Structured MCP errors, Obsidian watch/since/project filters, ExportProjectAsync, EngramServer DELETE routes |
-| Upstream Parity Phase 1 — Session Activity Tracker | [#11](https://github.com/efreet111/engram-dotnet/pull/11) | SessionActivity tracker, nudge prompts, activity scores, upstream conflict surfacing |
+| Promotion Level 2 | direct | `mem_promote_to_md`, `mem_sync_md_to_repo`, `mem_generate_index` — promover observaciones a archivos .md en el repo, sync batch, generación de índice |
+| Verification Tools | direct | `mem_verify_artifact`, `mem_traceability` — verificar compliance de código contra spec.md, matriz de trazabilidad RF/RNF |
+| Upstream Parity Phase 2 — DELETE endpoints | [#8](https://github.com/efreet111/engram-dotnet/pull/8), [#11](https://github.com/efreet111/engram-dotnet/pull/11) | `DELETE /sessions/{id}`, `DELETE /prompts/{id}`, `handleDeleteSession`, `handleDeletePrompt` |
+| Upstream Parity Phase 1 — Session Activity Tracker | [#11](https://github.com/efreet111/engram-dotnet/pull/11) | SessionActivity tracker, nudge prompts, activity scores |
 | Upstream Parity Phase 1 — Project Detection Fixes | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | DetectProject, FindSimilar, Levenshtein, CLI `projects list\|consolidate\|prune` |
-| PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore con FTS, GIN indexes, 22 métodos IStore, Testcontainers |
-| Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, graph.json, 61 tests |
+| PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore con FTS, GIN indexes, 32 métodos IStore, Testcontainers |
+| Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, graph.json, 47 tests |
 
 ---
 
-## 🚀 Sprint Activo — Doctor Diagnostic
+## 📋 Backlog — Features Prioritarias
 
-> **Proposal**: [`sdd/doctor-diagnostic/proposal.md`](sdd/doctor-diagnostic/propose/proposal.md)
+### Doctor Diagnostic (pendiente de SDD)
+
+> **Go source**: `internal/diagnostic/` + `cmd/engram/doctor.go` (~1264 líneas Go → ~800cs .NET)
 > **Esfuerzo estimado**: 4-6h
+> **Estado**: Sin SDD creado — mover a backlog hasta que exista proposal
 
-Operational diagnostics and repair tools — port from Go upstream (`internal/diagnostic/` + `cmd/engram/doctor.go`).
+Operational diagnostics and repair tools — port from Go upstream.
 
 | # | Feature | Descripción |
 |---|---------|-------------|
@@ -34,16 +39,14 @@ Operational diagnostics and repair tools — port from Go upstream (`internal/di
 | 2 | Repair actions | Auto-fix para problemas detectables (reconstruir índice, limpiar orphans) |
 | 3 | `engram doctor` CLI | Comando unificado `check` + `repair` con output estructurado |
 
-**Go source**: `internal/diagnostic/`, `cmd/engram/doctor.go` (~1264 líneas Go → ~800cs .NET)
-
 ---
 
 ### Offline-First Sync (planned)
 
-> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](OFFLINE-FIRST-SYNC.md)
+> **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](../docs/OFFLINE-FIRST-SYNC.md)
 > **Branch**: [`feat/offline-first-sync`](https://github.com/efreet111/engram-dotnet/tree/feat/offline-first-sync)
 > **PR**: [#14](https://github.com/efreet111/engram-dotnet/pull/14)
-> **SDD Artifact**: [`sdd/offline-first-sync/`](sdd/offline-first-sync/)
+> **SDD Artifact**: [`../sdd/offline-first-sync/`](../sdd/offline-first-sync/)
 > **Esfuerzo estimado**: **32-44h** (4 fases)
 
 Team sync: local SQLite ↔ PostgreSQL server (TrueNAS `192.168.0.178:7437`).
@@ -53,10 +56,10 @@ Local es source of truth offline, server es source of truth online. Last-write-w
 
 | Fase | Contenido | Esfuerzo | Artefactos |
 |------|-----------|----------|------------|
-| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | [`proposal.md`](sdd/offline-first-sync/propose/proposal.md) §Phase 1 |
-| 2 | Autosync manager + debounce + backoff | **12-16h** | [`design.md`](sdd/offline-first-sync/design/design.md) §AD-5 |
-| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 3 |
-| 4 | Dashboard + observability + CLI | **4-6h** | [`tasks.md`](sdd/offline-first-sync/tasks/tasks.md) §Phase 4 |
+| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | [`proposal.md`](../sdd/offline-first-sync/propose/proposal.md) §Phase 1 |
+| 2 | Autosync manager + debounce + backoff | **12-16h** | [`design.md`](../sdd/offline-first-sync/design/design.md) §AD-5 |
+| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | [`tasks.md`](../sdd/offline-first-sync/tasks/tasks.md) §Phase 3 |
+| 4 | Dashboard + observability + CLI | **4-6h** | [`tasks.md`](../sdd/offline-first-sync/tasks/tasks.md) §Phase 4 |
 
 **Go reference**: `internal/sync/sync.go` (1324l), `internal/cloud/remote/transport.go` (421l),
 `internal/cloud/autosync/manager.go` (703l), `internal/cloud/cloudserver/mutations.go` (349l)
@@ -67,26 +70,27 @@ POST /sync/mutations/push   → body: { entries: [...] }, response: { accepted_s
 GET  /sync/mutations/pull  → query: since_seq, project, limit → response: { mutations, has_more, latest_seq, project, project_source, project_path }
 ```
 
-**7 Architecture Decisions documentadas** en [`design.md`](sdd/offline-first-sync/design/design.md):
+**7 Architecture Decisions documentadas** en [`design.md`](../sdd/offline-first-sync/design/design.md):
 AD-1 Transport location, AD-2 IHttpClientFactory, AD-3 CloudEndpoints separation, AD-4 ICloudMutationStore, AD-5 SyncManager BackgroundService, AD-6 ILocalSyncStore, AD-7 FK deferral
 
 ---
 
 ## 📋 Backlog — Features Prioritarias
 
-### Upstream Parity Phase 2 — API Parity (backlog, ~18/50 tasks done)
+### Upstream Parity Phase 2 — API Parity (backlog)
 
-> Moved to `sdd/archive/2026-05-11-upstream-parity-phase2-backlog/`
-> Remaining work: ~27 RED unit tests + integration. ~4-6h effort.
+> Moved to [`../sdd/archive/2026-05-11-upstream-parity-phase2-backlog/`](../sdd/archive/2026-05-11-upstream-parity-phase2-backlog/)
+> **Estado**: ~5/10 tasks hechas. Faltan: structured errors, mem_current_project, export project filter, watch/since modes.
 
 | Lo que ya está hecho | Lo que falta |
 |---------------------|--------------|
-| `DeleteSessionAsync`, `DeletePromptAsync` (Store) | RED test cycle for all handlers |
-| `handleDeleteSession`, `handleDeletePrompt` (Server) | Structured error integration in tools |
-| `McpErrors.cs`, `ExportProjectAsync` | Watch mode integration tests |
-| Obsidian `--since`, `--project` filters (partial) | Full `?project=` integration in server |
+| `DeleteSessionAsync`, `DeletePromptAsync` (Store) | Structured error integration en tools |
+| `handleDeleteSession`, `handleDeletePrompt` (Server) | `mem_current_project` MCP tool |
+| `Obsidian --project` filter | `ExportProjectAsync` (store-level) |
+| | `?project=` integration en server `/export` |
+| | Obsidian `--watch` mode |
+| | Obsidian `--since` filter |
 
-**Resume strategy**: Start with Phase 3 tests (mem_current_project) — feature is already done.
 
 ### Phase 3 — Breaking Changes (Go: ✅ done, .NET: ❌ pending)
 
@@ -150,34 +154,8 @@ Precedencia: env vars > config file > defaults.
 
 ---
 
-### Offline-First Sync (proposal: ✅ creada)
-
-> **Proposal**: [`sdd/offline-first-sync/propose/proposal.md`](sdd/offline-first-sync/propose/proposal.md)
-> **Branch**: `feat/offline-first-sync`
-> **Esfuerzo estimado**: 22-30h (4 fases)
-
-Bidireccional local SQLite ↔ servidor PostgreSQL (TrueNAS `192.168.0.178:7437`).
-
-**Problema**: Con `ENGRAM_URL` todo va directo al servidor. Si se cae la red, el agente pierde la capacidad de guardar memoria.
-
-**Arquitectura**:
-1. Offline: escribe en SQLite local, registra `sync_mutations`
-2. Online: `SyncManager` hace push/pull en background
-3. Server: `POST /sync/mutations/push` y `GET /sync/mutations/pull?since_seq=N`
-4. Conflict resolution: last-write-wins por timestamp
-
-**Fases**:
-- **Fase 1** (6-8h): Mutation journal + server endpoints (MVP)
-- **Fase 2** (8-10h): Autosync manager + debounce + backoff
-- **Fase 3** (4-6h): Enrollment + last-write-wins
-- **Fase 4** (4-6h): Dashboard + observability + CLI
-
-**Go reference**: `internal/sync/sync.go`, `internal/cloud/remote/transport.go`, `internal/cloud/autosync/manager.go`
-
----
-
 ### Phase 5 — Multi-User Isolation (proposal: ✅ creada)
-> **RFC**: [`docs/rfcs/RFC-002-multi-user-isolation.md`](docs/rfcs/RFC-002-multi-user-isolation.md)
+> **RFC**: [`../docs/rfcs/RFC-002-multi-user-isolation.md`](../docs/rfcs/RFC-002-multi-user-isolation.md)
 > **Esfuerzo estimado**: 4-5h
 
 Aislamiento de scopes personales mediante identidad del usuario.
@@ -260,18 +238,19 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | Rebuild binario local MCP | 15min | ✅ Hecho (2026-05-11) |
 | Archivar upstream-parity-phase1 y phase2 | 10min | ✅ Hecho (2026-05-11) |
 | Publicar release notes post PR #11 | 10min | ✅ Hecho (2026-05-11) — CHANGELOG.md creado |
+| Archivar promotion-level2 artifacts | 10min | ✅ Hecho (2026-05-13) |
+| Actualizar ROADMAP + README docs | 1h | 🔄 En progreso (2026-05-13) |
 
 ## 🗺️ Orden Sugerido de Trabajo
 
 | Orden | Feature | Por qué primero |
 |-------|---------|----------------|
-| 1 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. |
-| 2 | **Offline-First Sync** | Team necesita sync. ~22-30h, 4 fases. Prioridad alta para equipo. |
-| 3 | **TTL Configurable** | Proposal ya existe. Independiente. |
-| 4 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
-| 5 | **Upstream Phase 2 (resume)** | ~18/50 tasks done, 4-6h para completar. |
-| 6 | **Offline-First Sync (Phase 2-4)** | Autosync, debounce, enrollment, dashboard. |
-| 7 | **Phase 3 — Breaking** | Requiere Phase 2. Cambia contratos de API. |
-| 8 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
-| 9 | **Observability** | Útil pero no bloqueante. |
-| 10 | **Tool Deferral** | SDK .NET no soporta — en investigación. |
+| 1 | **Upstream Phase 2 (resume)** | ~5/10 tasks hechas. Faltan: structured errors, mem_current_project, export project filter, watch/since. ~4-6h. |
+| 2 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. **Requiere crear SDD primero**. |
+| 3 | **Offline-First Sync** | Team necesita sync. ~32-44h, 4 fases. Prioridad alta para equipo. |
+| 4 | **TTL Configurable** | Proposal ya existe. Independiente. |
+| 5 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
+| 6 | **Phase 3 — Breaking** | Requiere Phase 2 (structured errors). Cambia contratos de API. |
+| 7 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
+| 8 | **Observability** | Útil pero no bloqueante. |
+| 9 | **Tool Deferral** | SDK .NET no soporta — en investigación. |

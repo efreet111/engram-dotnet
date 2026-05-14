@@ -213,13 +213,13 @@ En `.opencode.json` del proyecto:
 
 ### Gemini CLI / Codex y otros
 
-Cualquier cliente MCP que soporte stdio funciona con el mismo patrón. El binario `engram mcp` expone las 15 herramientas via JSON-RPC sobre stdin/stdout.
+Cualquier cliente MCP que soporte stdio funciona con el mismo patrón. El binario `engram mcp` expone las **19 herramientas** via JSON-RPC sobre stdin/stdout.
 
 ---
 
 ## Herramientas MCP
 
-Las mismas 15 herramientas del proyecto original:
+Las **19 herramientas** disponibles:
 
 | Herramienta | Propósito |
 |---|---|
@@ -238,6 +238,10 @@ Las mismas 15 herramientas del proyecto original:
 | `mem_capture_passive` | Extraer aprendizajes automáticamente de texto |
 | `mem_stats` | Estadísticas del sistema de memoria |
 | `mem_merge_projects` | Consolidar variantes de nombre de proyecto |
+| `mem_verify_artifact` | Verificar compliance de código contra spec.md |
+| `mem_traceability` | Generar matriz de trazabilidad RF/RNF → código |
+| `mem_promote_to_md` | Promover observación a archivo .md en el repo |
+| `mem_sync_md_to_repo` | Sincronizar observaciones a .md en lote |
 
 ---
 
@@ -250,13 +254,13 @@ engram mcp [--project <name>]       Iniciar servidor MCP (stdio transport)
 engram search <query>               Buscar memorias
   --type <type>                     Filtrar por tipo (bugfix, decision, architecture…)
   --project <name>                  Filtrar por proyecto
-  --scope <scope>                   Filtrar por scope (project, personal)
+  --scope <scope>                   Filtrar por scope (team, personal)
   --limit <n>                       Máximo de resultados (default: 10)
 
 engram save <title> <content>       Guardar una memoria
   --type <type>                     Tipo (default: manual)
   --project <name>                  Proyecto
-  --scope <scope>                   Scope (default: project)
+  --scope <scope>                   Scope (team, personal; default: auto-classified)
   --topic <key>                     Topic key para upsert
 
 engram context [project]            Contexto reciente de sesiones anteriores
@@ -271,6 +275,16 @@ engram sync --import                Importar chunks nuevos desde el directorio d
 engram sync --status                Estado del sync (chunks totales, sincronizados, pendientes)
 
 engram projects list                Listar todos los proyectos
+engram projects consolidate         Consolidar proyectos similares
+  --all                             Consolidar todos automáticamente
+  --dry-run                         Solo mostrar qué se consolidaría
+engram projects prune               Podar proyectos vacíos
+  --dry-run                         Solo mostrar qué se podaría
+
+engram promote --id <n>             Promover observación a archivo .md
+  --md-dir <path>                   Directorio destino (default: docs/decisions/)
+  --sync                            Sincronizar todas las observaciones sin .md
+  --dry-run                         Solo mostrar qué se promovería
 
 engram obsidian-export              Exportar memorias a un vault de Obsidian
   --vault <path>                    Ruta al vault de Obsidian (requerido)
@@ -302,6 +316,7 @@ POST /sessions                      Crear sesión de trabajo
 GET  /sessions/recent               Sesiones recientes (query: project, limit)
 GET  /sessions/{id}                 Obtener sesión por ID
 POST /sessions/{id}/end             Cerrar sesión con resumen opcional
+DELETE /sessions/{id}               Eliminar sesión (409 si tiene observaciones activas)
 ```
 
 ### Observations
@@ -329,6 +344,7 @@ GET  /context                       Contexto formateado para el agente (query: p
 POST /prompts                       Guardar prompt del usuario
 GET  /prompts/recent                Prompts recientes (query: project, limit)
 GET  /prompts/search                Búsqueda en prompts (query: q, project, limit)
+DELETE /prompts/{id}                Eliminar prompt
 ```
 
 ### Export / Import / Stats
@@ -343,6 +359,17 @@ GET  /stats                         Estadísticas (sessions, observations, promp
 
 ```
 POST /projects/migrate              Renombrar / consolidar proyecto (body: old_project, new_project)
+GET  /projects/list                 Listar todos los nombres de proyecto
+GET  /projects/stats                Estadísticas por proyecto
+POST /projects/prune                Podar proyectos sin observaciones (body: { project })
+```
+
+### Markdown Promotion
+
+```
+POST /md/promote/{id}               Promover observación a archivo .md
+POST /md/sync                       Sincronizar observaciones a .md en lote (body: { mdDir?, dryRun? })
+POST /md/index                      Generar/actualizar índice de decisiones
 ```
 
 ### Sync
@@ -381,7 +408,7 @@ Authorization: Bearer <token>
 
 ```bash
 dotnet test
-# Store.Tests: 110 | Postgres.Tests: 26 | Mcp.Tests: 34 | Server.Tests: 19 | HttpStore.Tests: 30 | Obsidian.Tests: 61 — 280 tests en total (254 sin Docker)
+# Store.Tests: 110 | Postgres.Tests: 26 | Mcp.Tests: 34 | Server.Tests: 19 | HttpStore.Tests: 30 | Obsidian.Tests: 47 | MdGeneration.Tests: 28 | Verification.Tests: 30 — 324 tests en total
 ```
 
 ---
