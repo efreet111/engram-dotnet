@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Engram.Store/Engram.Store.csproj" />
+    <ProjectReference Include="../Engram.Verification/Engram.Verification.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using Engram.Store;
+using Engram.Verification;
 using ModelContextProtocol.Server;
 
 namespace Engram.Mcp;
@@ -45,7 +46,7 @@ public sealed class McpConfig
 /// IStore, McpConfig, and WriteQueue are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker)
 {
     private readonly SessionActivity _activity = activity;
     // ─── mem_search ──────────────────────────────────────────────────────────
@@ -641,6 +642,129 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                   Prompts moved:      {result.PromptsUpdated}
                 """;
         });
+    }
+
+    // ─── mem_verify_artifact ──────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_verify_artifact", ReadOnly = true, Idempotent = false, Destructive = false, OpenWorld = false)]
+    [Description("Verify code changes against a specification. Takes a spec.md file path and code diff, returns a structured compliance report showing which requirements pass and which fail.")]
+    public async Task<string> MemVerifyArtifact(
+        [Description("Path to the spec.md file")] string spec_path,
+        [Description("The code diff or changes to verify")] string code_diff,
+        [Description("Change name for cycle tracking (e.g. 'user-registration')")] string change_name,
+        [Description("Path to plan.md (optional)")] string? plan_path = null)
+    {
+        // 1. Read spec.md from filesystem
+        if (!File.Exists(spec_path)) return $"Error: spec.md not found at \"{spec_path}\"";
+        var markdown = await File.ReadAllTextAsync(spec_path);
+
+        // 2. Parse spec
+        var parser = new SpecParser();
+        var spec = parser.Parse(markdown);
+
+        if (spec.IsUnparseable)
+            return $"Error: Cannot parse spec.md — {spec.Error}";
+
+        // 3. Track cycle
+        var currentCycle = await cycleTracker.GetCurrentCycleAsync(change_name);
+
+        // 4. Verify
+        var report = await verifier.VerifyAsync(spec, code_diff, currentCycle);
+
+        // 5. If failed, increment cycle
+        if (report.Failed > 0)
+        {
+            var newCycle = await cycleTracker.IncrementCycleAsync(change_name, $"verify-{change_name}");
+            var shouldEscalate = cycleTracker.ShouldEscalate(newCycle);
+
+            if (shouldEscalate)
+            {
+                return $"""
+                    ## Verification Failed — ESCALATED (Cycle {newCycle}/{cycleTracker.MaxCycles})
+
+                    {report.Summary}
+
+                    Failed: {report.Failed}/{report.Total} requirements failed
+
+                    ❌ ESCALATED to human — max cycles reached.
+                    """;
+            }
+
+            return $"""
+                ## Verification Failed (Cycle {newCycle}/{cycleTracker.MaxCycles})
+
+                {report.Summary}
+
+                Failed: {report.Failed}/{report.Total} requirements failed
+                Items:
+                {string.Join("\n", report.Items.Where(i => i.Verdict == Verdict.Fail).Select(i => $"  - ❌ {i.Requirement.Id}: {i.Reasoning}"))}
+
+                Review the plan.md and fix the issues, then re-run verification.
+                """;
+        }
+
+        // 6. All passed
+        return $"""
+            ## Verification PASSED ✅
+
+            {report.Summary}
+
+            Passed: {report.Passed}/{report.Total} requirements
+            Coverage: {report.CoveragePct}%
+            """;
+    }
+
+    // ─── mem_traceability ──────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_traceability", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Build a traceability matrix showing which requirements are covered by code. Maps RF/RNF items from spec.md to related observations in memory.")]
+    public async Task<string> MemTraceability(
+        [Description("Path to the spec.md file")] string spec_path,
+        [Description("Project name to search for related observations")] string? project = null)
+    {
+        // 1. Read spec.md
+        if (!File.Exists(spec_path)) return $"Error: spec.md not found at \"{spec_path}\"";
+        var markdown = await File.ReadAllTextAsync(spec_path);
+
+        // 2. Parse
+        var parser = new SpecParser();
+        var spec = parser.Parse(markdown);
+
+        if (spec.IsUnparseable)
+            return $"Error: Cannot parse spec.md — {spec.Error}";
+
+        // 3. Build matrix
+        var resolvedProject = ResolveProject(project ?? cfg.DefaultProject, Engram.Store.Scopes.Personal);
+        var matrixBuilder = new TraceabilityMatrixBuilder(store);
+        var matrix = await matrixBuilder.BuildMatrixAsync(spec, resolvedProject);
+
+        // 4. Format response
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"## Traceability Matrix — Coverage: {matrix.CoveragePct}%");
+        sb.AppendLine();
+        sb.AppendLine($"| Requirement | Status | Evidence |");
+        sb.AppendLine($"|------------|--------|----------|");
+
+        foreach (var entry in matrix.Entries)
+        {
+            var statusIcon = entry.Status switch
+            {
+                "covered" => "✅",
+                "partial" => "🟡",
+                "missing" => "❌",
+                "untraced" => "⬜",
+                _ => "❓"
+            };
+            var evidence = entry.Evidence.Count > 0
+                ? string.Join(", ", entry.Evidence.Take(3))
+                : "(none)";
+            sb.AppendLine($"| {entry.Requirement.Id} | {statusIcon} {entry.Status} | {evidence} |");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"Total: {matrix.Total} | Covered: {matrix.Covered} | Missing: {matrix.Missing}");
+
+        return sb.ToString();
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

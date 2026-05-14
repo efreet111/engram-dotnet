@@ -95,6 +95,12 @@ mcpCmd.SetHandler(async (string? project) =>
         User           = user,
     });
 
+    // Register verification services
+    mcpBuilder.Services.AddSingleton<Engram.Verification.IVerifier>(
+        _ => new Engram.Verification.LlmVerifier());
+    mcpBuilder.Services.AddSingleton<Engram.Verification.CycleTracker>(
+        sp => new Engram.Verification.CycleTracker(sp.GetRequiredService<IStore>()));
+
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt);
 

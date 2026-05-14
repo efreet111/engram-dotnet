@@ -3,6 +3,7 @@
     <Project Path="src/Engram.Cli/Engram.Cli.csproj" />
     <Project Path="src/Engram.Mcp/Engram.Mcp.csproj" />
     <Project Path="src/Engram.Server/Engram.Server.csproj" />
+    <Project Path="src/Engram.Verification/Engram.Verification.csproj" />
     <Project Path="src/Engram.Store/Engram.Store.csproj" />
     <Project Path="src/Engram.Sync/Engram.Sync.csproj" />
     <Project Path="src/Engram.Obsidian/Engram.Obsidian.csproj" />
@@ -13,5 +14,6 @@
     <Project Path="tests/Engram.Server.Tests/Engram.Server.Tests.csproj" />
     <Project Path="tests/Engram.Store.Tests/Engram.Store.Tests.csproj" />
     <Project Path="tests/Engram.Obsidian.Tests/Engram.Obsidian.Tests.csproj" />
+    <Project Path="tests/Engram.Verification.Tests/Engram.Verification.Tests.csproj" />
   </Folder>
 </Solution>
