@@ -417,9 +417,11 @@ Authorization: Bearer <token>
 
 ## Documentación
 
+### Core
+
 | Doc | Descripción |
 |---|---|
-| [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas |
+| [Arquitectura](docs/ARCHITECTURE.md) | Cómo funciona, deduplicación, schema de BD, decisiones técnicas, módulos especializados |
 | [Guía para IT](docs/TEAM-SETUP.md) | Deploy del servidor compartido, systemd, backup, distribución de config |
 | [Guía para el desarrollador](docs/DEVELOPER-SETUP.md) | Conectar Cursor / VS Code al servidor de equipo |
 | [PostgreSQL Setup](docs/POSTGRES-SETUP.md) | Guía de configuración, Docker Compose, migración desde SQLite |
@@ -427,6 +429,20 @@ Authorization: Bearer <token>
 | [Deployment](docs/DEPLOYMENT.md) | Systemd + nginx en servidor Linux, backup, monitoreo |
 | [Desarrollo](docs/DEVELOPMENT.md) | Compilar, testear, publicar |
 | [Migración desde Go](docs/MIGRATION.md) | Compatibilidad, diferencias, migración de datos |
+
+### Features
+
+| Doc | Descripción |
+|---|---|
+| [Sync](docs/SYNC.md) | Git-based sync (chunks JSONL) para distribuir memorias en equipo |
+| [Multi-User Isolation](docs/MULTI-USER.md) | Aislamiento de scopes personales con `X-Engram-User` header |
+| [Verification](docs/VERIFICATION.md) | Verificar compliance de código contra spec.md con LLM-as-Judge |
+| [Offline-First Sync](docs/OFFLINE-FIRST-SYNC.md) | Mutation-based sync via REST API (local SQLite ↔ servidor) |
+
+### Planificación
+
+| Doc | Descripción |
+|---|---|
 | [Roadmap](docs/ROADMAP.md) | Backlog de mejoras planificadas |
 
 ---
