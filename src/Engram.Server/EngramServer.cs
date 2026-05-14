@@ -91,6 +91,9 @@ public static class EngramServer
         app.MapPost("/md/promote/{id:long}",        (Func<HttpContext, Task<IResult>>)((ctx) => HandlePromoteToMd(ctx, store)));
         app.MapPost("/md/sync",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleSyncMd(ctx, store)));
         app.MapPost("/md/index",                    (Func<HttpContext, Task<IResult>>)((ctx) => HandleGenerateIndex(ctx, store)));
+        app.MapGet("/retention/stats",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionStats(ctx, store)));
+        app.MapPost("/retention/prune",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionPrune(ctx, store)));
+        app.MapGet("/projects/migrations",          (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectMigrations(ctx, store)));
     }
     
     internal const string UserHeader = "X-Engram-User";
@@ -261,6 +264,23 @@ public static class EngramServer
             Limit   = QueryInt(ctx, "limit", 10),
         });
 
+        // Enrich results with project redirect info
+        if (results.Count > 0)
+        {
+            var migrations = await store.GetProjectMigrationsAsync();
+            var redirects  = migrations.ToDictionary(m => m.FromProject, m => m.ToProject);
+            var found      = new List<object>();
+
+            foreach (var r in results)
+            {
+                if (r.Observation?.Project is not null && redirects.TryGetValue(r.Observation.Project, out var to))
+                    found.Add(new { from = r.Observation.Project, to });
+            }
+
+            if (found.Count > 0)
+                return Json(new { results, redirects = found });
+        }
+
         return Json(results);
     }
 
@@ -379,6 +399,8 @@ public static class EngramServer
         if (result.ObservationsUpdated == 0 && result.SessionsUpdated == 0 && result.PromptsUpdated == 0)
             return Json(new { status = "skipped", reason = "no records found" });
 
+        await store.AddProjectMigrationAsync(body.OldProject, body.NewProject);
+
         return Json(new
         {
             status       = "migrated",
@@ -410,6 +432,30 @@ public static class EngramServer
 
         var result = await store.PruneProjectAsync(body.Project);
         return Json(result);
+    }
+
+    private static async Task<IResult> HandleRetentionStats(HttpContext ctx, IStore store)
+    {
+        var stats = await store.GetRetentionStatsAsync();
+        return Json(stats);
+    }
+
+    private static async Task<IResult> HandleRetentionPrune(HttpContext ctx, IStore store)
+    {
+        var body  = await ReadJson<RetentionPruneBody>(ctx) ?? new RetentionPruneBody();
+        var dryRun = ctx.Request.Query["dry_run"].FirstOrDefault() == "true";
+        var result = await store.PruneOldObservationsAsync(new RetentionPruneParams
+        {
+            Type   = body.Type,
+            DryRun = dryRun,
+        });
+        return Json(result);
+    }
+
+    private static async Task<IResult> HandleProjectMigrations(HttpContext ctx, IStore store)
+    {
+        var migrations = await store.GetProjectMigrationsAsync();
+        return Json(migrations);
     }
 
     private static IResult HandleSyncStatus() =>
@@ -501,4 +547,5 @@ public static class EngramServer
     private sealed record PromoteRequest(string? MdDir = null);
     private sealed record SyncMdRequest(string? MdDir = null, bool DryRun = false);
     private sealed record GenerateIndexRequest(string? MdDir = null);
+    private sealed record RetentionPruneBody(string? Type = null);
 }

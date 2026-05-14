@@ -200,6 +200,50 @@ public record AddPromptParams
     [JsonPropertyName("project")]    public string? Project   { get; init; }
 }
 
+public sealed record RetentionPruneParams
+{
+    public string? Type { get; init; }
+    public bool DryRun { get; init; }
+}
+
+// ─── Retention / health models ────────────────────────────────────────────────
+
+public sealed record RetentionStats
+{
+    [JsonPropertyName("total_observations")] public int TotalObservations { get; set; }
+    [JsonPropertyName("age_buckets")] public List<AgeBucket> AgeBuckets { get; set; } = [];
+    [JsonPropertyName("inactive_projects")] public List<InactiveProject> InactiveProjects { get; set; } = [];
+    [JsonPropertyName("without_topic_key_90d")] public int WithoutTopicKey90d { get; set; }
+}
+
+public sealed record AgeBucket
+{
+    [JsonPropertyName("label")] public string Label { get; set; } = "";
+    [JsonPropertyName("count")] public int Count { get; set; }
+    [JsonPropertyName("without_topic_key")] public int WithoutTopicKey { get; set; }
+}
+
+public sealed record InactiveProject
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("last_activity")] public string LastActivity { get; set; } = "";
+    [JsonPropertyName("observation_count")] public int ObservationCount { get; set; }
+}
+
+public sealed record RetentionPruneResult
+{
+    [JsonPropertyName("pruned")] public int Pruned { get; set; }
+    [JsonPropertyName("dry_run")] public bool DryRun { get; set; }
+    [JsonPropertyName("details")] public Dictionary<string, int> Details { get; set; } = [];
+}
+
+public sealed record ProjectMigration
+{
+    [JsonPropertyName("from_project")] public string FromProject { get; init; } = "";
+    [JsonPropertyName("to_project")] public string ToProject { get; init; } = "";
+    [JsonPropertyName("migrated_at")] public string MigratedAt { get; init; } = "";
+}
+
 // ─── Domain exceptions ────────────────────────────────────────────────────────
 
 public sealed class SessionNotFoundException : Exception

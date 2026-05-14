@@ -876,6 +876,68 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return sb.ToString();
     }
 
+    // ─── mem_retention_stats ───────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_retention_stats", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Show memory retention statistics — total observations, age distribution, and observations without topic_key.")]
+    public async Task<string> MemRetentionStats()
+    {
+        var stats = await store.GetRetentionStatsAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Retention Stats");
+        sb.AppendLine($"Total: {stats.TotalObservations}");
+        sb.AppendLine();
+        sb.AppendLine("| Age | Count |");
+        sb.AppendLine("|-----|-------|");
+        foreach (var b in stats.AgeBuckets)
+            sb.AppendLine($"| {b.Label} | {b.Count} |");
+        sb.AppendLine();
+        sb.AppendLine($"Without topic_key (90d): {stats.WithoutTopicKey90d}");
+        return sb.ToString();
+    }
+
+    // ─── mem_retention_prune ──────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_retention_prune", ReadOnly = false, Idempotent = true, Destructive = true, OpenWorld = false)]
+    [Description("Prune old observations by TTL. Use dry_run=true to preview without deleting.")]
+    public async Task<string> MemRetentionPrune(
+        [Description("Filter by observation type (e.g. 'tool_use'). Omit to prune all types.")] string? type = null,
+        [Description("If true, show what would be pruned without modifying data")] bool dry_run = false)
+    {
+        var result = await store.PruneOldObservationsAsync(new RetentionPruneParams
+        {
+            Type   = type,
+            DryRun = dry_run,
+        });
+
+        var msg = dry_run
+            ? $"[dry-run] Would prune {result.Pruned} observations"
+            : $"Pruned {result.Pruned} observations";
+        if (result.Details.Count > 0)
+            msg += "\n" + string.Join("\n", result.Details.Select(d => $"  {d.Key}: {d.Value}"));
+        return msg;
+    }
+
+    // ─── mem_project_redirects ───────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_project_redirects", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("List project name migrations — when a project was renamed, this shows the redirect from old to new name.")]
+    public async Task<string> MemProjectRedirects()
+    {
+        var migrations = await store.GetProjectMigrationsAsync();
+        if (migrations.Count == 0) return "No project migrations found.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("## Project Migrations");
+        sb.AppendLine();
+        sb.AppendLine("| From | To | Migrated At |");
+        sb.AppendLine("|------|----|-------------|");
+        foreach (var m in migrations)
+            sb.AppendLine($"| {m.FromProject} | {m.ToProject} | {m.MigratedAt} |");
+        return sb.ToString();
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

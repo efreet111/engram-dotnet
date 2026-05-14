@@ -214,6 +214,14 @@ public sealed class SqliteStore : IStore
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_project ON sync_mutations(project);
         ");
 
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS project_migrations (
+                from_project TEXT PRIMARY KEY,
+                to_project   TEXT NOT NULL,
+                migrated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        ");
+
         // Backfill project column in sync_mutations from JSON payload
         Exec(@"
             UPDATE sync_mutations
@@ -799,6 +807,9 @@ public sealed class SqliteStore : IStore
         if (results.Count > limit)
             results = results[..limit];
 
+        // Phase 3: enrich results with project redirect info
+        // if (results.Count > 0) { /* lookup project_migrations per result.Observation.Project */ }
+
         return Task.FromResult<IList<SearchResult>>(results);
     }
 
@@ -1140,6 +1151,118 @@ public sealed class SqliteStore : IStore
         stats.Projects = projects;
 
         return Task.FromResult(stats);
+    }
+
+    // ─── Retention ─────────────────────────────────────────────────────
+
+    public Task<RetentionStats> GetRetentionStatsAsync()
+    {
+        var stats = new RetentionStats();
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
+            stats.TotalObservations = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        // Age buckets
+        stats.AgeBuckets = new List<AgeBucket>
+        {
+            new() { Label = "< 30 days", Count = CountObs("datetime(created_at) >= datetime('now', '-30 days')") },
+            new() { Label = "30-90 days", Count = CountObs("datetime(created_at) >= datetime('now', '-90 days') AND datetime(created_at) < datetime('now', '-30 days')") },
+            new() { Label = "90-180 days", Count = CountObs("datetime(created_at) >= datetime('now', '-180 days') AND datetime(created_at) < datetime('now', '-90 days')") },
+            new() { Label = "180-365 days", Count = CountObs("datetime(created_at) >= datetime('now', '-365 days') AND datetime(created_at) < datetime('now', '-180 days')") },
+            new() { Label = "> 365 days", Count = CountObs("datetime(created_at) < datetime('now', '-365 days')") },
+        };
+
+        // Count without topic_key in last 90d
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND datetime(created_at) >= datetime('now', '-90 days')";
+            stats.WithoutTopicKey90d = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        return Task.FromResult(stats);
+    }
+
+    public Task<RetentionPruneResult> PruneOldObservationsAsync(RetentionPruneParams p)
+    {
+        var config = new RetentionConfig();
+        var result = new RetentionPruneResult { DryRun = p.DryRun };
+        var details = new Dictionary<string, int>();
+
+        var typesToPrune = string.IsNullOrEmpty(p.Type)
+            ? config.TtlByType.Keys.ToList()
+            : [p.Type];
+
+        foreach (var type in typesToPrune)
+        {
+            if (!config.ShouldExpire(type)) continue;
+            var ttl = config.GetTtl(type);
+            if (ttl is null) continue;
+
+            var cutoff = DateTime.UtcNow - ttl.Value;
+            var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss");
+
+            using var countCmd = _db.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM observations WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND datetime(created_at) < datetime(@cutoff)";
+            countCmd.Parameters.AddWithValue("@type", type);
+            countCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
+            var count = Convert.ToInt32(countCmd.ExecuteScalar());
+
+            if (!p.DryRun && count > 0)
+            {
+                using var delCmd = _db.CreateCommand();
+                delCmd.CommandText = "UPDATE observations SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND datetime(created_at) < datetime(@cutoff)";
+                delCmd.Parameters.AddWithValue("@type", type);
+                delCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
+                delCmd.ExecuteNonQuery();
+            }
+
+            if (count > 0) details[type] = count;
+        }
+
+        return Task.FromResult(new RetentionPruneResult
+        {
+            Pruned = details.Values.Sum(),
+            DryRun = p.DryRun,
+            Details = details
+        });
+    }
+
+    public Task AddProjectMigrationAsync(string fromProject, string toProject)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "INSERT OR REPLACE INTO project_migrations (from_project, to_project, migrated_at) VALUES (@from, @to, datetime('now'))";
+        cmd.Parameters.Add(Param("@from", fromProject));
+        cmd.Parameters.Add(Param("@to", toProject));
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task<IList<ProjectMigration>> GetProjectMigrationsAsync()
+    {
+        var list = new List<ProjectMigration>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT from_project, to_project, migrated_at FROM project_migrations ORDER BY migrated_at DESC";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new ProjectMigration
+            {
+                FromProject = r.GetString(0),
+                ToProject = r.GetString(1),
+                MigratedAt = r.GetString(2)
+            });
+        }
+        return Task.FromResult<IList<ProjectMigration>>(list);
+    }
+
+    private int CountObs(string whereClause)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL AND {whereClause}";
+        return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
     // ─── Export / Import ───────────────────────────────────────────────────────

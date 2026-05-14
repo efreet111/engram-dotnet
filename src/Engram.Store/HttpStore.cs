@@ -263,6 +263,36 @@ public sealed class HttpStore : IStore
         return await Deserialize<Stats>(resp) ?? new Stats();
     }
 
+    // ─── Retention ─────────────────────────────────────────────────────
+
+    public async Task<RetentionStats> GetRetentionStatsAsync()
+    {
+        var resp = await Get("retention/stats");
+        await EnsureSuccess(resp, "GetRetentionStats");
+        return await Deserialize<RetentionStats>(resp) ?? new RetentionStats();
+    }
+
+    public async Task<RetentionPruneResult> PruneOldObservationsAsync(RetentionPruneParams p)
+    {
+        var qs = BuildQuery(("dry_run", p.DryRun ? "true" : null));
+        var resp = await Post($"retention/prune{qs}", new { type = p.Type });
+        await EnsureSuccess(resp, "PruneOldObservations");
+        return await Deserialize<RetentionPruneResult>(resp) ?? new RetentionPruneResult();
+    }
+
+    public async Task AddProjectMigrationAsync(string fromProject, string toProject)
+    {
+        var resp = await Post("projects/migrate", new { from_project = fromProject, to_project = toProject });
+        await EnsureSuccess(resp, "AddProjectMigration");
+    }
+
+    public async Task<IList<ProjectMigration>> GetProjectMigrationsAsync()
+    {
+        var resp = await Get("projects/migrations");
+        await EnsureSuccess(resp, "GetProjectMigrations");
+        return await Deserialize<List<ProjectMigration>>(resp) ?? [];
+    }
+
     // ─── Export / Import ──────────────────────────────────────────────────────
 
     public async Task<ExportData> ExportAsync()

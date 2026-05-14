@@ -619,6 +619,55 @@ projectsCmd.AddCommand(projectsListCmd);
 projectsCmd.AddCommand(consolidateCmd);
 projectsCmd.AddCommand(pruneCmd);
 
+// ─── retention ────────────────────────────────────────────────────────────────
+
+var retentionCmd = new Command("retention", "Manage memory retention and pruning");
+
+// retention check
+var retentionCheckCmd = new Command("check", "Show retention statistics");
+retentionCheckCmd.SetHandler(async () =>
+{
+    using var store = OpenStore();
+    var stats = await store.GetRetentionStatsAsync();
+
+    Console.WriteLine($"Total observations: {stats.TotalObservations}");
+    Console.WriteLine($"Without topic_key (90d): {stats.WithoutTopicKey90d}");
+    Console.WriteLine();
+    Console.WriteLine("Age buckets:");
+    foreach (var bucket in stats.AgeBuckets)
+    {
+        var bar = new string('█', Math.Min(bucket.Count / 5, 40));
+        Console.WriteLine($"  {bucket.Label,-15} {bucket.Count,6} {bar}");
+    }
+});
+
+// retention prune
+var retentionPruneCmd = new Command("prune", "Prune old observations by TTL");
+var retPruneTypeOpt = new Option<string?>("--type", "Filter by observation type");
+var retPruneDryRunOpt = new Option<bool>("--dry-run", "Preview without modifying");
+retentionPruneCmd.AddOption(retPruneTypeOpt);
+retentionPruneCmd.AddOption(retPruneDryRunOpt);
+retentionPruneCmd.SetHandler(async (string? type, bool dryRun) =>
+{
+    using var store = OpenStore();
+    var result = await store.PruneOldObservationsAsync(new RetentionPruneParams
+    {
+        Type   = type,
+        DryRun = dryRun,
+    });
+
+    if (dryRun)
+        Console.WriteLine($"[dry-run] Would prune {result.Pruned} observations");
+    else
+        Console.WriteLine($"Pruned {result.Pruned} observations");
+
+    foreach (var (t, count) in result.Details)
+        Console.WriteLine($"  {t}: {count}");
+}, retPruneTypeOpt, retPruneDryRunOpt);
+
+retentionCmd.AddCommand(retentionCheckCmd);
+retentionCmd.AddCommand(retentionPruneCmd);
+
 // ─── obsidian-export ──────────────────────────────────────────────────────────
 
 var obsidianCmd          = new Command("obsidian-export", "Export memories to an Obsidian vault as markdown files");
@@ -703,6 +752,7 @@ root.AddCommand(importCmd);
 root.AddCommand(syncCmd);
 root.AddCommand(promoteCmd);
 root.AddCommand(projectsCmd);
+root.AddCommand(retentionCmd);
 root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);
 
