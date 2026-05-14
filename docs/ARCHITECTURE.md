@@ -197,18 +197,40 @@ engram-dotnet/
 │   │   └── EngramServer.cs        ← 30 endpoints (rutas + middleware integrados)
 │   ├── Engram.Mcp/                ← Servidor MCP (transporte stdio)
 │   │   ├── EngramMcpServer.cs     ← Bootstrap y configuración del servidor MCP
-│   │   └── EngramTools.cs         ← 15 herramientas registradas + McpConfig (ENGRAM_USER)
+│   │   └── EngramTools.cs         ← 19 herramientas + McpConfig (ENGRAM_USER)
 │   ├── Engram.Sync/               ← Sync git-friendly (gzip + JSONL)
 │   │   └── EngramSync.cs          ← Export/import de chunks comprimidos
+│   ├── Engram.Verification/       ← Verificación de compliance contra spec.md
+│   │   ├── SpecParser.cs          ← Parser de spec.md canónico (RF/RNF)
+│   │   ├── ArtifactVerifier.cs    ← LLM-as-Judge para verificar código
+│   │   ├── TraceabilityMatrix.cs  ← Matriz RF/RNF → código
+│   │   ├── CycleTracker.cs        ← Trackeo de ciclos de rework
+│   │   └── Models.cs              ← VerificationReport, ReworkTicket, Verdict
+│   ├── Engram.MdGeneration/       ← Promoción de observaciones a .md
+│   │   ├── PromotionService.cs    ← Servicio de promoción batch/individual
+│   │   ├── MdTemplateEngine.cs    ← Generación de .md con frontmatter
+│   │   ├── MdSlug.cs              ← Slug generation para filenames
+│   │   ├── MdIndexGenerator.cs    ← Generación de índice de decisiones
+│   │   └── LinkVerifier.cs        ← Verificación de links bidireccionales
+│   ├── Engram.Obsidian/           ← Export a vault de Obsidian
+│   │   ├── Exporter.cs            ← Motor de export (incremental/full)
+│   │   ├── MarkdownRenderer.cs    ← Conversión observation → markdown
+│   │   ├── HubGenerator.cs        ← Session hubs + topic hubs
+│   │   ├── Slug.cs                ← Filename slugification
+│   │   ├── SyncState.cs           ← Estado para export incremental
+│   │   └── GraphConfig.cs         ← Obsidian graph.json config
 │   └── Engram.Cli/                ← Entry point CLI + wiring DI
-│       └── Program.cs             ← Comandos serve, mcp, search, export, import, etc.
+│       └── Program.cs             ← Comandos: serve, mcp, search, promote, projects, obsidian-export, etc.
 │                                     Switch automático: ENGRAM_URL → HttpStore | ENGRAM_DB_TYPE → PostgresStore | SqliteStore
 ├── tests/
-│   ├── Engram.Store.Tests/        ← Unitarios + integración + tests de paridad (110)
-│   ├── Engram.Postgres.Tests/     ← Tests de paridad con Testcontainers (26)
-│   ├── Engram.Server.Tests/       ← Tests HTTP con WebApplicationFactory (19)
-│   ├── Engram.Mcp.Tests/          ← Tests de herramientas MCP + McpConfig (34)
-│   └── Engram.HttpStore.Tests/    ← Tests end-to-end de HttpStore con servidor real (30)
+│   ├── Engram.Store.Tests/        ← Unitarios + integración (110)
+│   ├── Engram.Postgres.Tests/     ← Paridad con Testcontainers (26)
+│   ├── Engram.Server.Tests/       ← HTTP con WebApplicationFactory (19)
+│   ├── Engram.Mcp.Tests/          ← Herramientas MCP + McpConfig (34)
+│   ├── Engram.HttpStore.Tests/    ← HttpStore end-to-end (30)
+│   ├── Engram.Obsidian.Tests/     ← Export, hubs, slug, graph (47)
+│   ├── Engram.Verification.Tests/ ← Spec parser, verifier, traceability (30)
+│   └── Engram.MdGeneration.Tests/ ← Templates, slugs, promotion (28)
 └── config/
     ├── cursor/
     │   ├── mcp.json               ← Config MCP para Cursor
@@ -233,10 +255,17 @@ flowchart TD
     MCP[Engram.Mcp\nMCP stdio server]
     SYNC[Engram.Sync\nGit-friendly sync]
     STORE[Engram.Store\nMotor central SQLite]
+    VERIF[Engram.Verification\nCompliance verification]
+    MDGEN[Engram.MdGeneration\n.md promotion]
+    OBS[Engram.Obsidian\nObsidian export]
 
     CLI --> SRV
     CLI --> MCP
     CLI --> SYNC
+    CLI --> VERIF
+    CLI --> MDGEN
+    CLI --> OBS
+    CLI --> STORE
     SRV --> STORE
     MCP --> STORE
     SYNC --> STORE
@@ -333,6 +362,110 @@ string NormalizeScope(string? scope, string user) =>
 
 #### Compatibilidad Legacy
 Si el header `X-Engram-User` no está presente, el servidor usa la identidad `global`. Las instalaciones locales de una sola instancia siguen funcionando sin cambios, ya que todas operan bajo el usuario por defecto.
+
+---
+
+## Módulos especializados
+
+### Engram.Verification — Compliance verification
+
+Módulo de verificación de código contra especificaciones. Permite validar que los cambios implementados satisfacen los requisitos funcionales y no-funcionales de un `spec.md`.
+
+**Casos de uso**:
+- Verificar que un PR cumple con todos los RF/RNF de un spec
+- Generar matriz de trazabilidad RF/RNF → código
+- Detectar requisitos no implementados antes de merge
+- Trackear ciclos de rework por cambio
+
+**Componentes**:
+- `SpecParser.cs` — Parsea `spec.md` canónico y extrae lista de RF/RNF
+- `ArtifactVerifier.cs` — Llama a LLM (Anthropic API) para juzgar si el código cumple cada requisito
+- `TraceabilityMatrix.cs` — Genera matriz RF/RNF → file paths
+- `CycleTracker.cs` — Trackea ciclos de rework por cambio (persiste en Engram store)
+- `Models.cs` — `VerificationReport`, `ReworkTicket`, `Verdict`, `TraceabilityEntry`
+
+**MCP tools**:
+- `mem_verify_artifact` — Verifica código contra spec.md, retorna reporte estructurado
+- `mem_traceability` — Genera matriz de trazabilidad RF/RNF
+
+**Configuración**:
+```bash
+ENGRAM_VERIFICATION_MODEL=claude-sonnet-4-20250514  # Modelo para LLM-as-Judge
+ENGRAM_VERIFICATION_MAX_CYCLES=3                     # Máximos ciclos antes de escalar
+ANTHROPIC_API_KEY=sk-...                             # API key (requerida)
+```
+
+---
+
+### Engram.MdGeneration — Promoción de observaciones a .md
+
+Módulo de generación de archivos Markdown versionables a partir de observaciones. Permite promover decisiones importantes de la DB a archivos `.md` en el repositorio del proyecto.
+
+**Casos de uso**:
+- Promover `type=architecture` o `type=decision` a ADRs versionables
+- Generar índice de decisiones en `docs/decisions/index.md`
+- Sincronizar batch de observaciones sin .md
+- Crear link bidireccional: observation ↔ .md file
+
+**Componentes**:
+- `PromotionService.cs` — Servicio de promoción individual/batch
+- `MdTemplateEngine.cs` — Genera .md con frontmatter canónico (id, type, title, dates, topic_key)
+- `MdSlug.cs` — Genera slug filesystem-safe para filenames
+- `MdIndexGenerator.cs` — Genera/actualiza índice de decisiones
+- `LinkVerifier.cs` — Verifica links bidireccionales (observation.md_path ↔ .md frontmatter)
+
+**MCP tools**:
+- `mem_promote_to_md` — Promueve observación individual a .md
+- `mem_sync_md_to_repo` — Sincroniza batch de observaciones sin .md
+
+**CLI**:
+```bash
+engram promote --id 42 --md-dir docs/decisions/
+engram promote --sync --dry-run  # Muestra qué se promovería
+```
+
+**Configuración**:
+```bash
+ENGRAM_MD_DIR=docs/decisions/  # Directorio destino (default: docs/decisions/)
+```
+
+---
+
+### Engram.Obsidian — Export a vault de Obsidian
+
+Módulo de export de observaciones a un vault de Obsidian como archivos `.md` estructurados.
+
+**Casos de uso**:
+- Exportar todas las observaciones de un proyecto a Obsidian
+- Generar session hubs (`_sessions/{id}.md`) y topic hubs (`_topics/{prefix}.md`)
+- Export incremental (solo observaciones nuevas desde último export)
+- Configurar Obsidian graph view para visualización de conexiones
+
+**Componentes**:
+- `Exporter.cs` — Motor de export (full/incremental)
+- `MarkdownRenderer.cs` — Conversión observation → markdown con YAML frontmatter + wikilinks
+- `HubGenerator.cs` — Genera session hubs y topic hubs (threshold ≥2)
+- `Slug.cs` — Filename slugification (lowercase, max 60 chars, append ID si colisión)
+- `SyncState.cs` — Estado para export incremental (`.engram-sync-state.json`)
+- `GraphConfig.cs` — Gestión de `.obsidian/graph.json` (preserve/force/skip)
+
+**CLI**:
+```bash
+engram obsidian-export --vault /path/to/vault --project my-api --graph-config preserve
+engram obsidian-export --force  # Re-export completo (ignora estado incremental)
+```
+
+**Estructura del vault**:
+```
+{vault}/
+  engram/
+    _sessions/{sessionId}.md      ← Session hub notes
+    _topics/{prefix}.md           ← Topic cluster hub notes
+    {project}/{type}/{slug}.md    ← Observation files
+    .engram-sync-state.json       ← Incremental state
+  .obsidian/
+    graph.json                    ← Graph config (opcional)
+```
 
 ---
 
