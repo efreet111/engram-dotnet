@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using Engram.Store;
+using Engram.MdGeneration;
 using Engram.Verification;
 using ModelContextProtocol.Server;
 
@@ -46,9 +47,10 @@ public sealed class McpConfig
 /// IStore, McpConfig, and WriteQueue are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService)
 {
     private readonly SessionActivity _activity = activity;
+    private readonly PromotionService _promotionService = promotionService;
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -765,6 +767,35 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         sb.AppendLine($"Total: {matrix.Total} | Covered: {matrix.Covered} | Missing: {matrix.Missing}");
 
         return sb.ToString();
+    }
+
+    // ─── mem_promote_to_md ────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_promote_to_md", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Promote an observation to a permanent .md file in the repo's docs/decisions/ directory. This creates a version-controlled decision record from a memory observation.")]
+    public async Task<string> MemPromoteToMd(
+        [Description("Observation ID to promote")] long observation_id,
+        [Description("Target directory for .md files (default: docs/decisions/)")] string? md_dir = null)
+    {
+        md_dir ??= "docs/decisions";
+        var result = await _promotionService.PromoteAsync(observation_id, md_dir);
+        if (result == 0) return $"Error: observation #{observation_id} not found or already promoted";
+        return $"Observation #{observation_id} promoted to .md in {md_dir}/";
+    }
+
+    // ─── mem_sync_md_to_repo ──────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_sync_md_to_repo", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Sync all unpromoted observations to .md files. Use --dry_run=true to preview without writing.")]
+    public async Task<string> MemSyncMdToRepo(
+        [Description("Target directory for .md files (default: docs/decisions/)")] string? md_dir = null,
+        [Description("If true, only count how many would be promoted without writing files")] bool dry_run = false)
+    {
+        md_dir ??= "docs/decisions";
+        var result = await _promotionService.SyncAsync(md_dir, dry_run);
+        if (result.DryRun)
+            return $"[dry-run] Would promote {result.Promoted} observations to {md_dir}/";
+        return $"Promoted {result.Promoted} observations to {md_dir}/";
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

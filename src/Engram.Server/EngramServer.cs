@@ -88,6 +88,9 @@ public static class EngramServer
         app.MapGet("/projects/stats",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectStats(ctx, store)));
         app.MapPost("/projects/prune",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectPrune(ctx, store)));
         app.MapGet("/sync/status",                  (Func<IResult>)HandleSyncStatus);
+        app.MapPost("/md/promote/{id:long}",        (Func<HttpContext, Task<IResult>>)((ctx) => HandlePromoteToMd(ctx, store)));
+        app.MapPost("/md/sync",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleSyncMd(ctx, store)));
+        app.MapPost("/md/index",                    (Func<HttpContext, Task<IResult>>)((ctx) => HandleGenerateIndex(ctx, store)));
     }
     
     internal const string UserHeader = "X-Engram-User";
@@ -412,6 +415,36 @@ public static class EngramServer
     private static IResult HandleSyncStatus() =>
         Json(new { enabled = false, message = "background sync is not configured" });
 
+    // ─── MD Promotion Handlers ──────────────────────────────────────────────
+
+    private static async Task<IResult> HandlePromoteToMd(HttpContext ctx, IStore store)
+    {
+        var id = ctx.Request.RouteValues["id"]?.ToString() ?? "";
+        if (!long.TryParse(id, out var obsId))
+            return Error("invalid observation id");
+
+        var body = await ReadJson<PromoteRequest>(ctx) ?? new PromoteRequest();
+        var mdDir = body.MdDir ?? "docs/decisions";
+        var result = await store.PromoteToMdAsync(obsId, mdDir);
+        return Json(new { id = result, md_dir = mdDir });
+    }
+
+    private static async Task<IResult> HandleSyncMd(HttpContext ctx, IStore store)
+    {
+        var body = await ReadJson<SyncMdRequest>(ctx) ?? new SyncMdRequest();
+        var mdDir = body.MdDir ?? "docs/decisions";
+        var count = await store.SyncMdToRepoAsync(mdDir, body.DryRun);
+        return Json(new { count, md_dir = mdDir, dry_run = body.DryRun });
+    }
+
+    private static async Task<IResult> HandleGenerateIndex(HttpContext ctx, IStore store)
+    {
+        var body = await ReadJson<GenerateIndexRequest>(ctx) ?? new GenerateIndexRequest();
+        var mdDir = body.MdDir ?? "docs/decisions";
+        var content = await store.GenerateIndexAsync(mdDir);
+        return Results.Content(content, "text/markdown");
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────
 
     private static IResult Json(object? data) =>
@@ -463,4 +496,9 @@ public static class EngramServer
     private sealed record PassiveCaptureRequest(string SessionId, string? Content, string? Project, string? Source);
     private sealed record MigrateProjectRequest(string OldProject, string NewProject);
     private sealed record PruneProjectRequest(string Project);
+
+    // MD Promotion request bodies
+    private sealed record PromoteRequest(string? MdDir = null);
+    private sealed record SyncMdRequest(string? MdDir = null, bool DryRun = false);
+    private sealed record GenerateIndexRequest(string? MdDir = null);
 }

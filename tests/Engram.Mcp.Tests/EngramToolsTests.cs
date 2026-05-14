@@ -1,4 +1,5 @@
 using Engram.Mcp;
+using Engram.MdGeneration;
 using Engram.Store;
 using Engram.Verification;
 using Xunit;
@@ -29,7 +30,8 @@ public class EngramToolsTests : IDisposable
         _sessionActivity = new SessionActivity();
         _verifier = new NoOpVerifier();
         _cycleTracker = new CycleTracker(_store);
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker);
+        var promotionService = new PromotionService(_store);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService);
     }
 
     public void Dispose()

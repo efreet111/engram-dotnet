@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Npgsql;
 
 namespace Engram.Store;
@@ -178,6 +179,8 @@ public sealed class PostgresStore : IStore
             Exec("ALTER TABLE observations ADD COLUMN embedding_model TEXT");
         if (!ColumnExists("observations", "embedding_created_at"))
             Exec("ALTER TABLE observations ADD COLUMN embedding_created_at TEXT");
+        if (!ColumnExists("observations", "md_path"))
+            Exec("ALTER TABLE observations ADD COLUMN md_path TEXT");
         if (!ColumnExists("user_prompts", "deleted_at"))
             Exec("ALTER TABLE user_prompts ADD COLUMN deleted_at TIMESTAMPTZ");
 
@@ -1004,6 +1007,161 @@ public sealed class PostgresStore : IStore
             ObservationsImported = (int)observationsImported,
             PromptsImported = (int)promptsImported,
         };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MD Promotion
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public Task<long> PromoteToMdAsync(long observationId, string mdDir)
+    {
+        var obs = GetObservationDirect(observationId);
+        if (obs is null) return Task.FromResult(0L);
+
+        var date = DateTime.TryParse(obs.CreatedAt, out var parsed)
+            ? parsed
+            : DateTime.UtcNow;
+
+        var filename = ToFilename(obs.Title, date);
+        var fullPath = Path.Combine(mdDir, filename);
+
+        Directory.CreateDirectory(mdDir);
+        File.WriteAllText(fullPath, RenderMdContent(obs));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "UPDATE observations SET md_path = @path, updated_at = @now WHERE id = @id";
+        cmd.Parameters.AddWithValue("@path", filename);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Parameters.AddWithValue("@id", observationId);
+        cmd.ExecuteNonQuery();
+
+        return Task.FromResult(observationId);
+    }
+
+    public Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT id FROM observations
+            WHERE deleted_at IS NULL AND (md_path IS NULL OR md_path = '')
+            ORDER BY created_at DESC LIMIT 100";
+        using var r = cmd.ExecuteReader();
+        var ids = new List<long>();
+        while (r.Read()) ids.Add(r.GetInt64(0));
+        r.Close();
+
+        if (dryRun) return Task.FromResult(ids.Count);
+
+        int promoted = 0;
+        foreach (var id in ids)
+        {
+            var result = PromoteToMdAsync(id, mdDir).Result;
+            if (result > 0) promoted++;
+        }
+
+        return Task.FromResult(promoted);
+    }
+
+    public Task<string> GenerateIndexAsync(string mdDir)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content,
+                   o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
+                   o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at,
+                   o.deleted_at, o.md_path
+            FROM observations o
+            WHERE o.md_path IS NOT NULL AND o.md_path != '' AND o.deleted_at IS NULL
+            ORDER BY o.created_at DESC";
+        using var r = cmd.ExecuteReader();
+        var list = new List<Observation>();
+        while (r.Read())
+        {
+            var obs = ReadObservation(r);
+            obs.MdPath = r.IsDBNull(16) ? null : r.GetString(16);
+            list.Add(obs);
+        }
+
+        var content = RenderIndex(list);
+
+        if (!string.IsNullOrEmpty(mdDir))
+        {
+            Directory.CreateDirectory(mdDir);
+            File.WriteAllText(Path.Combine(mdDir, "index.md"), content);
+        }
+
+        return Task.FromResult(content);
+    }
+
+    // ─── MD helpers ─────────────────────────────────────────────────────────────
+
+    private static string RenderMdContent(Observation obs)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("---");
+        sb.AppendLine($"observation_id: {obs.Id}");
+        sb.AppendLine($"type: \"{EscapeYamlValue(obs.Type)}\"");
+        sb.AppendLine($"title: \"{EscapeYamlValue(obs.Title)}\"");
+        sb.AppendLine($"created_at: \"{obs.CreatedAt}\"");
+        if (!string.IsNullOrEmpty(obs.TopicKey))
+            sb.AppendLine($"topic_key: \"{obs.TopicKey}\"");
+        if (!string.IsNullOrEmpty(obs.Project))
+            sb.AppendLine($"project: \"{EscapeYamlValue(obs.Project)}\"");
+        if (!string.IsNullOrEmpty(obs.Scope))
+            sb.AppendLine($"scope: \"{EscapeYamlValue(obs.Scope)}\"");
+        sb.AppendLine($"generated_at: \"{DateTime.UtcNow:O}\"");
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.AppendLine($"# {obs.Title}");
+        sb.AppendLine();
+        sb.AppendLine(obs.Content);
+        return sb.ToString();
+    }
+
+    private static string EscapeYamlValue(string value)
+    {
+        return value.Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"")
+                    .Replace("\n", "\\n");
+    }
+
+    private static string Slugify(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "untitled";
+        var slug = Regex.Replace(title.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+        if (slug.Length > 60) slug = slug[..60].Trim('-');
+        if (string.IsNullOrEmpty(slug)) slug = "untitled";
+        return slug;
+    }
+
+    private static string ToFilename(string title, DateTime date)
+    {
+        return $"{date:yyyy-MM-dd}-{Slugify(title)}.md";
+    }
+
+    private static string RenderIndex(IReadOnlyList<Observation> promoted)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Decision Records");
+        sb.AppendLine();
+        sb.AppendLine($"Total: {promoted.Count} records");
+        sb.AppendLine();
+        var grouped = promoted.GroupBy(o => o.Type).OrderBy(g => g.Key);
+        foreach (var group in grouped)
+        {
+            sb.AppendLine($"## {group.Key}");
+            sb.AppendLine();
+            foreach (var obs in group.OrderByDescending(o => o.CreatedAt))
+            {
+                var mdLink = !string.IsNullOrEmpty(obs.MdPath)
+                    ? $"[{obs.Title}]({obs.MdPath})"
+                    : obs.Title;
+                var date = obs.CreatedAt.Length >= 10 ? obs.CreatedAt[..10] : obs.CreatedAt;
+                sb.AppendLine($"- {date} — {mdLink}");
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

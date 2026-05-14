@@ -61,6 +61,7 @@ public class Observation
     [JsonPropertyName("embedding")]         public byte[]? Embedding        { get; set; }
     [JsonPropertyName("embedding_model")]   public string? EmbeddingModel   { get; set; }
     [JsonPropertyName("embedding_created_at")] public string? EmbeddingCreatedAt { get; set; }
+    [JsonPropertyName("md_path")]             public string? MdPath            { get; set; }
 }
 
 public class TimelineEntry
@@ -170,6 +171,7 @@ public record AddObservationParams
     [JsonPropertyName("project")]    public string? Project   { get; init; }
     [JsonPropertyName("scope")]      public string? Scope     { get; init; }
     [JsonPropertyName("topic_key")]  public string? TopicKey  { get; init; }
+    [JsonPropertyName("md_path")]    public string? MdPath    { get; init; }
 }
 
 public record UpdateObservationParams
@@ -180,6 +182,7 @@ public record UpdateObservationParams
     [JsonPropertyName("project")]   public string? Project  { get; init; }
     [JsonPropertyName("scope")]     public string? Scope    { get; init; }
     [JsonPropertyName("topic_key")] public string? TopicKey { get; init; }
+    [JsonPropertyName("md_path")]   public string? MdPath   { get; init; }
 }
 
 public record SearchOptions

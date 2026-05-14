@@ -101,6 +101,9 @@ mcpCmd.SetHandler(async (string? project) =>
     mcpBuilder.Services.AddSingleton<Engram.Verification.CycleTracker>(
         sp => new Engram.Verification.CycleTracker(sp.GetRequiredService<IStore>()));
 
+    // Register MD promotion service
+    mcpBuilder.Services.AddSingleton<Engram.MdGeneration.PromotionService>();
+
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt);
 
@@ -302,6 +305,44 @@ syncCmd.SetHandler(async (bool doImport, bool doStatus) =>
         ? "New chunk exported to sync dir."
         : "Nothing new to sync — all memories already exported.");
 }, syncImportOpt, syncStatusOpt);
+
+// ─── promote ─────────────────────────────────────────────────────────────────
+
+var promoteCmd = new Command("promote", "Promote observations to .md files");
+var promoteIdOpt = new Option<long>("--id", "Observation ID to promote");
+var promoteDirOpt = new Option<string?>("--md-dir", () => "docs/decisions", "Target directory for .md files");
+var promoteSyncOpt = new Option<bool>("--sync", "Promote all unpromoted observations");
+var promoteDryRunOpt = new Option<bool>("--dry-run", "Preview without writing");
+promoteCmd.AddOption(promoteIdOpt);
+promoteCmd.AddOption(promoteDirOpt);
+promoteCmd.AddOption(promoteSyncOpt);
+promoteCmd.AddOption(promoteDryRunOpt);
+promoteCmd.SetHandler(async (long id, string? mdDir, bool sync, bool dryRun) =>
+{
+    using var store = OpenStore();
+    var service = new Engram.MdGeneration.PromotionService(store);
+
+    if (sync)
+    {
+        var result = await service.SyncAsync(mdDir ?? "docs/decisions", dryRun);
+        if (dryRun)
+            Console.WriteLine($"[dry-run] Would promote {result.Promoted} observations to {mdDir ?? "docs/decisions"}/");
+        else
+            Console.WriteLine($"Promoted {result.Promoted} observations to {mdDir ?? "docs/decisions"}/");
+    }
+    else if (id > 0)
+    {
+        var result = await service.PromoteAsync(id, mdDir ?? "docs/decisions");
+        if (result == 0)
+            Console.WriteLine($"Error: observation #{id} not found or already promoted");
+        else
+            Console.WriteLine($"Observation #{id} promoted to {mdDir ?? "docs/decisions"}/");
+    }
+    else
+    {
+        Console.Error.WriteLine("error: specify --id or --sync");
+    }
+}, promoteIdOpt, promoteDirOpt, promoteSyncOpt, promoteDryRunOpt);
 
 // ─── projects ─────────────────────────────────────────────────────────────────
 
@@ -656,6 +697,7 @@ root.AddCommand(statsCmd);
 root.AddCommand(exportCmd);
 root.AddCommand(importCmd);
 root.AddCommand(syncCmd);
+root.AddCommand(promoteCmd);
 root.AddCommand(projectsCmd);
 root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);

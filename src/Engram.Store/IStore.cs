@@ -34,6 +34,11 @@ public interface IStore : IDisposable
     Task<ExportData> ExportAsync();
     Task<ImportResult> ImportAsync(ExportData data);
 
+    // MD Promotion
+    Task<long> PromoteToMdAsync(long observationId, string mdDir);
+    Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun);
+    Task<string> GenerateIndexAsync(string mdDir);
+
     // Projects
     Task<MergeResult> MergeProjectsAsync(IList<string> sources, string canonical);
     Task<IList<string>> ListProjectNamesAsync();

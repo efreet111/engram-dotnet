@@ -334,6 +334,32 @@ public sealed class HttpStore : IStore
         return await Deserialize<PruneResult>(resp) ?? new PruneResult { Project = project };
     }
 
+    // ─── MD Promotion ────────────────────────────────────────────────────────
+
+    public async Task<long> PromoteToMdAsync(long observationId, string mdDir)
+    {
+        var resp = await Post($"md/promote/{observationId}", new { md_dir = mdDir });
+        await EnsureSuccess(resp, "PromoteToMd");
+        var result = await Deserialize<IdResponse>(resp);
+        return result?.Id ?? 0;
+    }
+
+    public async Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
+    {
+        var qs = BuildQuery(("dry_run", dryRun ? "true" : null));
+        var resp = await Post($"md/sync{qs}", new { md_dir = mdDir });
+        await EnsureSuccess(resp, "SyncMdToRepo");
+        var result = await Deserialize<CountResponse>(resp);
+        return result?.Count ?? 0;
+    }
+
+    public async Task<string> GenerateIndexAsync(string mdDir)
+    {
+        var resp = await Post($"md/index", new { md_dir = mdDir });
+        await EnsureSuccess(resp, "GenerateIndex");
+        return await resp.Content.ReadAsStringAsync();
+    }
+
     // ─── Sync chunks (not supported in proxy mode) ────────────────────────────
 
     public Task<ISet<string>> GetSyncedChunksAsync()
@@ -443,6 +469,11 @@ public sealed class HttpStore : IStore
     private sealed class ContextResponse
     {
         [JsonPropertyName("context")] public string? Context { get; set; }
+    }
+
+    private sealed class CountResponse
+    {
+        [JsonPropertyName("count")] public int Count { get; set; }
     }
 }
 

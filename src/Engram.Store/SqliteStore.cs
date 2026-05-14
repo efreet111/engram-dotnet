@@ -189,6 +189,7 @@ public sealed class SqliteStore : IStore
         AddColumnIfNotExists("observations", "embedding",             "BLOB");
         AddColumnIfNotExists("observations", "embedding_model",       "TEXT");
         AddColumnIfNotExists("observations", "embedding_created_at",  "TEXT");
+        AddColumnIfNotExists("observations", "md_path",               "TEXT");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
         AddColumnIfNotExists("user_prompts", "deleted_at",      "TEXT");
 
@@ -745,7 +746,8 @@ public sealed class SqliteStore : IStore
         {
             var tkSql   = new StringBuilder(@"
                 SELECT id, ifnull(sync_id,'') as sync_id, session_id, type, title, content, tool_name, project,
-                       scope, topic_key, revision_count, duplicate_count, last_seen_at, created_at, updated_at, deleted_at
+                       scope, topic_key, revision_count, duplicate_count, last_seen_at, created_at, updated_at, deleted_at,
+                       md_path
                 FROM observations
                 WHERE topic_key = @tk AND deleted_at IS NULL");
             var tkParms = new List<SqliteParameter> { Param("@tk", query) };
@@ -771,7 +773,7 @@ public sealed class SqliteStore : IStore
         var ftsSql   = new StringBuilder(@"
             SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                   fts.rank
+                   o.md_path, fts.rank
             FROM observations_fts fts
             JOIN observations o ON o.id = fts.rowid
             WHERE observations_fts MATCH @fts AND o.deleted_at IS NULL");
@@ -789,7 +791,7 @@ public sealed class SqliteStore : IStore
         while (ftsR.Read())
         {
             var obs  = ReadObservation(ftsR);
-            var rank = ftsR.GetDouble(16);
+            var rank = ftsR.GetDouble(17);
             if (!seen.Contains(obs.Id))
                 results.Add(new SearchResult { Observation = obs, Rank = rank });
         }
@@ -1245,6 +1247,165 @@ public sealed class SqliteStore : IStore
         return Task.FromResult(result);
     }
 
+    // ─── MD Promotion ──────────────────────────────────────────────────────────
+
+    public Task<long> PromoteToMdAsync(long observationId, string mdDir)
+    {
+        var obs = GetObservationDirect(observationId);
+        if (obs is null) return Task.FromResult(0L);
+
+        // Already promoted — skip
+        if (!string.IsNullOrEmpty(obs.MdPath))
+            return Task.FromResult(0L);
+
+        // Parse the ISO date for the filename prefix
+        var date = DateTime.TryParse(obs.CreatedAt, out var parsed)
+            ? parsed
+            : DateTime.UtcNow;
+
+        var filename = ToFilename(obs.Title, date);
+        var fullPath = Path.Combine(mdDir, filename);
+
+        Directory.CreateDirectory(mdDir);
+        File.WriteAllText(fullPath, RenderMdContent(obs));
+
+        // Persist the relative path (filename only, not the full mdDir)
+        using var upd = _db.CreateCommand();
+        upd.CommandText = "UPDATE observations SET md_path = @path, updated_at = datetime('now') WHERE id = @id";
+        upd.Parameters.Add(Param("@path", filename));
+        upd.Parameters.Add(Param("@id", observationId));
+        upd.ExecuteNonQuery();
+
+        return Task.FromResult(observationId);
+    }
+
+    public Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT id, title, content, type, created_at, topic_key
+            FROM observations
+            WHERE deleted_at IS NULL AND (md_path IS NULL OR md_path = '')
+            ORDER BY created_at DESC LIMIT 100";
+        using var r = cmd.ExecuteReader();
+        var ids = new List<long>();
+        while (r.Read()) ids.Add(r.GetInt64(0));
+        r.Close();
+
+        if (dryRun) return Task.FromResult(ids.Count);
+
+        int promoted = 0;
+        foreach (var id in ids)
+        {
+            var result = PromoteToMdAsync(id, mdDir).Result;
+            if (result > 0) promoted++;
+        }
+
+        return Task.FromResult(promoted);
+    }
+
+    public Task<string> GenerateIndexAsync(string mdDir)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT o.id, ifnull(o.sync_id,''), o.session_id, o.type, o.title, o.content,
+                   o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
+                   o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at,
+                   o.deleted_at, o.md_path
+            FROM observations o
+            WHERE o.md_path IS NOT NULL AND o.md_path != '' AND o.deleted_at IS NULL
+            ORDER BY o.created_at DESC";
+        using var r = cmd.ExecuteReader();
+        var list = new List<Observation>();
+        while (r.Read())
+        {
+            var obs = ReadObservation(r);
+            obs.MdPath = r.IsDBNull(16) ? null : r.GetString(16);
+            list.Add(obs);
+        }
+
+        var content = RenderIndex(list);
+
+        if (!string.IsNullOrEmpty(mdDir))
+        {
+            Directory.CreateDirectory(mdDir);
+            File.WriteAllText(Path.Combine(mdDir, "index.md"), content);
+        }
+
+        return Task.FromResult(content);
+    }
+
+    // ─── MD helpers ─────────────────────────────────────────────────────────────
+
+    private static string RenderMdContent(Observation obs)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("---");
+        sb.AppendLine($"observation_id: {obs.Id}");
+        sb.AppendLine($"type: \"{EscapeYamlValue(obs.Type)}\"");
+        sb.AppendLine($"title: \"{EscapeYamlValue(obs.Title)}\"");
+        sb.AppendLine($"created_at: \"{obs.CreatedAt}\"");
+        if (!string.IsNullOrEmpty(obs.TopicKey))
+            sb.AppendLine($"topic_key: \"{obs.TopicKey}\"");
+        if (!string.IsNullOrEmpty(obs.Project))
+            sb.AppendLine($"project: \"{EscapeYamlValue(obs.Project)}\"");
+        if (!string.IsNullOrEmpty(obs.Scope))
+            sb.AppendLine($"scope: \"{EscapeYamlValue(obs.Scope)}\"");
+        sb.AppendLine($"generated_at: \"{DateTime.UtcNow:O}\"");
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.AppendLine($"# {obs.Title}");
+        sb.AppendLine();
+        sb.AppendLine(obs.Content);
+        return sb.ToString();
+    }
+
+    private static string EscapeYamlValue(string value)
+    {
+        return value.Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"")
+                    .Replace("\n", "\\n");
+    }
+
+    private static string Slugify(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "untitled";
+        var slug = Regex.Replace(title.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+        if (slug.Length > 60) slug = slug[..60].Trim('-');
+        if (string.IsNullOrEmpty(slug)) slug = "untitled";
+        return slug;
+    }
+
+    private static string ToFilename(string title, DateTime date)
+    {
+        return $"{date:yyyy-MM-dd}-{Slugify(title)}.md";
+    }
+
+    private static string RenderIndex(IReadOnlyList<Observation> promoted)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Decision Records");
+        sb.AppendLine();
+        sb.AppendLine($"Total: {promoted.Count} records");
+        sb.AppendLine();
+        var grouped = promoted.GroupBy(o => o.Type).OrderBy(g => g.Key);
+        foreach (var group in grouped)
+        {
+            sb.AppendLine($"## {group.Key}");
+            sb.AppendLine();
+            foreach (var obs in group.OrderByDescending(o => o.CreatedAt))
+            {
+                var mdLink = !string.IsNullOrEmpty(obs.MdPath)
+                    ? $"[{obs.Title}]({obs.MdPath})"
+                    : obs.Title;
+                var date = obs.CreatedAt.Length >= 10 ? obs.CreatedAt[..10] : obs.CreatedAt;
+                sb.AppendLine($"- {date} — {mdLink}");
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
     // ─── Projects ──────────────────────────────────────────────────────────────
 
     public Task<MergeResult> MergeProjectsAsync(IList<string> sources, string canonical)
@@ -1466,7 +1627,8 @@ public sealed class SqliteStore : IStore
 
     private const string ObsSelect = @"
         SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
-               o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at
+               o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+               o.md_path
         FROM observations o";
 
     private const string TimelineEntrySelect = @"
@@ -1494,6 +1656,7 @@ public sealed class SqliteStore : IStore
         CreatedAt      = r.GetString(13),
         UpdatedAt      = r.GetString(14),
         DeletedAt      = r.IsDBNull(15) ? null : r.GetString(15),
+        MdPath         = r.IsDBNull(16) ? null : r.GetString(16),
     };
 
     private static TimelineEntry ReadTimelineEntry(SqliteDataReader r) => new()
