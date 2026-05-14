@@ -185,7 +185,7 @@ string NormalizeTopicKey(string? topic)
 engram-dotnet/
 ├── src/
 │   ├── Engram.Store/              ← Motor central: persistencia multi-backend
-│   │   ├── IStore.cs              ← Interfaz pública (22 métodos)
+│   │   ├── IStore.cs              ← Interfaz pública (32 métodos async + 2 properties)
 │   │   ├── SqliteStore.cs         ← Implementación SQLite (modo local)
 │   │   ├── PostgresStore.cs       ← Implementación PostgreSQL (modo equipo escalable)
 │   │   ├── HttpStore.cs           ← Implementación HTTP proxy (modo equipo remoto)
@@ -194,7 +194,7 @@ engram-dotnet/
 │   │   ├── Normalizers.cs         ← HashNormalized, NormalizeTopicKey, SanitizeFts5Query
 │   │   └── PassiveCapture.cs      ← Extracción de aprendizajes de texto libre
 │   ├── Engram.Server/             ← HTTP REST API (ASP.NET Core Minimal API)
-│   │   └── EngramServer.cs        ← 22 endpoints (rutas + middleware integrados)
+│   │   └── EngramServer.cs        ← 30 endpoints (rutas + middleware integrados)
 │   ├── Engram.Mcp/                ← Servidor MCP (transporte stdio)
 │   │   ├── EngramMcpServer.cs     ← Bootstrap y configuración del servidor MCP
 │   │   └── EngramTools.cs         ← 15 herramientas registradas + McpConfig (ENGRAM_USER)

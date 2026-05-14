@@ -27,7 +27,7 @@ El proyecto original está escrito en Go. En entornos donde el equipo trabaja co
 | Lenguaje | Go 1.25 | C# / .NET 10 LTS |
 | Binario | Single binary (goreleaser) | Self-contained linux-x64 |
 | HTTP API | ✅ | ✅ idéntica |
-| MCP server | ✅ | ✅ idéntico (15 herramientas) |
+| MCP server | ✅ | ✅ idéntico (19 herramientas) |
 | Git sync | ✅ | ✅ idéntico |
 | Auth JWT | Opcional | Opcional (`ENGRAM_JWT_SECRET`) |
 | TUI | Bubbletea | No incluida en v1 |
@@ -217,6 +217,28 @@ Cualquier cliente MCP que soporte stdio funciona con el mismo patrón. El binari
 
 ---
 
+## Módulos adicionales
+
+### Engram.Verification (artifact-verification compliance)
+
+Validación de código contra spec.md usando LLM-as-Judge. Tools MCP:
+- `mem_verify_artifact(spec_path, code_diff, change_name)` — verifica compliance y trackea ciclos de rework
+- `mem_traceability(spec_path, project)` — genera matriz de trazabilidad RF/RNF vs observaciones
+- Soporta specs bilingües EN/ES con secciones `## Objective`/`## Objetivo` y `RF-NNN`/`RNF-NNN`
+- Ciclo máximo configurable via `ENGRAM_VERIFICATION_MAX_CYCLES` (default: 3)
+- Modelo LLM configurable via `ENGRAM_VERIFICATION_MODEL` + `ANTHROPIC_API_KEY`
+
+### Engram.MdGeneration (promotion to .md)
+
+Promoción de observaciones a archivos .md versionables en el repositorio. Tools MCP:
+- `mem_promote_to_md(observation_id)` — promueve una observación a .md con frontmatter YAML
+- `mem_sync_md_to_repo(md_dir, dry_run)` — sincroniza observaciones pendientes en lote
+- CLI: `engram promote --id <n> --md-dir docs/decisions` o `engram promote --sync --dry-run`
+- Genera archivos con formato `YYYY-MM-DD-slug.md` y frontmatter canónico
+- Link bidireccional: observation.md_path ↔ .md frontmatter observation_id
+
+---
+
 ## Herramientas MCP
 
 Las **19 herramientas** disponibles:
@@ -269,6 +291,11 @@ engram context [project]            Contexto reciente de sesiones anteriores
 engram stats                        Estadísticas de memoria
 engram export [file]                Exportar memorias a JSON (default: engram-export.json)
 engram import <file>                Importar memorias desde JSON
+
+engram promote --id <n>             Promover observación a .md (default: docs/decisions/)
+engram promote --sync               Promover todas las observaciones pendientes
+engram promote --sync --dry-run     Previsualizar sin escribir archivos
+engram promote --md-dir <path>      Directorio destino para los .md
 
 engram sync                         Exportar nuevas memorias como chunk comprimido
 engram sync --import                Importar chunks nuevos desde el directorio de sync

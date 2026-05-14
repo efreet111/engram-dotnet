@@ -11,7 +11,7 @@ engram-dotnet es **100% compatible** con los datos y plugins del proyecto Go ori
 | Componente | Compatible |
 |---|---|
 | Schema SQLite | ✅ Idéntico |
-| API HTTP (22 endpoints) | ✅ Idéntica |
+| API HTTP (30 endpoints) | ✅ Idéntica |
 | Protocolo MCP (15 herramientas) | ✅ Idéntica |
 | Formato de sync (gzip JSONL) | ✅ Idéntico |
 | Plugins (Claude Code, OpenCode, Gemini, Codex) | ✅ Sin cambios |
