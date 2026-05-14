@@ -47,10 +47,12 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, and CycleTracker are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
+    private readonly Verification.TraceRepository _traceRepo = traceRepo;
+    private readonly Verification.LineageBuilder _lineageBuilder = lineageBuilder;
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -740,12 +742,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         var matrixBuilder = new TraceabilityMatrixBuilder(store);
         var matrix = await matrixBuilder.BuildMatrixAsync(spec, resolvedProject);
 
-        // 4. Format response
+        // 4. Parse traceability for source validity
+        var traceabilityInfo = spec.Traceability ?? [];
+
+        // 5. Format response with source column
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"## Traceability Matrix — Coverage: {matrix.CoveragePct}%");
         sb.AppendLine();
-        sb.AppendLine($"| Requirement | Status | Evidence |");
-        sb.AppendLine($"|------------|--------|----------|");
+        sb.AppendLine($"| Requirement | Status | Source | Evidence |");
+        sb.AppendLine($"|------------|--------|--------|----------|");
 
         foreach (var entry in matrix.Entries)
         {
@@ -757,10 +762,12 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 "untraced" => "⬜",
                 _ => "❓"
             };
+            var trace = traceabilityInfo.FirstOrDefault(t => t.RequirementId == entry.Requirement.Id);
+            var sourceIcon = trace?.Source is not null ? "📋" : "⬜";
             var evidence = entry.Evidence.Count > 0
                 ? string.Join(", ", entry.Evidence.Take(3))
                 : "(none)";
-            sb.AppendLine($"| {entry.Requirement.Id} | {statusIcon} {entry.Status} | {evidence} |");
+            sb.AppendLine($"| {entry.Requirement.Id} | {statusIcon} {entry.Status} | {sourceIcon} | {evidence} |");
         }
 
         sb.AppendLine();
@@ -796,6 +803,77 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         if (result.DryRun)
             return $"[dry-run] Would promote {result.Promoted} observations to {md_dir}/";
         return $"Promoted {result.Promoted} observations to {md_dir}/";
+    }
+
+    // ─── mem_trace_source ───────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_trace_source", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Look up the origin and lineage of a requirement. Returns source, rationale, and relations for a given RF/RNF ID.")]
+    public async Task<string> MemTraceSource(
+        [Description("Requirement ID to trace (e.g. RF-001)")] string requirement_id,
+        [Description("Project name")] string? project = null)
+    {
+        var resolvedProject = ResolveProject(project ?? cfg.DefaultProject, Engram.Store.Scopes.Personal);
+        var trace = await _traceRepo.GetTraceAsync(resolvedProject, requirement_id);
+        
+        if (trace is null)
+            return $"## Trace: {requirement_id}\n\n**Status**: ❌ Untraced\nNo trace information found for \"{requirement_id}\".";
+        
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Trace: {requirement_id}");
+        sb.AppendLine();
+        if (trace.Source is not null)
+        {
+            sb.AppendLine($"- **Source**: {trace.Source.Source}");
+            if (!string.IsNullOrEmpty(trace.Source.Author)) sb.AppendLine($"- **Author**: {trace.Source.Author}");
+            if (!string.IsNullOrEmpty(trace.Source.Date)) sb.AppendLine($"- **Date**: {trace.Source.Date}");
+            if (!string.IsNullOrEmpty(trace.Source.Rationale)) sb.AppendLine($"- **Rationale**: {trace.Source.Rationale}");
+        }
+        if (trace.Relations.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Relations");
+            foreach (var rel in trace.Relations)
+                sb.AppendLine($"- {rel.Type}: {rel.Target}");
+        }
+        return sb.ToString();
+    }
+
+    // ─── mem_lineage ─────────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_lineage", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Build the full lineage tree for a requirement. Shows ancestors (what it depends on or supersedes) and descendants (what depends on it). Detects circular relationships.")]
+    public async Task<string> MemLineage(
+        [Description("Requirement ID to trace (e.g. RF-001)")] string requirement_id,
+        [Description("Project name")] string? project = null)
+    {
+        var resolvedProject = ResolveProject(project ?? cfg.DefaultProject, Engram.Store.Scopes.Personal);
+        var lineage = await _lineageBuilder.BuildLineageAsync(resolvedProject, requirement_id);
+        
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Lineage: {requirement_id}");
+        sb.AppendLine();
+        if (lineage.CycleDetected) sb.AppendLine("⚠️ **Cycle detected**!");
+        sb.AppendLine($"Hops: {lineage.Hops}");
+        sb.AppendLine();
+        sb.AppendLine($"### Root: {lineage.Root.RequirementId} ({lineage.Root.Status})");
+        if (lineage.Ancestors.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Ancestors (↑)");
+            foreach (var a in lineage.Ancestors)
+                sb.AppendLine($"- {a.RequirementId} ({a.Status})");
+        }
+        if (lineage.Descendants.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Descendants (↓)");
+            foreach (var d in lineage.Descendants)
+                sb.AppendLine($"- {d.RequirementId} ({d.Status})");
+        }
+        if (lineage.Ancestors.Count == 0 && lineage.Descendants.Count == 0)
+            sb.AppendLine("\nNo lineage relationships found.");
+        return sb.ToString();
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

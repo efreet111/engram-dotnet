@@ -104,6 +104,10 @@ mcpCmd.SetHandler(async (string? project) =>
     // Register MD promotion service
     mcpBuilder.Services.AddSingleton<Engram.MdGeneration.PromotionService>();
 
+    // Register traceability services
+    mcpBuilder.Services.AddSingleton<Engram.Verification.TraceRepository>();
+    mcpBuilder.Services.AddSingleton<Engram.Verification.LineageBuilder>();
+
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt);
 

@@ -31,7 +31,9 @@ public class EngramToolsTests : IDisposable
         _verifier = new NoOpVerifier();
         _cycleTracker = new CycleTracker(_store);
         var promotionService = new PromotionService(_store);
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService);
+        var traceRepo = new TraceRepository(_store);
+        var lineageBuilder = new LineageBuilder(traceRepo);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, traceRepo, lineageBuilder);
     }
 
     public void Dispose()
