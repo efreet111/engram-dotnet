@@ -1,5 +1,6 @@
 using Engram.Mcp;
 using Engram.Store;
+using Engram.Verification;
 using Xunit;
 
 namespace Engram.Mcp.Tests;
@@ -15,6 +16,8 @@ public class EngramToolsTests : IDisposable
     private readonly WriteQueue   _writeQueue;
     private readonly string       _tempDir;
     private readonly SessionActivity _sessionActivity;
+    private readonly IVerifier    _verifier;
+    private readonly CycleTracker _cycleTracker;
     private const string SessionId = "mcp-test-session";
 
     public EngramToolsTests()
@@ -24,7 +27,9 @@ public class EngramToolsTests : IDisposable
         _store = new SqliteStore(new StoreConfig { DataDir = _tempDir });
         _writeQueue = new WriteQueue();
         _sessionActivity = new SessionActivity();
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity);
+        _verifier = new NoOpVerifier();
+        _cycleTracker = new CycleTracker(_store);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker);
     }
 
     public void Dispose()
@@ -458,5 +463,27 @@ public class McpConfigTests
         var cfg = new StoreConfig { RemoteUrl = "   " };
 
         Assert.False(cfg.IsRemote);
+    }
+}
+
+/// <summary>
+/// No-op verifier for tests — returns empty passing reports.
+/// </summary>
+public sealed class NoOpVerifier : IVerifier
+{
+    public Task<VerificationReport> VerifyAsync(SpecParseResult spec, string codeDiff, int currentCycle)
+    {
+        return Task.FromResult(new VerificationReport
+        {
+            Items = [],
+            CoveragePct = 100.0,
+            PassPct = 100.0,
+            Total = 0,
+            Passed = 0,
+            Failed = 0,
+            Cycle = currentCycle,
+            Escalate = false,
+            Summary = "No-op verifier for tests"
+        });
     }
 }

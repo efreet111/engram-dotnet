@@ -54,9 +54,9 @@ public class WriteQueueTests : IDisposable
 
         // All jobs execute in FIFO order, regardless of their individual delays
         Assert.Equal(new[] { 1, 2, 3 }, executionOrder);
-        Assert.Equal(1, task1.Result);
-        Assert.Equal(2, task2.Result);
-        Assert.Equal(3, task3.Result);
+        Assert.Equal(1, await task1);
+        Assert.Equal(2, await task2);
+        Assert.Equal(3, await task3);
     }
 
     [Fact]
