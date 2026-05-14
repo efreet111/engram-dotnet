@@ -7,7 +7,7 @@ This directory contains RFCs (Requests for Comments) documenting architectural d
 | RFC | Title | Status | Effort | Priority |
 |-----|-------|--------|--------|----------|
 | [RFC-001](RFC-001-offline-first-sync-architecture.md) | Offline-First Sync Architecture — Chunk + Mutation Hybrid Protocol | Draft | 32–44h | High |
-| [RFC-002](RFC-002-ambiguous-project-recovery.md) | Ambiguous Project Recovery with Cryptographic Tokens | Draft | 4–6h | Medium |
+| [RFC-004](RFC-004-ambiguous-project-recovery.md) | Ambiguous Project Recovery with Cryptographic Tokens | Draft | 4–6h | Medium |
 | [RFC-003](RFC-003-prompt-auto-capture.md) | Prompt Auto-Capture on Memory Save | Draft | 1–2h | Low |
 
 ## RFC Lifecycle

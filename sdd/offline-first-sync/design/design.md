@@ -4,7 +4,7 @@
 **Version**: 1.0.1
 **Phase**: Design
 **Status**: Draft
-**RFC**: [RFC-001: Architecture — Chunk + Mutation Hybrid](../../docs/RFCs/RFC-001-offline-first-sync-architecture.md)
+**RFC**: [RFC-003: Architecture — Chunk + Mutation Hybrid](../../docs/rfcs/RFC-003-offline-first-sync-architecture.md)
 
 ---
 
@@ -319,7 +319,7 @@ New local SQLite table (additive migration in `SqliteStore.Migrate()`):
 1. **Auth**: Go cloudserver uses bearer JWT. .NET EngramServer currently uses `X-Engram-User` header. Should cloud endpoints use JWT middleware (`AddAuthentication().AddJwtBearer()`) or keep the simple header? — Proposal says Phase 1 task 1.5, deferred to implementation.
 2. **Engram.Sync.csproj**: Needs `Microsoft.Extensions.Hosting.Abstractions` package reference for `BackgroundService`. Must add to project file.
 3. **Lease owner**: Go uses `fmt.Sprintf("autosync-%d", time.Now().UnixNano())`. For .NET, `Environment.MachineName` + process ID is sufficient.
-4. **Chunk protocol in Phase 1?** Decision: Include schema only (table creation). Full chunk implementation (endpoints, transport) deferred to Phase 2+ if needed. See [RFC-001 §Open Questions](../../docs/RFCs/RFC-001-offline-first-sync-architecture.md#open-questions) for rationale.
+4. **Chunk protocol in Phase 1?** Decision: Include schema only (table creation). Full chunk implementation (endpoints, transport) deferred to Phase 2+ if needed. See [RFC-003 §Open Questions](../../docs/rfcs/RFC-003-offline-first-sync-architecture.md#open-questions) for rationale.
 
 ## 5. Rollback
 

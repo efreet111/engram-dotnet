@@ -4,7 +4,7 @@
 **Version**: 1.0.1
 **Status**: Draft
 **Design**: `sdd/offline-first-sync/design` (7 ADs, 12 new files)
-**RFC**: [RFC-001: Architecture — Chunk + Mutation Hybrid](../../../docs/RFCs/RFC-001-offline-first-sync-architecture.md)
+**RFC**: [RFC-003: Architecture — Chunk + Mutation Hybrid](../../../docs/rfcs/RFC-003-offline-first-sync-architecture.md)
 
 ---
 
