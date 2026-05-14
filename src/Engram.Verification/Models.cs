@@ -61,6 +61,9 @@ public sealed record TraceabilityEntry
     [JsonPropertyName("requirement")] public Requirement Requirement { get; init; } = new();
     [JsonPropertyName("status")] public string Status { get; init; } = "";                  // "covered", "partial", "missing", "untraced"
     [JsonPropertyName("evidence")] public List<string> Evidence { get; init; } = [];
+    [JsonPropertyName("source_status")] public string? SourceStatus { get; init; }
+    [JsonPropertyName("source_warning")] public string? SourceWarning { get; init; }
+    [JsonPropertyName("superseded_by")] public string? SupersededBy { get; init; }
 }
 
 /// <summary>
@@ -85,4 +88,60 @@ public sealed record ReworkTicket
     [JsonPropertyName("failed_items")] public List<VerificationItem> FailedItems { get; init; } = [];
     [JsonPropertyName("instructions")] public string Instructions { get; init; } = "";
     [JsonPropertyName("escalate")] public bool Escalate { get; init; }
+}
+
+// ─── Traceability models ───────────────────────────────────────────────────────
+
+/// <summary>
+/// Source of a traceability link — e.g., a GitHub issue, JIRA ticket, or ADR.
+/// </summary>
+public sealed record TraceSource
+{
+    [JsonPropertyName("source")] public string Source { get; init; } = "";   // e.g., "GITHUB-ISSUE-42"
+    [JsonPropertyName("author")] public string? Author { get; init; }
+    [JsonPropertyName("date")] public string? Date { get; init; }
+    [JsonPropertyName("rationale")] public string? Rationale { get; init; }
+}
+
+/// <summary>
+/// A typed relation between two requirements.
+/// </summary>
+public sealed record TraceRelation
+{
+    [JsonPropertyName("type")] public string Type { get; init; } = "";       // depends_on, supersedes, conflicts_with, related_to
+    [JsonPropertyName("target")] public string Target { get; init; } = "";   // e.g., "RF-003"
+}
+
+/// <summary>
+/// Full trace information for a single requirement.
+/// </summary>
+public sealed record TraceInfo
+{
+    [JsonPropertyName("requirement_id")] public string RequirementId { get; init; } = "";
+    [JsonPropertyName("source")] public TraceSource? Source { get; init; }
+    [JsonPropertyName("relations")] public List<TraceRelation> Relations { get; init; } = [];
+}
+
+/// <summary>
+/// Result of querying trace status for a requirement.
+/// </summary>
+public sealed record TraceResult
+{
+    [JsonPropertyName("requirement_id")] public string RequirementId { get; init; } = "";
+    [JsonPropertyName("status")] public string Status { get; init; } = "";   // "traced", "untraced", "error"
+    [JsonPropertyName("source")] public TraceSource? Source { get; init; }
+    [JsonPropertyName("lineage")] public List<string>? Lineage { get; init; }
+    [JsonPropertyName("error")] public string? Error { get; init; }
+}
+
+/// <summary>
+/// Full lineage tree result including ancestry and descendants.
+/// </summary>
+public sealed record LineageResult
+{
+    [JsonPropertyName("root")] public TraceResult Root { get; init; } = new();
+    [JsonPropertyName("ancestors")] public List<TraceResult> Ancestors { get; init; } = [];
+    [JsonPropertyName("descendants")] public List<TraceResult> Descendants { get; init; } = [];
+    [JsonPropertyName("cycle_detected")] public bool CycleDetected { get; init; }
+    [JsonPropertyName("hops")] public int Hops { get; init; }
 }

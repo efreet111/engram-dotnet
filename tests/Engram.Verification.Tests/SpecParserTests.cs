@@ -119,4 +119,113 @@ Just an objective, no requirements sections.
         var result = _parser.Parse("   \n  \n  ");
         Assert.True(result.IsUnparseable);
     }
+
+    // ─── Traceability parsing (4.1) ──────────────────────────────────────────
+
+    [Fact]
+    public void ParseTraceability_ValidEntry_ExtractsAllFields()
+    {
+        var markdown = @"
+## Objective
+Test
+
+## Functional Requirements
+- RF-001: Do something
+
+## Traceability
+
+### RF-001: Do something
+- **Source**: GITHUB-ISSUE-42
+- **Author**: Support Team
+- **Date**: 2026-05-14
+- **Rationale**: Users cannot register with Unicode emails
+        - **Relations**: Depends on RF-002, Supersedes RF-003
+";
+        var parser = new SpecParser();
+        var result = parser.Parse(markdown);
+
+        Assert.NotEmpty(result.Traceability);
+        var trace = result.Traceability[0];
+        Assert.Equal("RF-001", trace.RequirementId);
+        Assert.NotNull(trace.Source);
+        Assert.Equal("GITHUB-ISSUE-42", trace.Source.Source);
+        Assert.Equal("Support Team", trace.Source.Author);
+        Assert.Equal("2026-05-14", trace.Source.Date);
+        Assert.Contains("Unicode emails", trace.Source.Rationale);
+        Assert.Contains(trace.Relations, r => r is { Type: "depends_on", Target: "RF-002" });
+        Assert.Contains(trace.Relations, r => r is { Type: "supersedes", Target: "RF-003" });
+    }
+
+    [Fact]
+    public void ParseTraceability_MissingAuthorDate_StillParses()
+    {
+        var markdown = @"
+## Objective
+Test
+
+## Functional Requirements
+- RF-001: Test
+
+## Traceability
+
+### RF-001: Test
+- **Source**: BUG-123
+- **Rationale**: Critical bug fix
+";
+        var parser = new SpecParser();
+        var result = parser.Parse(markdown);
+
+        Assert.NotEmpty(result.Traceability);
+        var trace = result.Traceability[0];
+        Assert.NotNull(trace.Source);
+        Assert.Equal("BUG-123", trace.Source.Source);
+        Assert.Null(trace.Source.Author);
+        Assert.Null(trace.Source.Date);
+    }
+
+    [Fact]
+    public void ParseTraceability_NoTraceabilitySection_ReturnsEmpty()
+    {
+        var markdown = @"
+## Objective
+Test
+
+## Functional Requirements
+- RF-001: Test
+";
+        var parser = new SpecParser();
+        var result = parser.Parse(markdown);
+
+        Assert.Empty(result.Traceability);
+    }
+
+    // ─── Relation parsing (4.2) ──────────────────────────────────────────────
+
+    [Fact]
+    public void ParseRelations_ValidTypes_ParsesCorrectly()
+    {
+        var relations = SpecParser.ParseRelations("Depends on RF-001, Supersedes RF-002, Conflicts with RF-003, Related to RF-004");
+
+        Assert.Equal(4, relations.Count);
+        Assert.Contains(relations, r => r is { Type: "depends_on", Target: "RF-001" });
+        Assert.Contains(relations, r => r is { Type: "supersedes", Target: "RF-002" });
+        Assert.Contains(relations, r => r is { Type: "conflicts_with", Target: "RF-003" });
+        Assert.Contains(relations, r => r is { Type: "related_to", Target: "RF-004" });
+    }
+
+    [Fact]
+    public void ParseRelations_InvalidType_SkipsEntry()
+    {
+        var relations = SpecParser.ParseRelations("invalid RF-001, Depends on RF-002");
+
+        Assert.Single(relations);
+        Assert.Equal("depends_on", relations[0].Type);
+    }
+
+    [Fact]
+    public void ParseRelations_EmptyString_ReturnsEmpty()
+    {
+        var relations = SpecParser.ParseRelations("");
+        Assert.Empty(relations);
+    }
 }
