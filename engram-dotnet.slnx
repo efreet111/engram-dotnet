@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Engram.Cli/Engram.Cli.csproj" />
+    <Project Path="src/Engram.Diagnostics/Engram.Diagnostics.csproj" />
     <Project Path="src/Engram.Mcp/Engram.Mcp.csproj" />
     <Project Path="src/Engram.Server/Engram.Server.csproj" />
     <Project Path="src/Engram.Verification/Engram.Verification.csproj" />
@@ -10,12 +11,15 @@
     <Project Path="src/Engram.MdGeneration/Engram.MdGeneration.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Engram.Diagnostics.Tests/Engram.Diagnostics.Tests.csproj" />
     <Project Path="tests/Engram.HttpStore.Tests/Engram.HttpStore.Tests.csproj" />
     <Project Path="tests/Engram.Mcp.Tests/Engram.Mcp.Tests.csproj" />
     <Project Path="tests/Engram.MdGeneration.Tests/Engram.MdGeneration.Tests.csproj" />
     <Project Path="tests/Engram.Server.Tests/Engram.Server.Tests.csproj" />
     <Project Path="tests/Engram.Store.Tests/Engram.Store.Tests.csproj" />
     <Project Path="tests/Engram.Obsidian.Tests/Engram.Obsidian.Tests.csproj" />
+    <Project Path="tests/Engram.Postgres.Tests/Engram.Postgres.Tests.csproj" />
+    <Project Path="tests/Engram.Sync.Tests/Engram.Sync.Tests.csproj" />
     <Project Path="tests/Engram.Verification.Tests/Engram.Verification.Tests.csproj" />
   </Folder>
 </Solution>

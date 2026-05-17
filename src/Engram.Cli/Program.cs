@@ -21,7 +21,9 @@ using Engram.Mcp;
 using Engram.Server;
 using Engram.Store;
 using Engram.Sync;
+using Engram.Sync.Transport;
 using Engram.Obsidian;
+using Engram.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -86,6 +88,7 @@ mcpCmd.SetHandler(async (string? project) =>
     using var ownedStore = store;
 
     var mcpBuilder = EngramMcpServer.CreateBuilder(args);
+    mcpBuilder.Services.AddHttpClient("sync");
     mcpBuilder.Services.AddSingleton<IStore>(store);
     mcpBuilder.Services.AddSingleton<Engram.Mcp.WriteQueue>();
     mcpBuilder.Services.AddSingleton(new SessionActivity(TimeSpan.FromMinutes(10)));
@@ -107,6 +110,28 @@ mcpCmd.SetHandler(async (string? project) =>
     // Register traceability services
     mcpBuilder.Services.AddSingleton<Engram.Verification.TraceRepository>();
     mcpBuilder.Services.AddSingleton<Engram.Verification.LineageBuilder>();
+
+    // Register diagnostic service
+    mcpBuilder.Services.AddSingleton<IDiagnosticService>(sp =>
+    {
+        var store = sp.GetRequiredService<IStore>();
+        var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        return new DiagnosticService(store, serverUrl: serverUrl);
+    });
+
+    // Register offline-first-sync services (Phase 2.4)
+    var syncConfig = SyncManagerConfig.FromEnvironment();
+    if (syncConfig.Enabled)
+    {
+        mcpBuilder.Services.AddSingleton<SyncManagerConfig>(syncConfig);
+        mcpBuilder.Services.AddSingleton<IMutationTransport>(sp =>
+        {
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
+            var remoteUrl = storeCfg.IsRemote ? storeCfg.RemoteUrl! : "http://localhost:7437";
+            return new MutationTransport(httpClient, remoteUrl, storeCfg.User);
+        });
+        mcpBuilder.Services.AddHostedService<SyncManager>();
+    }
 
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt);
@@ -739,6 +764,50 @@ obsidianCmd.SetHandler(async (string vault, string? project, bool includePersona
 var versionCmd = new Command("version", "Print version");
 versionCmd.SetHandler(() => Console.WriteLine($"engram {Version}"));
 
+// ─── doctor ───────────────────────────────────────────────────────────────────
+
+var doctorCmd = new Command("doctor", "Run diagnostic health checks on the engram ecosystem");
+var doctorServerOpt = new Option<string?>("--server", "Engram server URL (env: ENGRAM_SERVER_URL)");
+doctorCmd.AddOption(doctorServerOpt);
+doctorCmd.SetHandler(async (string? serverUrl) =>
+{
+    // Use provided URL or fall back to environment variable
+    var url = serverUrl ?? Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+    
+    var storeCfg = StoreConfig.FromEnvironment();
+    using var store = OpenStore(storeCfg);
+    
+    // Create diagnostic service
+    var diagnosticService = new DiagnosticService(store, serverUrl: url);
+    
+    // Run diagnostics
+    var result = await diagnosticService.RunDiagnosticsAsync();
+    
+    // Output results
+    Console.WriteLine("Engram Diagnostic Report");
+    Console.WriteLine("========================");
+    Console.WriteLine();
+    
+    foreach (var (name, health) in result.Components.OrderBy(kvp => kvp.Key))
+    {
+        var status = health.IsHealthy ? "✓" : "✗";
+        var latency = health.LatencyMs > 0 ? $" ({health.LatencyMs}ms)" : "";
+        Console.WriteLine($"{status} {name,-15} {health.Message}{latency}");
+    }
+    
+    Console.WriteLine();
+    if (result.IsHealthy)
+    {
+        Console.WriteLine("Status: All systems operational");
+        Environment.Exit(0);
+    }
+    else
+    {
+        Console.WriteLine("Status: Some components are unhealthy");
+        Environment.Exit(1);
+    }
+}, doctorServerOpt);
+
 // ─── Assemble ────────────────────────────────────────────────────────────────
 
 root.AddCommand(serveCmd);
@@ -755,6 +824,7 @@ root.AddCommand(projectsCmd);
 root.AddCommand(retentionCmd);
 root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);
+root.AddCommand(doctorCmd);
 
 return await root.InvokeAsync(args);
 

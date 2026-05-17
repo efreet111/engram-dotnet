@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
 using Engram.Store;
 using Engram.MdGeneration;
 using Engram.Verification;
+using Engram.Diagnostics;
 using ModelContextProtocol.Server;
 
 namespace Engram.Mcp;
@@ -42,17 +44,18 @@ public sealed class McpConfig
 }
 
 /// <summary>
-/// All 19 Engram MCP tools, port-faithful to the Go implementation.
+/// All 20 Engram MCP tools, port-faithful to the Go implementation.
 /// Registered via [McpServerToolType] / [McpServerTool] attributes.
-/// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, and CycleTracker are injected via DI constructor.
+/// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
     private readonly Verification.TraceRepository _traceRepo = traceRepo;
     private readonly Verification.LineageBuilder _lineageBuilder = lineageBuilder;
+    private readonly IDiagnosticService _diagnosticService = diagnosticService;
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -917,6 +920,23 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         if (result.Details.Count > 0)
             msg += "\n" + string.Join("\n", result.Details.Select(d => $"  {d.Key}: {d.Value}"));
         return msg;
+    }
+
+    // ─── mem_doctor ───────────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_doctor", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Run diagnostic health checks for the engram ecosystem. Checks database connectivity, HTTP server health, and MCP server configuration. Returns a JSON-serialized DiagnosticResult with the health status of all components.")]
+    public async Task<string> MemDoctor(CancellationToken cancellationToken = default)
+    {
+        var result = await _diagnosticService.RunDiagnosticsAsync(cancellationToken);
+        
+        var json = JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        });
+        
+        return json;
     }
 
     // ─── mem_project_redirects ───────────────────────────────────────────────
