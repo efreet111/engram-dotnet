@@ -137,8 +137,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_project    ON sync_mutations(project);
 
             CREATE TABLE IF NOT EXISTS sync_enrolled_projects (
-                project     TEXT PRIMARY KEY,
-                enrolled_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+                project     TEXT NOT NULL,
+                user        TEXT NOT NULL DEFAULT '',
+                enrolled_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                enrolled_by TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (project, user)
             );
         ");
 
@@ -1690,6 +1693,150 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<List<string>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default)
+    {
+        var projects = new List<string>();
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT project FROM sync_enrolled_projects
+            WHERE user = @user
+            ORDER BY enrolled_at DESC";
+        cmd.Parameters.AddWithValue("@user", user);
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            projects.Add(r.GetString(0));
+        }
+
+        return projects;
+    }
+
+    public async Task<EnrollmentResult> EnrollProjectAsync(string project, string user, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_enrolled_projects (project, user, enrolled_by, enrolled_at)
+            VALUES (@project, @user, @user, NOW() AT TIME ZONE 'utc')
+            ON CONFLICT (project, user) DO NOTHING
+            RETURNING enrolled_at";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@user", user);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        var enrolledAt = result?.ToString();
+
+        return new EnrollmentResult(
+            Project: project,
+            EnrolledAt: enrolledAt,
+            EnrolledBy: user,
+            Status: enrolledAt != null ? "enrolled" : "already_enrolled"
+        );
+    }
+
+    public async Task<EnrollmentResult> UnenrollProjectAsync(string project, string user, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            DELETE FROM sync_enrolled_projects
+            WHERE project = @project AND user = @user
+            RETURNING enrolled_at";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@user", user);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        
+        if (result == null)
+        {
+            return new EnrollmentResult(
+                Project: project,
+                Status: "not_found"
+            );
+        }
+
+        return new EnrollmentResult(
+            Project: project,
+            UnenrolledAt: DateTime.UtcNow.ToString("O"),
+            Status: "unenrolled"
+        );
+    }
+
+    public async Task<PauseResult> PauseProjectAsync(string project, string reason, string pausedBy, CancellationToken ct = default)
+    {
+        var pausedAt = DateTime.UtcNow.ToString("O");
+        
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO cloud_project_controls (project, sync_enabled, pause_reason, paused_at, paused_by)
+            VALUES (@project, false, @reason, @paused_at, @paused_by)
+            ON CONFLICT (project) DO UPDATE SET
+                sync_enabled = false,
+                pause_reason = EXCLUDED.pause_reason,
+                paused_at = EXCLUDED.paused_at,
+                paused_by = EXCLUDED.paused_by
+            RETURNING paused_at";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@reason", reason);
+        cmd.Parameters.AddWithValue("@paused_at", pausedAt);
+        cmd.Parameters.AddWithValue("@paused_by", pausedBy);
+
+        await cmd.ExecuteScalarAsync(ct);
+
+        // Log audit entry
+        await InsertAuditEntryAsync(new AuditEntry(
+            Project: project,
+            Action: "pause",
+            Outcome: "success",
+            Contributor: pausedBy,
+            EntryCount: 0,
+            ReasonCode: reason
+        ), ct);
+
+        return new PauseResult(
+            Project: project,
+            Paused: true,
+            PausedAt: pausedAt,
+            PausedBy: pausedBy,
+            Reason: reason
+        );
+    }
+
+    public async Task<PauseResult> ResumeProjectAsync(string project, string resumedBy, CancellationToken ct = default)
+    {
+        var resumedAt = DateTime.UtcNow.ToString("O");
+        
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE cloud_project_controls
+            SET sync_enabled = true, pause_reason = NULL, paused_at = NULL, paused_by = NULL,
+                resumed_at = @resumed_at, resumed_by = @resumed_by
+            WHERE project = @project
+            RETURNING resumed_at";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@resumed_at", resumedAt);
+        cmd.Parameters.AddWithValue("@resumed_by", resumedBy);
+
+        await cmd.ExecuteScalarAsync(ct);
+
+        // Log audit entry
+        await InsertAuditEntryAsync(new AuditEntry(
+            Project: project,
+            Action: "resume",
+            Outcome: "success",
+            Contributor: resumedBy,
+            EntryCount: 0
+        ), ct);
+
+        return new PauseResult(
+            Project: project,
+            Paused: false,
+            ResumedAt: resumedAt,
+            ResumedBy: resumedBy
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ICloudChunkStore Implementation (offline-first-sync Phase 1 - schema only)
     // ═══════════════════════════════════════════════════════════════════════════
     // ICloudChunkStore Implementation (offline-first-sync Phase 1 - schema only)
     // ═══════════════════════════════════════════════════════════════════════════

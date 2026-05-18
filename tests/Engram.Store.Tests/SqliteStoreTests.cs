@@ -922,4 +922,209 @@ public class SqliteStoreTests : IDisposable
 
         Assert.Equal("personal", obs.Scope);
     }
+
+    // ─── ReplayDeferredAsync ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReplayDeferredAsync_AppliesDeferredMutations()
+    {
+        // Insert a deferred mutation directly into sync_apply_deferred
+        await InsertDeferredMutation("session", "obs-123", "insert", "{\"title\":\"Test\"}");
+
+        var result = await _store.ReplayDeferredAsync();
+
+        Assert.Equal(1, result.ReplayCount);
+        Assert.Equal(0, result.DeadCount);
+
+        // Verify mutation was moved to sync_mutations
+        var mutations = await GetSyncMutations();
+        Assert.Single(mutations);
+        Assert.Equal("obs-123", mutations[0].EntityKey);
+    }
+
+    [Fact]
+    public async Task ReplayDeferredAsync_DeletesOnSuccess()
+    {
+        // Insert a deferred mutation
+        var deferredId = await InsertDeferredMutation("session", "obs-456", "insert", "{\"title\":\"Success\"}");
+
+        // Verify it exists in deferred table
+        Assert.True(await DeferredMutationExists(deferredId));
+
+        // Replay should apply and delete
+        await _store.ReplayDeferredAsync();
+
+        // Verify it was deleted from deferred table
+        Assert.False(await DeferredMutationExists(deferredId));
+    }
+
+    [Fact]
+    public async Task ReplayDeferredAsync_IncrementsRetryCountOnFailure()
+    {
+        // Insert a deferred mutation with invalid data that will cause FK constraint failure
+        // sync_mutations has FK to sync_state(target_key), but we'll use invalid target_key
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        // First, delete the 'cloud' sync_state row to cause FK failure
+        var delCmd = conn.CreateCommand();
+        delCmd.CommandText = "DELETE FROM sync_state WHERE target_key = 'cloud'";
+        await delCmd.ExecuteNonQueryAsync();
+
+        // Now insert a deferred mutation - it will fail when trying to insert into sync_mutations
+        var deferredId = await InsertDeferredMutation("session", "obs-789", "insert", "{\"title\":\"Fail\"}");
+
+        var result = await _store.ReplayDeferredAsync();
+
+        // Should not be applied (failure due to FK constraint)
+        Assert.Equal(0, result.ReplayCount);
+
+        // Verify retry_count was incremented to 1
+        var retryCount = await GetRetryCount(deferredId);
+        Assert.Equal(1, retryCount);
+    }
+
+    [Fact]
+    public async Task ReplayDeferredAsync_MarksAsDeadAfterFiveRetries()
+    {
+        // Insert a deferred mutation with retry_count = 4 (one more will make it dead)
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        // Delete sync_state to cause FK failure
+        var delCmd = conn.CreateCommand();
+        delCmd.CommandText = "DELETE FROM sync_state WHERE target_key = 'cloud'";
+        await delCmd.ExecuteNonQueryAsync();
+
+        var deferredId = await InsertDeferredMutationWithRetry("session", "obs-dead", "insert", "{\"title\":\"Dead\"}", 4);
+
+        var result = await _store.ReplayDeferredAsync();
+
+        // Should be marked as dead
+        Assert.Equal(0, result.ReplayCount);
+        Assert.Equal(1, result.DeadCount);
+
+        // Verify retry_count is now 5
+        var retryCount = await GetRetryCount(deferredId);
+        Assert.Equal(5, retryCount);
+    }
+
+    // ─── Helpers for ReplayDeferredAsync tests ─────────────────────────────────
+
+    private async Task<long> InsertDeferredMutation(string entity, string entityKey, string op, string payload)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_apply_deferred (entity, entity_key, op, payload, source, retry_count)
+            VALUES (@entity, @entity_key, @op, @payload, 'pull', 0)";
+        cmd.Parameters.AddWithValue("@entity", entity);
+        cmd.Parameters.AddWithValue("@entity_key", entityKey);
+        cmd.Parameters.AddWithValue("@op", op);
+        cmd.Parameters.AddWithValue("@payload", payload);
+        await cmd.ExecuteNonQueryAsync();
+
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        return (long)await cmd.ExecuteScalarAsync()!;
+    }
+
+    private async Task<long> InsertDeferredMutationWithRetry(string entity, string entityKey, string op, string payload, int retryCount)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_apply_deferred (entity, entity_key, op, payload, source, retry_count)
+            VALUES (@entity, @entity_key, @op, @payload, 'pull', @retry)";
+        cmd.Parameters.AddWithValue("@entity", entity);
+        cmd.Parameters.AddWithValue("@entity_key", entityKey);
+        cmd.Parameters.AddWithValue("@op", op);
+        cmd.Parameters.AddWithValue("@payload", payload);
+        cmd.Parameters.AddWithValue("@retry", retryCount);
+        await cmd.ExecuteNonQueryAsync();
+
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        return (long)await cmd.ExecuteScalarAsync()!;
+    }
+
+    private async Task InsertIntoSyncMutations(string entity, string entityKey, string op, string payload)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project, occurred_at)
+            VALUES ('cloud', @entity, @entity_key, @op, @payload, 'pull', '', datetime('now'))";
+        cmd.Parameters.AddWithValue("@entity", entity);
+        cmd.Parameters.AddWithValue("@entity_key", entityKey);
+        cmd.Parameters.AddWithValue("@op", op);
+        cmd.Parameters.AddWithValue("@payload", payload);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<bool> DeferredMutationExists(long id)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_apply_deferred WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync()!);
+        return count > 0;
+    }
+
+    private async Task<int> GetRetryCount(long id)
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT retry_count FROM sync_apply_deferred WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync();
+        return result == DBNull.Value ? -1 : Convert.ToInt32(result);
+    }
+
+    private async Task<List<SyncMutation>> GetSyncMutations()
+    {
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT seq, target_key, entity, entity_key, op, payload, source, project, occurred_at, acked_at
+            FROM sync_mutations ORDER BY seq";
+
+        var mutations = new List<SyncMutation>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            mutations.Add(new SyncMutation(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7),
+                DateTime.Parse(reader.GetString(8)),
+                reader.IsDBNull(9) ? null : reader.GetString(9)
+            ));
+        }
+        return mutations;
+    }
 }

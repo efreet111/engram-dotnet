@@ -339,6 +339,11 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
     public async Task Pull_WithProjectFilter_ReturnsScopedMutations()
     {
         // Arrange
+        _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "filtered-proj" });
+        
         _cloudMock.Setup(s => s.ListMutationsSinceAsync(
                 It.IsAny<long>(),
                 It.IsAny<int>(),
@@ -388,5 +393,564 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
         Assert.NotNull(json["project"]);
         Assert.NotNull(json["project_source"]);
         Assert.NotNull(json["project_path"]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Task 3.2: Pause/Resume endpoints
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task PauseProjectAsync_Success_ReturnsPausedResult_AndAuditLogged()
+    {
+        // Arrange
+        var expectedPausedAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.PauseProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(r => r == "Database maintenance"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PauseResult(
+                Project: "test-proj",
+                Paused: true,
+                PausedAt: expectedPausedAt,
+                PausedBy: "test-user",
+                Reason: "Database maintenance"
+            ));
+
+        // Act via store directly (unit test)
+        var result = await _cloudMock.Object.PauseProjectAsync("test-proj", "Database maintenance", "test-user");
+
+        // Assert
+        Assert.True(result.Paused);
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("test-user", result.PausedBy);
+        Assert.Equal("Database maintenance", result.Reason);
+        Assert.NotNull(result.PausedAt);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.PauseProjectAsync("test-proj", "Database maintenance", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResumeProjectAsync_Success_ReturnsResumedResult_AndAuditLogged()
+    {
+        // Arrange
+        var expectedResumedAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.ResumeProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PauseResult(
+                Project: "test-proj",
+                Paused: false,
+                ResumedAt: expectedResumedAt,
+                ResumedBy: "test-user"
+            ));
+
+        // Act via store directly (unit test)
+        var result = await _cloudMock.Object.ResumeProjectAsync("test-proj", "test-user");
+
+        // Assert
+        Assert.False(result.Paused);
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("test-user", result.ResumedBy);
+        Assert.NotNull(result.ResumedAt);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.ResumeProjectAsync("test-proj", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task IsProjectSyncEnabledAsync_ReturnsTrue_WhenNotPaused()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.IsProjectSyncEnabledAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _cloudMock.Object.IsProjectSyncEnabledAsync("test-proj");
+
+        // Assert
+        Assert.True(result);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.IsProjectSyncEnabledAsync("test-proj", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task IsProjectSyncEnabledAsync_ReturnsFalse_WhenPaused()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.IsProjectSyncEnabledAsync(
+                It.Is<string>(p => p == "paused-proj"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var result = await _cloudMock.Object.IsProjectSyncEnabledAsync("paused-proj");
+
+        // Assert
+        Assert.False(result);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.IsProjectSyncEnabledAsync("paused-proj", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PostSyncPause_Endpoint_Returns200_WithPauseConfirmation()
+    {
+        // Arrange
+        var expectedPausedAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.PauseProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PauseResult(
+                Project: "test-proj",
+                Paused: true,
+                PausedAt: expectedPausedAt,
+                PausedBy: "test-user",
+                Reason: "Database maintenance"
+            ));
+
+        var body = new { project = "test-proj", reason = "Database maintenance" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/pause", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("test-proj", (string?)json["project"]);
+        Assert.True((bool?)json["paused"]);
+        Assert.Equal("Database maintenance", (string?)json["reason"]);
+        Assert.NotNull(json["paused_at"]);
+        Assert.Equal("test-user", (string?)json["paused_by"]);
+    }
+
+    [Fact]
+    public async Task DeleteSyncPause_Endpoint_Returns200_WithResumeConfirmation()
+    {
+        // Arrange
+        var expectedResumedAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.ResumeProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PauseResult(
+                Project: "test-proj",
+                Paused: false,
+                ResumedAt: expectedResumedAt,
+                ResumedBy: "test-user"
+            ));
+
+        // Act
+        var resp = await _client.DeleteAsync("/sync/pause?project=test-proj");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("test-proj", (string?)json["project"]);
+        Assert.False((bool?)json["paused"]);
+        Assert.NotNull(json["resumed_at"]);
+        Assert.Equal("test-user", (string?)json["resumed_by"]);
+    }
+
+    [Fact]
+    public async Task PostSyncPause_MissingProject_Returns400()
+    {
+        // Arrange
+        var body = new { reason = "Database maintenance" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/pause", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid-request", (string?)json["error_code"]);
+    }
+
+    [Fact]
+    public async Task PostSyncPause_MissingReason_Returns400()
+    {
+        // Arrange
+        var body = new { project = "test-proj" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/pause", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid-request", (string?)json["error_code"]);
+    }
+
+    [Fact]
+    public async Task DeleteSyncPause_MissingProjectQuery_Returns400()
+    {
+        // Act
+        var resp = await _client.DeleteAsync("/sync/pause");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid-request", (string?)json["error_code"]);
+    }
+
+    [Fact]
+    public async Task Push_WhenProjectPaused_Returns409_SyncPaused()
+    {
+        // Arrange — mock sync as paused for the project
+        _cloudMock.Setup(s => s.IsProjectSyncEnabledAsync(
+                It.Is<string>(p => p == "paused-proj"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _cloudMock.Setup(s => s.InsertAuditEntryAsync(
+                It.IsAny<AuditEntry>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var body = new
+        {
+            entries = new[]
+            {
+                new { project = "paused-proj", entity = "session", entity_key = "s1", op = "upsert", payload = "{}" }
+            }
+        };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/mutations/push", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("sync-paused", (string?)json["error_code"]);
+
+        // Verify audit log was written with correct reason code
+        _cloudMock.Verify(
+            v => v.InsertAuditEntryAsync(
+                It.Is<AuditEntry>(a => 
+                    a.Action == "push" && 
+                    a.Outcome == "rejected" && 
+                    a.ReasonCode == "sync-paused"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Task 3.1: Enrollment endpoints
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task EnrollProjectAsync_Success_ReturnsEnrolledResult()
+    {
+        // Arrange
+        var expectedEnrolledAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.EnrollProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                EnrolledAt: expectedEnrolledAt,
+                EnrolledBy: "test-user"
+            ));
+
+        // Act via store directly (unit test)
+        var result = await _cloudMock.Object.EnrollProjectAsync("test-proj", "test-user");
+
+        // Assert
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("test-user", result.EnrolledBy);
+        Assert.NotNull(result.EnrolledAt);
+        Assert.Null(result.Status); // No status on success
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.EnrollProjectAsync("test-proj", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnrollProjectAsync_AlreadyEnrolled_ReturnsConflictStatus()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.EnrollProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                Status: "already_enrolled"
+            ));
+
+        // Act
+        var result = await _cloudMock.Object.EnrollProjectAsync("test-proj", "test-user");
+
+        // Assert
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("already_enrolled", result.Status);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.EnrollProjectAsync("test-proj", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UnenrollProjectAsync_Success_ReturnsUnenrolledResult()
+    {
+        // Arrange
+        var expectedUnenrolledAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.UnenrollProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                UnenrolledAt: expectedUnenrolledAt,
+                Status: "unenrolled"
+            ));
+
+        // Act
+        var result = await _cloudMock.Object.UnenrollProjectAsync("test-proj", "test-user");
+
+        // Assert
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("unenrolled", result.Status);
+        Assert.NotNull(result.UnenrolledAt);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.UnenrollProjectAsync("test-proj", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UnenrollProjectAsync_NotFound_ReturnsNotFoundStatus()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.UnenrollProjectAsync(
+                It.Is<string>(p => p == "test-proj"),
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                Status: "not_found"
+            ));
+
+        // Act
+        var result = await _cloudMock.Object.UnenrollProjectAsync("test-proj", "test-user");
+
+        // Assert
+        Assert.Equal("test-proj", result.Project);
+        Assert.Equal("not_found", result.Status);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.UnenrollProjectAsync("test-proj", "test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetEnrolledProjectsAsync_ReturnsListOfProjects()
+    {
+        // Arrange
+        var expectedProjects = new List<string> { "project-a", "project-b", "project-c" };
+        _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
+                It.Is<string>(u => u == "test-user"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedProjects);
+
+        // Act
+        var result = await _cloudMock.Object.GetEnrolledProjectsAsync("test-user");
+
+        // Assert
+        Assert.Equal(3, result.Count);
+        Assert.Equal(expectedProjects, result);
+
+        // Verify the mock was called
+        _cloudMock.Verify(
+            v => v.GetEnrolledProjectsAsync("test-user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PostSyncEnroll_Endpoint_Returns200_WithEnrollmentConfirmation()
+    {
+        // Arrange
+        var expectedEnrolledAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.EnrollProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                EnrolledAt: expectedEnrolledAt,
+                EnrolledBy: "test-user"
+            ));
+
+        var body = new { project = "test-proj" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/enroll", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("test-proj", (string?)json["project"]);
+        Assert.NotNull(json["enrolled_at"]);
+        Assert.Equal("test-user", (string?)json["enrolled_by"]);
+    }
+
+    [Fact]
+    public async Task PostSyncEnroll_AlreadyEnrolled_Returns409()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.EnrollProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                Status: "already_enrolled"
+            ));
+
+        var body = new { project = "test-proj" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/enroll", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("project already enrolled", (string?)json["error"]);
+        Assert.Equal("test-proj", (string?)json["project"]);
+    }
+
+    [Fact]
+    public async Task DeleteSyncEnroll_Endpoint_Returns200_WithUnenrollmentConfirmation()
+    {
+        // Arrange
+        var expectedUnenrolledAt = DateTime.UtcNow.ToString("O");
+        _cloudMock.Setup(s => s.UnenrollProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                UnenrolledAt: expectedUnenrolledAt,
+                Status: "unenrolled"
+            ));
+
+        // Act
+        var resp = await _client.DeleteAsync("/sync/enroll?project=test-proj");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("test-proj", (string?)json["project"]);
+        Assert.NotNull(json["unenrolled_at"]);
+        Assert.Equal("unenrolled", (string?)json["status"]);
+    }
+
+    [Fact]
+    public async Task DeleteSyncEnroll_NotFound_Returns404()
+    {
+        // Arrange
+        _cloudMock.Setup(s => s.UnenrollProjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnrollmentResult(
+                Project: "test-proj",
+                Status: "not_found"
+            ));
+
+        // Act
+        var resp = await _client.DeleteAsync("/sync/enroll?project=test-proj");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("project not enrolled", (string?)json["error"]);
+        Assert.Equal("test-proj", (string?)json["project"]);
+    }
+
+    [Fact]
+    public async Task GetSyncEnroll_Endpoint_Returns200_WithEnrolledProjectsList()
+    {
+        // Arrange
+        var expectedProjects = new List<string> { "project-a", "project-b" };
+        _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedProjects);
+
+        // Act
+        var resp = await _client.GetAsync("/sync/enroll");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(2, (int)json["count"]!);
+        
+        var projects = json["projects"]?.AsArray();
+        Assert.NotNull(projects);
+        Assert.Equal(2, projects.Count);
+        Assert.Equal("project-a", (string?)projects[0]!["project"]);
+        Assert.Equal("project-b", (string?)projects[1]!["project"]);
+    }
+
+    [Fact]
+    public async Task PostSyncEnroll_MissingProject_Returns400()
+    {
+        // Arrange
+        var body = new { };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/enroll", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid-request", (string?)json["error_code"]);
+    }
+
+    [Fact]
+    public async Task DeleteSyncEnroll_MissingProjectQuery_Returns400()
+    {
+        // Act
+        var resp = await _client.DeleteAsync("/sync/enroll");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid-request", (string?)json["error_code"]);
     }
 }

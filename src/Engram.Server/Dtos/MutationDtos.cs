@@ -73,3 +73,80 @@ public sealed record ErrorResponseBody(
     [property: JsonPropertyName("project")] string Project,
     [property: JsonPropertyName("project_source")] string ProjectSource,
     [property: JsonPropertyName("project_path")] string ProjectPath);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pause/Resume Request/Response
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Pause request body — received from POST /sync/pause
+/// </summary>
+public sealed record PauseRequestBody(
+    [property: JsonPropertyName("project")] string Project,
+    [property: JsonPropertyName("reason")] string Reason);
+
+/// <summary>
+/// Pause/Resume response — returned from POST /sync/pause and DELETE /sync/pause
+/// </summary>
+public sealed record PauseResponseBody(
+    [property: JsonPropertyName("project")] string Project,
+    [property: JsonPropertyName("paused")] bool Paused,
+    [property: JsonPropertyName("paused_at")] string? PausedAt = null,
+    [property: JsonPropertyName("resumed_at")] string? ResumedAt = null,
+    [property: JsonPropertyName("paused_by")] string? PausedBy = null,
+    [property: JsonPropertyName("resumed_by")] string? ResumedBy = null,
+    [property: JsonPropertyName("reason")] string? Reason = null);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Enrollment DTOs (Phase 3.1)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Enrollment request body — POST /sync/enroll
+/// </summary>
+public sealed record EnrollmentRequest(
+    [property: JsonPropertyName("project")] string Project);
+
+/// <summary>
+/// Enrollment response — returned from POST /sync/enroll
+/// </summary>
+public sealed record EnrollmentResponse(
+    [property: JsonPropertyName("project")] string Project,
+    [property: JsonPropertyName("enrolled_at")] string EnrolledAt,
+    [property: JsonPropertyName("enrolled_by")] string EnrolledBy);
+
+/// <summary>
+/// Conflict response for POST /sync/enroll (already enrolled)
+/// </summary>
+public sealed record EnrollmentConflictResponse(
+    [property: JsonPropertyName("error")] string Error,
+    [property: JsonPropertyName("project")] string Project);
+
+/// <summary>
+/// Unenrollment response — returned from DELETE /sync/enroll
+/// </summary>
+public sealed record UnenrollmentResponse(
+    [property: JsonPropertyName("project")] string Project,
+    [property: JsonPropertyName("unenrolled_at")] string UnenrolledAt,
+    [property: JsonPropertyName("status")] string Status);
+
+/// <summary>
+/// Not found response for DELETE /sync/enroll
+/// </summary>
+public sealed record UnenrollmentNotFoundResponse(
+    [property: JsonPropertyName("error")] string Error,
+    [property: JsonPropertyName("project")] string Project);
+
+/// <summary>
+/// Enrollment list response — returned from GET /sync/enroll
+/// </summary>
+public sealed record EnrollmentListResponse(
+    [property: JsonPropertyName("projects")] IReadOnlyList<EnrolledProjectItem> Projects,
+    [property: JsonPropertyName("count")] int Count);
+
+/// <summary>
+/// Single item in enrollment list
+/// </summary>
+public sealed record EnrolledProjectItem(
+    [property: JsonPropertyName("project")] string Project,
+    [property: JsonPropertyName("enrolled_at")] string EnrolledAt);

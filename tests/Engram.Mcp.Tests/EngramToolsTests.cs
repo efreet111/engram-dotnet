@@ -2,6 +2,7 @@ using Engram.Mcp;
 using Engram.MdGeneration;
 using Engram.Store;
 using Engram.Verification;
+using Engram.Diagnostics;
 using Xunit;
 
 namespace Engram.Mcp.Tests;
@@ -21,6 +22,7 @@ public class EngramToolsTests : IDisposable
     private readonly CycleTracker _cycleTracker;
     private readonly TraceRepository  _traceRepo;
     private readonly LineageBuilder   _lineageBuilder;
+    private readonly IDiagnosticService _diagnosticService;
     private const string SessionId = "mcp-test-session";
 
     public EngramToolsTests()
@@ -35,7 +37,8 @@ public class EngramToolsTests : IDisposable
         var promotionService = new PromotionService(_store);
         _traceRepo = new TraceRepository(_store);
         _lineageBuilder = new LineageBuilder(_traceRepo);
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, _traceRepo, _lineageBuilder);
+        _diagnosticService = new DiagnosticService(_store);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, _traceRepo, _lineageBuilder, _diagnosticService);
     }
 
     public void Dispose()

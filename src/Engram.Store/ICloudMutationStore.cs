@@ -32,10 +32,50 @@ public interface ICloudMutationStore
     Task<bool> IsProjectSyncEnabledAsync(string project, CancellationToken ct = default);
 
     /// <summary>
+    /// Get list of enrolled projects for the given user.
+    /// Used by Pull endpoint to filter mutations (fail-closed security).
+    /// </summary>
+    Task<List<string>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enroll a user in a project for sync access.
+    /// Returns EnrollmentResult with status "already_enrolled" if exists.
+    /// </summary>
+    Task<EnrollmentResult> EnrollProjectAsync(string project, string user, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unenroll a user from a project.
+    /// Returns EnrollmentResult with status "not_found" if not enrolled.
+    /// </summary>
+    Task<EnrollmentResult> UnenrollProjectAsync(string project, string user, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pause sync for a project by setting sync_enabled = false.
+    /// Returns the pause result with timestamp and metadata.
+    /// </summary>
+    Task<PauseResult> PauseProjectAsync(string project, string reason, string pausedBy, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resume sync for a project by setting sync_enabled = true and clearing pause_reason.
+    /// Returns the resume result with timestamp and metadata.
+    /// </summary>
+    Task<PauseResult> ResumeProjectAsync(string project, string resumedBy, CancellationToken ct = default);
+
+    /// <summary>
     /// Record an audit log entry for sync events (pause, auth failure, etc.).
     /// </summary>
     Task InsertAuditEntryAsync(AuditEntry entry, CancellationToken ct = default);
 }
+
+/// <summary>
+/// Result of enrollment operation.
+/// </summary>
+public sealed record EnrollmentResult(
+    string Project,
+    string? EnrolledAt = null,
+    string? EnrolledBy = null,
+    string? UnenrolledAt = null,
+    string? Status = null);
 
 /// <summary>
 /// Mutation entry as received from clients (push request).
@@ -69,3 +109,15 @@ public sealed record AuditEntry(
     string? Contributor = null,
     int EntryCount = 0,
     string? ReasonCode = null);
+
+/// <summary>
+/// Result of pause/resume operations.
+/// </summary>
+public sealed record PauseResult(
+    string Project,
+    bool Paused,
+    string? PausedAt = null,
+    string? ResumedAt = null,
+    string? PausedBy = null,
+    string? ResumedBy = null,
+    string? Reason = null);

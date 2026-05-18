@@ -1883,10 +1883,104 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         return Task.CompletedTask;
     }
 
-    public Task<ReplayDeferredResult> ReplayDeferredAsync(CancellationToken ct = default)
+    public async Task<ReplayDeferredResult> ReplayDeferredAsync(CancellationToken ct = default)
     {
-        // Phase 1.4: Stub — full implementation in Phase 2
-        return Task.FromResult(new ReplayDeferredResult(0, 0));
+        var connStr = new SqliteConnectionStringBuilder
+        {
+            DataSource = _cfg.DbPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+        }.ToString();
+
+        await using var conn = new SqliteConnection(connStr);
+        await conn.OpenAsync(ct);
+
+        // Get deferred rows with retry_count < 5
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT id, entity, entity_key, op, payload, source, retry_count
+            FROM sync_apply_deferred
+            WHERE retry_count < 5
+            ORDER BY pulled_at
+            LIMIT 100";
+
+        var deferredRows = new List<DeferredRow>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                deferredRows.Add(new DeferredRow
+                {
+                    Id = reader.GetInt64(0),
+                    Entity = reader.GetString(1),
+                    EntityKey = reader.GetString(2),
+                    Op = reader.GetString(3),
+                    Payload = reader.GetString(4),
+                    Source = reader.GetString(5),
+                    RetryCount = reader.GetInt32(6)
+                });
+            }
+        }
+
+        int applied = 0;
+        int dead = 0;
+
+        foreach (var row in deferredRows)
+        {
+            try
+            {
+                // Try to apply the deferred mutation by inserting into sync_mutations
+                var applyCmd = conn.CreateCommand();
+                applyCmd.CommandText = @"
+                    INSERT INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project, occurred_at)
+                    VALUES ('cloud', @entity, @entity_key, @op, @payload, @source, '', datetime('now'))";
+                applyCmd.Parameters.AddWithValue("@entity", row.Entity);
+                applyCmd.Parameters.AddWithValue("@entity_key", row.EntityKey);
+                applyCmd.Parameters.AddWithValue("@op", row.Op);
+                applyCmd.Parameters.AddWithValue("@payload", row.Payload);
+                applyCmd.Parameters.AddWithValue("@source", row.Source);
+                await applyCmd.ExecuteNonQueryAsync(ct);
+
+                // Delete from deferred table on success
+                var deleteCmd = conn.CreateCommand();
+                deleteCmd.CommandText = "DELETE FROM sync_apply_deferred WHERE id = @id";
+                deleteCmd.Parameters.AddWithValue("@id", row.Id);
+                await deleteCmd.ExecuteNonQueryAsync(ct);
+
+                applied++;
+            }
+            catch (Exception)
+            {
+                // Increment retry_count
+                var updateCmd = conn.CreateCommand();
+                updateCmd.CommandText = @"
+                    UPDATE sync_apply_deferred 
+                    SET retry_count = retry_count + 1,
+                        last_error = @error
+                    WHERE id = @id";
+                updateCmd.Parameters.AddWithValue("@id", row.Id);
+                updateCmd.Parameters.AddWithValue("@error", "Replay failed");
+                await updateCmd.ExecuteNonQueryAsync(ct);
+
+                if (row.RetryCount >= 4)
+                {
+                    // This row will be dead after this increment (retry_count becomes 5)
+                    dead++;
+                }
+            }
+        }
+
+        return new ReplayDeferredResult(applied, dead);
+    }
+
+    private sealed class DeferredRow
+    {
+        public long Id { get; set; }
+        public string Entity { get; set; } = "";
+        public string EntityKey { get; set; } = "";
+        public string Op { get; set; } = "";
+        public string Payload { get; set; } = "";
+        public string Source { get; set; } = "";
+        public int RetryCount { get; set; }
     }
 
     public Task MarkSyncFailureAsync(string targetKey, string message, DateTime backoffUntil, CancellationToken ct = default)
