@@ -169,10 +169,12 @@ public static class CloudSyncEndpoints
         if (!string.IsNullOrEmpty(project))
         {
             // Get user from context (for team mode) or use empty string for local mode
-            var user = ctx.User.Identity?.Name ?? "";
+            var user = ctx.User.Identity?.Name ?? ctx.Request.Headers[EngramServer.UserHeader].FirstOrDefault() ?? "";
             var enrolledProjects = await store.GetEnrolledProjectsAsync(user, ctx.RequestAborted);
             
-            if (!enrolledProjects.Contains(project))
+            // Check if project is enrolled
+            var isEnrolled = enrolledProjects.Any(ep => ep.Project == project);
+            if (!isEnrolled)
             {
                 return Results.Ok(new PullResponseBody(
                     Mutations: [],
@@ -280,6 +282,15 @@ public static class CloudSyncEndpoints
                 statusCode: 409);
         }
 
+        // Log audit entry
+        await store.InsertAuditEntryAsync(new AuditEntry(
+            Project: body.Project,
+            Action: "enroll",
+            Outcome: "success",
+            Contributor: user,
+            EntryCount: 0
+        ), ctx.RequestAborted);
+
         return Results.Json(new
         {
             project = result.Project,
@@ -297,7 +308,7 @@ public static class CloudSyncEndpoints
     {
         var project = ctx.Request.Query["project"].FirstOrDefault();
         if (string.IsNullOrEmpty(project))
-            return ErrorJson(ctx, "project query parameter is required", "invalid-request", 400);
+            return ErrorJson(ctx, "project query param is required", "invalid-request", 400);
 
         var user = ctx.Request.Headers[EngramServer.UserHeader].FirstOrDefault() ?? "anonymous";
         var result = await store.UnenrollProjectAsync(project, user, ctx.RequestAborted);
@@ -310,11 +321,20 @@ public static class CloudSyncEndpoints
                 statusCode: 404);
         }
 
+        // Log audit entry
+        await store.InsertAuditEntryAsync(new AuditEntry(
+            Project: project,
+            Action: "unenroll",
+            Outcome: "success",
+            Contributor: user,
+            EntryCount: 0
+        ), ctx.RequestAborted);
+
         return Results.Json(new
         {
             project = result.Project,
             unenrolled_at = result.UnenrolledAt ?? DateTime.UtcNow.ToString("O"),
-            status = result.Status ?? "unenrolled"
+            status = result.Status
         }, JsonOpts);
     }
 
@@ -330,7 +350,7 @@ public static class CloudSyncEndpoints
 
         return Results.Json(new
         {
-            projects = projects.Select(p => new { project = p, enrolled_at = "" }).ToList(),
+            projects = projects.Select(p => new { project = p.Project, enrolled_at = p.EnrolledAt, enrolled_by = p.EnrolledBy }).ToList(),
             count = projects.Count
         }, JsonOpts);
     }

@@ -35,7 +35,7 @@ public interface ICloudMutationStore
     /// Get list of enrolled projects for the given user.
     /// Used by Pull endpoint to filter mutations (fail-closed security).
     /// </summary>
-    Task<List<string>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default);
+    Task<List<EnrolledProject>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default);
 
     /// <summary>
     /// Enroll a user in a project for sync access.
@@ -76,6 +76,14 @@ public sealed record EnrollmentResult(
     string? EnrolledBy = null,
     string? UnenrolledAt = null,
     string? Status = null);
+
+/// <summary>
+/// Enrolled project with metadata.
+/// </summary>
+public sealed record EnrolledProject(
+    string Project,
+    string EnrolledAt,
+    string EnrolledBy);
 
 /// <summary>
 /// Mutation entry as received from clients (push request).

@@ -180,6 +180,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 project       TEXT PRIMARY KEY,
                 sync_enabled  BOOL DEFAULT true,
                 pause_reason  TEXT DEFAULT '',
+                paused_at     TIMESTAMPTZ DEFAULT NULL,
+                paused_by     TEXT DEFAULT '',
+                resumed_at    TIMESTAMPTZ DEFAULT NULL,
+                resumed_by    TEXT DEFAULT '',
                 updated_at    TIMESTAMPTZ DEFAULT NOW()
             );
         ");
@@ -1693,12 +1697,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<List<string>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default)
+    public async Task<List<EnrolledProject>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default)
     {
-        var projects = new List<string>();
+        var projects = new List<EnrolledProject>();
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
-            SELECT project FROM sync_enrolled_projects
+            SELECT project, enrolled_at, enrolled_by FROM sync_enrolled_projects
             WHERE user = @user
             ORDER BY enrolled_at DESC";
         cmd.Parameters.AddWithValue("@user", user);
@@ -1706,7 +1710,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
         {
-            projects.Add(r.GetString(0));
+            var project = r.GetString(0);
+            var enrolledAt = r.IsDBNull(1) ? "" : r.GetString(1);
+            var enrolledBy = r.IsDBNull(2) ? "" : r.GetString(2);
+            projects.Add(new EnrolledProject(project, enrolledAt, enrolledBy));
         }
 
         return projects;

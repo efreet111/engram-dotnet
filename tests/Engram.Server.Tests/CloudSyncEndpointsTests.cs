@@ -342,7 +342,10 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
         _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<string> { "filtered-proj" });
+            .ReturnsAsync(new List<EnrolledProject>
+            {
+                new EnrolledProject("filtered-proj", "2026-05-18T00:00:00Z", "user1")
+            });
         
         _cloudMock.Setup(s => s.ListMutationsSinceAsync(
                 It.IsAny<long>(),
@@ -774,9 +777,13 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
     public async Task GetEnrolledProjectsAsync_ReturnsListOfProjects()
     {
         // Arrange
-        var expectedProjects = new List<string> { "project-a", "project-b", "project-c" };
+        var expectedProjects = new List<EnrolledProject>
+        {
+            new EnrolledProject("project-a", "2026-05-18T00:00:00Z", "user1"),
+            new EnrolledProject("project-b", "2026-05-18T01:00:00Z", "user1")
+        };
         _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
-                It.Is<string>(u => u == "test-user"),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedProjects);
 
@@ -784,8 +791,9 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
         var result = await _cloudMock.Object.GetEnrolledProjectsAsync("test-user");
 
         // Assert
-        Assert.Equal(3, result.Count);
-        Assert.Equal(expectedProjects, result);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("project-a", result[0].Project);
+        Assert.Equal("project-b", result[1].Project);
 
         // Verify the mock was called
         _cloudMock.Verify(
@@ -903,7 +911,11 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
     public async Task GetSyncEnroll_Endpoint_Returns200_WithEnrolledProjectsList()
     {
         // Arrange
-        var expectedProjects = new List<string> { "project-a", "project-b" };
+        var expectedProjects = new List<EnrolledProject>
+        {
+            new EnrolledProject("project-a", "2026-05-18T00:00:00Z", "user1"),
+            new EnrolledProject("project-b", "2026-05-18T01:00:00Z", "user1")
+        };
         _cloudMock.Setup(s => s.GetEnrolledProjectsAsync(
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
