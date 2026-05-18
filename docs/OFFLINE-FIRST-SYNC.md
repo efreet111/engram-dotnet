@@ -1,9 +1,9 @@
 # Offline-First Sync — Feature Index
 
-> **Feature Status**: Planned (SDD artifacts complete, PR #14 pending merge)
-> **Last Updated**: 2026-05-12
-> **Branch**: [`feat/offline-first-sync`](https://github.com/efreet111/engram-dotnet/tree/feat/offline-first-sync)
-> **PR**: [#14](https://github.com/efreet111/engram-dotnet/pull/14)
+> **Feature Status**: ✅ Phase 1 & 2 Complete | 🔴 Phase 3 & 4 Pending
+> **Last Updated**: 2026-05-17
+> **Branch**: Merged to `main` (commit `7e2c900`)
+> **PR**: #14 (merged)
 > **Issue**: [#13](https://github.com/efreet111/engram-dotnet/issues/13)
 
 ---
@@ -18,6 +18,19 @@ Last-write-wins conflict resolution.
 
 **Total Effort**: 32–44h across 4 phases.
 
+**Current Progress**: Phase 1 & 2 complete (~22-30h). Phase 3 & 4 pending (~10-14h).
+
+---
+
+## Implementation Status
+
+| Phase | Status | Completion | Tests |
+|-------|--------|------------|-------|
+| **Phase 1**: Mutation Journal + Server Endpoints | ✅ Complete | 100% | 26 tests |
+| **Phase 2**: Autosync Manager | ✅ Complete | 100% | Included |
+| **Phase 3**: Enrollment + Conflict Handling | 🔴 Pending | 0% | - |
+| **Phase 4**: Observability | 🔴 Pending | 0% | - |
+
 ---
 
 ## SDD Artifacts
@@ -28,56 +41,112 @@ Last-write-wins conflict resolution.
 | **Design** | [`sdd/offline-first-sync/design/design.md`](sdd/offline-first-sync/design/design.md) | v1.0.0 | 7 architecture decisions, data flow, interfaces, 11 new files |
 | **Tasks** | [`sdd/offline-first-sync/tasks/tasks.md`](sdd/offline-first-sync/tasks/tasks.md) | v1.0.0 | 43 tasks organized by phase with dependencies |
 
+**Note**: SDD artifacts archived in `/sdd/archive/2026-05-14-offline-first-sync/` (empty, needs restoration from FlowForge)
+
 ---
 
 ## Phases
 
-### Phase 1: Mutation Journal + Server Endpoints — 10–14h
+### Phase 1: Mutation Journal + Server Endpoints — ✅ COMPLETE (10–14h)
 
 Implements the MVP push/pull server endpoints and HTTP client.
 
-| Task Range | Focus | Key Deliverables |
-|------------|-------|------------------|
-| 1.1.1 – 1.1.4 | Infrastructure | `ICloudMutationStore` interface + `cloud_mutations`, `cloud_sync_audit_log`, `cloud_project_controls` tables in PostgresStore |
-| 1.2.1 – 1.2.4 | MutationTransport | `IMutationTransport` HTTP client via `IHttpClientFactory`, 409 pause gate, retry on transient errors |
-| 1.3.1 – 1.3.4 | Server Endpoints | `POST /sync/mutations/push` (pause gate, batch auth, relation validation) + `GET /sync/mutations/pull` (enrollment filter, cursor pagination) |
-| 1.4.1 – 1.4.3 | Local Store | `sync_apply_deferred` table + `ILocalSyncStore` interface + SqliteStore implementation |
-| 1.5.1 – 1.5.4 | Tests | Unit + integration tests for transport, endpoints, store |
+| Task Range | Focus | Key Deliverables | Status |
+|------------|-------|------------------|--------|
+| 1.1.1 – 1.1.4 | Infrastructure | `ICloudMutationStore` + `ICloudChunkStore` interfaces + `cloud_mutations`, `cloud_sync_audit_log`, `cloud_project_controls` tables | ✅ |
+| 1.2.1 – 1.2.4 | MutationTransport | `IMutationTransport` HTTP client via `IHttpClientFactory`, 409 pause gate, retry on transient errors | ✅ |
+| 1.3.1 – 1.3.4 | Server Endpoints | `POST /sync/mutations/push` (pause gate, batch auth, relation validation) + `GET /sync/mutations/pull` (enrollment filter, cursor pagination) | ✅ |
+| 1.4.1 – 1.4.3 | Local Store | `sync_apply_deferred` table + `ILocalSyncStore` interface + SqliteStore implementation | ✅ |
+| 1.5.1 – 1.5.4 | Tests | Unit + integration tests for transport, endpoints, store | ✅ 26 tests |
 
-**Start here**: 1.1.1 (Hosting.Abstractions package) → 1.4.x (local store) → 1.2.x (transport) → 1.3.x (endpoints) → 1.5.x (tests)
+**Implemented Files**:
+- `src/Engram.Store/ICloudMutationStore.cs`
+- `src/Engram.Store/ICloudChunkStore.cs`
+- `src/Engram.Store/ILocalSyncStore.cs`
+- `src/Engram.Store/PostgresStore.cs` (ICloudMutationStore + ICloudChunkStore implementation)
+- `src/Engram.Store/SqliteStore.cs` (ILocalSyncStore implementation)
+- `src/Engram.Server/CloudSyncEndpoints.cs`
+- `src/Engram.Sync/Transport/IMutationTransport.cs`
+- `src/Engram.Sync/Transport/MutationTransport.cs`
+- `src/Engram.Sync/Transport/MutationDtos.cs`
+- `src/Engram.Sync/Transport/MutationTransportException.cs`
+- `tests/Engram.Server.Tests/CloudSyncEndpointsTests.cs`
+- `tests/Engram.Server.Tests/CloudSyncIntegrationTests.cs`
+- `tests/Engram.Sync.Tests/MutationTransportTests.cs`
 
-### Phase 2: Autosync Manager — 12–16h
+**Known Gaps**:
+- ⚠️ `ReplayDeferredAsync` returns stub `(0, 0)` — not implemented
+- ⚠️ Enrollment filter is hardcoded, no `enrolled_projects` table check
+
+---
+
+### Phase 2: Autosync Manager — ✅ COMPLETE (12–16h)
 
 Background service that orchestrates push + pull cycles with debounce, backoff, and failure ceiling.
 
-| Task Range | Focus | Key Deliverables |
-|------------|-------|------------------|
-| 2.1.1 – 2.1.5 | SyncManager Core | `BackgroundService` with debounce/poll channels, phase tracking (Idle/Pushing/Pulling/etc), panic recovery |
-| 2.2.1 – 2.2.3 | Push Cycle | Group by project, drain batch, handle pause error, ack seqs |
-| 2.3.1 – 2.3.3 | Pull Cycle | Cursor loop with `has_more`, apply mutations, non-enrolled blocking |
-| 2.4.1 – 2.4.2 | Deferred Replay | `ReplayDeferredAsync` with retry_count < 5, dead row logging |
-| 2.5.1 – 2.5.2 | DI Registration | `AddHostedService<SyncManager>()` + `ENGRAM_SYNC_ENABLED` feature flag |
-| 2.6.1 – 2.6.4 | Tests | Phase transitions, failure ceiling, deferred replay, non-enrolled blocking |
+| Task Range | Focus | Key Deliverables | Status |
+|------------|-------|------------------|--------|
+| 2.1.1 – 2.1.5 | SyncManager Core | `BackgroundService` with debounce/poll channels, phase tracking (Idle/Pushing/Pulling/etc), panic recovery | ✅ |
+| 2.2.1 – 2.2.3 | Push Cycle | Group by project, drain batch, handle pause error, ack seqs | ✅ |
+| 2.3.1 – 2.3.3 | Pull Cycle | Cursor loop with `has_more`, apply mutations, non-enrolled blocking | ✅ |
+| 2.4.1 – 2.4.2 | Deferred Replay | `ReplayDeferredAsync` with retry_count < 5, dead row logging | ⚠️ Stub only |
+| 2.5.1 – 2.5.2 | DI Registration | `AddHostedService<SyncManager>()` + `ENGRAM_SYNC_ENABLED` feature flag | ✅ |
+| 2.6.1 – 2.6.4 | Tests | Phase transitions, failure ceiling, deferred replay, non-enrolled blocking | ✅ |
 
-**Start here**: 2.1.x (core loop) → 2.2.x (push) → 2.3.x (pull) → 2.4.x (deferred) → 2.5.x (DI) → 2.6.x (tests)
+**Implemented Files**:
+- `src/Engram.Sync/SyncManager.cs`
+- `src/Engram.Sync/SyncManagerConfig.cs`
+- `src/Engram.Sync/SyncPhase.cs`
+- `tests/Engram.Sync.Tests/SyncManagerTests.cs`
 
-### Phase 3: Enrollment + Conflict Handling — 6–8h
+**Known Gaps**:
+- ⚠️ `ReplayDeferredAsync` not implemented (Phase 1.4 gap)
+
+---
+
+### Phase 3: Enrollment + Conflict Handling — 🔴 PENDING (6–8h)
 
 Enrollment management and relation FK deferral strategy.
 
-- `/sync/enroll` endpoint
-- `/sync/pause` endpoint
-- `EnrolledProjectsProvider` for pull scoping
-- Relation FK deferral → `sync_apply_deferred`
+**Specification**: [`docs/PHASE3-ENROLLMENT-SPEC.md`](PHASE3-ENROLLMENT-SPEC.md) — Full API contracts, implementation details, and testing strategy.
 
-### Phase 4: Observability — 4–6h
+**Missing Endpoints**:
+- ❌ `/sync/enroll` — Add project to enrollment list (POST, DELETE, GET)
+- ❌ `/sync/pause` — Admin pause with reason (POST to pause, DELETE to resume)
+- ❌ `EnrolledProjectsProvider` for pull scoping
+- ❌ `ReplayDeferredAsync` implementation — FK deferral → `sync_apply_deferred`
+
+**Tables** (already exist, need endpoints):
+- ✅ `cloud_project_controls` (sync_enabled flag)
+- ✅ `sync_enrolled_projects` (enrollment list)
+- ✅ `sync_apply_deferred` (FK misses)
+
+**To Start Phase 3**:
+1. Implement `/sync/enroll` endpoint (POST, DELETE, GET) — Task 3.1 (2h)
+2. Implement `/sync/pause` endpoint (POST, DELETE) — Task 3.2 (1.5h)
+3. Implement `EnrolledProjectsProvider` service — Task 3.1
+4. Update `CloudSyncEndpoints.Pull` to use enrolled projects table — Task 3.3 (1h)
+5. Implement `ReplayDeferredAsync` in SqliteStore — Task 3.4 (1.5h)
+6. Add tests for enrollment, pause, and deferred replay — All tasks
+
+**Estimated Effort**: 6h total (see PHASE3-ENROLLMENT-SPEC.md for detailed breakdown)
+
+---
+
+### Phase 4: Observability — 🔴 PENDING (4–6h)
 
 Monitoring, CLI, and docs.
 
-- `/sync/status` endpoint
-- SyncManager metrics via `ILogger`
-- `engram sync status` CLI command
-- Sync setup documentation
+**Missing**:
+- ❌ `/sync/status` endpoint — cursor position, last sync, health
+- ❌ `engram sync status` CLI command — full implementation
+- ❌ SyncManager metrics via `ILogger` — push/pull counts, errors, phase
+- ❌ Sync setup documentation
+
+**Existing** (partial):
+- ⚠️ `--status` option in CLI (line 294 of Program.cs) — may not be fully implemented
+
+**Specification**: Phase 4 spec TBD after Phase 3 completion.
 
 ---
 
@@ -220,3 +289,5 @@ The original proposal (v0.1) had several errors discovered during Go upstream an
 - [`docs/TEAM-SETUP.md`](TEAM-SETUP.md) — Team setup with TrueNAS server
 - [`docs/ROADMAP.md`](ROADMAP.md) — Roadmap with this feature as priority
 - [`docs/POSTGRES-SETUP.md`](POSTGRES-SETUP.md) — PostgreSQL server setup on TrueNAS
+- [`docs/PHASE3-ENROLLMENT-SPEC.md`](PHASE3-ENROLLMENT-SPEC.md) — **Phase 3 specification** (enrollment + pause endpoints)
+- [`docs/RFC-003-offline-first-sync-architecture.md`](rfcs/RFC-003-offline-first-sync-architecture.md) — RFC with architecture decisions
