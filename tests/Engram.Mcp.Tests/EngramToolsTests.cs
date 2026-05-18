@@ -19,6 +19,8 @@ public class EngramToolsTests : IDisposable
     private readonly SessionActivity _sessionActivity;
     private readonly IVerifier    _verifier;
     private readonly CycleTracker _cycleTracker;
+    private readonly TraceRepository  _traceRepo;
+    private readonly LineageBuilder   _lineageBuilder;
     private const string SessionId = "mcp-test-session";
 
     public EngramToolsTests()
@@ -31,9 +33,9 @@ public class EngramToolsTests : IDisposable
         _verifier = new NoOpVerifier();
         _cycleTracker = new CycleTracker(_store);
         var promotionService = new PromotionService(_store);
-        var traceRepo = new TraceRepository(_store);
-        var lineageBuilder = new LineageBuilder(traceRepo);
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, traceRepo, lineageBuilder);
+        _traceRepo = new TraceRepository(_store);
+        _lineageBuilder = new LineageBuilder(_traceRepo);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "default-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, _traceRepo, _lineageBuilder);
     }
 
     public void Dispose()
@@ -316,7 +318,7 @@ public class EngramToolsTests : IDisposable
         Assert.Contains("new-proj", result);
     }
 
-    // ─── DefaultProject injection ─────────────────────────────────────────────
+        // ─── DefaultProject injection ─────────────────────────────────────────────
 
     [Fact]
     public async Task MemSearch_UsesDefaultProject_WhenProjectIsNull()
@@ -333,6 +335,158 @@ public class EngramToolsTests : IDisposable
         // Don't pass project — should fall back to cfg.DefaultProject ("default-project")
         var result = await _tools.MemSearch("content");
         Assert.Contains("Found", result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── mem_trace_source ──────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task MemTraceSource_ReturnsUntraced_WhenNotFound()
+    {
+        var result = await _tools.MemTraceSource("RF-999", project: "test-proj");
+
+        Assert.Contains("Untraced", result);
+        Assert.Contains("RF-999", result);
+    }
+
+    [Fact]
+    public async Task MemTraceSource_ReturnsFullData_WhenTraced()
+    {
+        await SeedSession();
+        var trace = new TraceInfo
+        {
+            RequirementId = "RF-001",
+            Source = new TraceSource
+            {
+                Source = "ISSUE-42",
+                Author = "Dev Team",
+                Date = "2026-01-15",
+                Rationale = "Security compliance required"
+            },
+            Relations =
+            [
+                new TraceRelation { Type = "depends_on", Target = "RF-002" },
+                new TraceRelation { Type = "related_to", Target = "RF-003" }
+            ]
+        };
+        await _traceRepo.SaveTraceAsync("test-proj", trace, SessionId);
+
+        var result = await _tools.MemTraceSource("RF-001", project: "test-proj");
+
+        Assert.Contains("## Trace: RF-001", result);
+        Assert.Contains("ISSUE-42", result);
+        Assert.Contains("Dev Team", result);
+        Assert.Contains("Security compliance", result);
+        Assert.Contains("depends_on", result);
+        Assert.Contains("RF-002", result);
+        Assert.DoesNotContain("Untraced", result);
+    }
+
+    [Fact]
+    public async Task MemTraceSource_UsesDefaultProject_WhenProjectIsNull()
+    {
+        await _store.CreateSessionAsync(SessionId, "default-project", "/tmp");
+        var trace = new TraceInfo
+        {
+            RequirementId = "RF-DEF",
+            Source = new TraceSource { Source = "DEFAULT-SOURCE" }
+        };
+        await _traceRepo.SaveTraceAsync("default-project", trace, SessionId);
+
+        // No project → should use DefaultProject = "default-project"
+        var result = await _tools.MemTraceSource("RF-DEF");
+        Assert.Contains("DEFAULT-SOURCE", result);
+        Assert.DoesNotContain("Untraced", result);
+    }
+
+    [Fact]
+    public async Task MemTraceSource_ReturnsUntraced_WithDefaultProject_WhenNotFound()
+    {
+        // Empty DB → default project "default-project" has no trace for RF-999
+        var result = await _tools.MemTraceSource("RF-999");
+        Assert.Contains("Untraced", result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── mem_lineage ───────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task MemLineage_ReturnsNoRelations_WhenIsolated()
+    {
+        await SeedSession();
+        await _traceRepo.SaveTraceAsync("test-proj",
+            new TraceInfo { RequirementId = "RF-001" }, SessionId);
+
+        var result = await _tools.MemLineage("RF-001", project: "test-proj");
+
+        Assert.Contains("## Lineage: RF-001", result);
+        Assert.Contains("No lineage relationships found", result);
+        Assert.DoesNotContain("Cycle detected", result);
+    }
+
+    [Fact]
+    public async Task MemLineage_ReturnsEmpty_WhenUntraced()
+    {
+        var result = await _tools.MemLineage("RF-999", project: "test-proj");
+
+        Assert.Contains("## Lineage: RF-999", result);
+        Assert.Contains("untraced", result.ToLowerInvariant());
+    }
+
+    [Fact]
+    public async Task MemLineage_ShowsAncestors_WhenDependsOnChain()
+    {
+        await SeedSession();
+        // RF-001 depends on RF-002
+        await _traceRepo.SaveTraceAsync("test-proj", new TraceInfo
+        {
+            RequirementId = "RF-001",
+            Relations = [new TraceRelation { Type = "depends_on", Target = "RF-002" }]
+        }, SessionId);
+        // RF-002 depends on RF-003
+        await _traceRepo.SaveTraceAsync("test-proj", new TraceInfo
+        {
+            RequirementId = "RF-002",
+            Relations = [new TraceRelation { Type = "depends_on", Target = "RF-003" }]
+        }, SessionId);
+
+        var result = await _tools.MemLineage("RF-001", project: "test-proj");
+
+        Assert.Contains("## Lineage: RF-001", result);
+        Assert.Contains("Ancestors", result);
+        Assert.Contains("RF-002", result);
+        Assert.DoesNotContain("Cycle detected", result);
+    }
+
+    [Fact]
+    public async Task MemLineage_DetectsDirectCycle()
+    {
+        await SeedSession();
+        // RF-001 depends_on RF-001 (self-cycle)
+        await _traceRepo.SaveTraceAsync("test-proj", new TraceInfo
+        {
+            RequirementId = "RF-001",
+            Relations = [new TraceRelation { Type = "depends_on", Target = "RF-001" }]
+        }, SessionId);
+
+        var result = await _tools.MemLineage("RF-001", project: "test-proj");
+
+        Assert.Contains("## Lineage: RF-001", result);
+        Assert.Contains("Cycle detected", result);
+    }
+
+    [Fact]
+    public async Task MemLineage_UsesDefaultProject_WhenProjectIsNull()
+    {
+        await _store.CreateSessionAsync(SessionId, "default-project", "/tmp");
+        await _traceRepo.SaveTraceAsync("default-project",
+            new TraceInfo { RequirementId = "RF-DEF" }, SessionId);
+
+        var result = await _tools.MemLineage("RF-DEF");
+        Assert.Contains("RF-DEF", result);
+        Assert.Contains("traced", result);
     }
 }
 

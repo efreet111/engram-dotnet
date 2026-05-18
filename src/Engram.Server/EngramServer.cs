@@ -94,6 +94,9 @@ public static class EngramServer
         app.MapGet("/retention/stats",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionStats(ctx, store)));
         app.MapPost("/retention/prune",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionPrune(ctx, store)));
         app.MapGet("/projects/migrations",          (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectMigrations(ctx, store)));
+
+        // Cloud sync endpoints (offline-first-sync Phase 1.3)
+        app.MapCloudSyncRoutes();
     }
     
     internal const string UserHeader = "X-Engram-User";

@@ -9,8 +9,9 @@ namespace Engram.Store;
 /// <summary>
 /// SQLite-backed implementation of IStore.
 /// Schema, dedup logic, and FTS5 behaviour are intentionally identical to the Go original.
+/// Implements ILocalSyncStore for offline-first-sync (Phase 1.4).
 /// </summary>
-public sealed class SqliteStore : IStore
+public sealed class SqliteStore : IStore, ILocalSyncStore
 {
     private readonly SqliteConnection _db;
     private readonly StoreConfig _cfg;
@@ -220,6 +221,23 @@ public sealed class SqliteStore : IStore
                 to_project   TEXT NOT NULL,
                 migrated_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+        ");
+
+        // ─── sync_apply_deferred (offline-first-sync Phase 1.4) ─────────────────
+
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS sync_apply_deferred (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity      TEXT NOT NULL,
+                entity_key  TEXT NOT NULL,
+                op          TEXT NOT NULL,
+                payload     TEXT NOT NULL,
+                source      TEXT NOT NULL DEFAULT 'pull',
+                pulled_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_error  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_apply_deferred_retry ON sync_apply_deferred(retry_count);
         ");
 
         // Backfill project column in sync_mutations from JSON payload
@@ -1738,6 +1756,184 @@ public sealed class SqliteStore : IStore
         using var cmd = _db.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO sync_chunks (chunk_id) VALUES (@id)";
         cmd.Parameters.AddWithValue("@id", chunkId);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ILocalSyncStore Implementation (offline-first-sync Phase 1.4)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public Task<SyncState?> GetSyncStateAsync(string targetKey, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT target_key, lifecycle, last_enqueued_seq, last_acked_seq, last_pulled_seq,
+                   consecutive_failures, backoff_until, lease_owner, lease_until, last_error, updated_at
+            FROM sync_state WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return Task.FromResult<SyncState?>(null);
+
+        return Task.FromResult<SyncState?>(new SyncState(
+            r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetInt64(3), r.GetInt64(4),
+            r.GetInt32(5), r.IsDBNull(6) ? null : r.GetString(6),
+            r.IsDBNull(7) ? null : r.GetString(7),
+            r.IsDBNull(8) ? null : r.GetString(8),
+            r.IsDBNull(9) ? null : r.GetString(9),
+            DateTime.Parse(r.GetString(10))
+        ));
+    }
+
+    public Task<List<SyncMutation>> ListPendingSyncMutationsAsync(string targetKey, int limit, CancellationToken ct = default)
+    {
+        var list = new List<SyncMutation>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT seq, target_key, entity, entity_key, op, payload, source, project, occurred_at, acked_at
+            FROM sync_mutations
+            WHERE target_key = @target AND acked_at IS NULL
+            ORDER BY seq ASC LIMIT @limit";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@limit", limit);
+
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new SyncMutation(
+                r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3),
+                r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7),
+                DateTime.Parse(r.GetString(8)), r.IsDBNull(9) ? null : r.GetString(9)
+            ));
+        }
+        return Task.FromResult(list);
+    }
+
+    public Task<List<PendingProjectCount>> CountPendingNonEnrolledAsync(string targetKey, CancellationToken ct = default)
+    {
+        var list = new List<PendingProjectCount>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT sm.project, COUNT(*) as count
+            FROM sync_mutations sm
+            LEFT JOIN sync_enrolled_projects ep ON sm.project = ep.project
+            WHERE sm.target_key = @target AND sm.acked_at IS NULL AND ep.project IS NULL
+            GROUP BY sm.project";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new PendingProjectCount(r.GetString(0), r.GetInt64(1)));
+        }
+        return Task.FromResult(list);
+    }
+
+    public Task AckSyncMutationSeqsAsync(string targetKey, IReadOnlyList<long> seqs, CancellationToken ct = default)
+    {
+        if (seqs.Count == 0) return Task.CompletedTask;
+
+        using var cmd = _db.CreateCommand();
+        var seqParams = string.Join(",", seqs.Select((s, i) => $"@seq{i}"));
+        for (int i = 0; i < seqs.Count; i++)
+            cmd.Parameters.AddWithValue($"@seq{i}", seqs[i]);
+
+        cmd.CommandText = $"UPDATE sync_mutations SET acked_at = datetime('now') WHERE target_key = @target AND seq IN ({seqParams})";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.ExecuteNonQuery();
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> AcquireSyncLeaseAsync(string targetKey, string owner, TimeSpan ttl, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET
+                lease_owner = @owner,
+                lease_until = datetime('now', '+' || @seconds || ' seconds'),
+                updated_at = datetime('now')
+            WHERE target_key = @target AND (lease_until IS NULL OR lease_until < datetime('now'))";
+        cmd.Parameters.AddWithValue("@owner", owner);
+        cmd.Parameters.AddWithValue("@seconds", ttl.TotalSeconds);
+        cmd.Parameters.AddWithValue("@target", targetKey);
+
+        var rows = cmd.ExecuteNonQuery();
+        return Task.FromResult(rows > 0);
+    }
+
+    public Task ReleaseSyncLeaseAsync(string targetKey, string owner, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET lease_owner = NULL, lease_until = NULL, updated_at = datetime('now')
+            WHERE target_key = @target AND lease_owner = @owner";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@owner", owner);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task ApplyPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default)
+    {
+        // Phase 1.4: Basic implementation — full apply logic in Phase 2
+        // For now, just log that we received it
+        // TODO: Implement full session/observation/prompt upsert with FK deferral
+        return Task.CompletedTask;
+    }
+
+    public Task<ReplayDeferredResult> ReplayDeferredAsync(CancellationToken ct = default)
+    {
+        // Phase 1.4: Stub — full implementation in Phase 2
+        return Task.FromResult(new ReplayDeferredResult(0, 0));
+    }
+
+    public Task MarkSyncFailureAsync(string targetKey, string message, DateTime backoffUntil, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET
+                lifecycle = 'failed',
+                consecutive_failures = consecutive_failures + 1,
+                backoff_until = @backoff,
+                last_error = @error,
+                updated_at = datetime('now')
+            WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@backoff", backoffUntil.ToString("O"));
+        cmd.Parameters.AddWithValue("@error", message);
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task MarkSyncBlockedAsync(string targetKey, string reasonCode, string message, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET
+                lifecycle = 'blocked',
+                last_error = @error,
+                updated_at = datetime('now')
+            WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@error", $"{reasonCode}: {message}");
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task MarkSyncHealthyAsync(string targetKey, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET
+                lifecycle = 'healthy',
+                consecutive_failures = 0,
+                backoff_until = NULL,
+                last_error = NULL,
+                updated_at = datetime('now')
+            WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@target", targetKey);
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }

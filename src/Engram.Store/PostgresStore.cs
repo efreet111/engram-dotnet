@@ -9,8 +9,9 @@ namespace Engram.Store;
 /// <summary>
 /// PostgreSQL-backed implementation of IStore.
 /// Schema, dedup logic, and FTS (tsvector) behaviour are intentionally equivalent to SqliteStore.
+/// Implements ICloudMutationStore and ICloudChunkStore for offline-first-sync (Phase 1).
 /// </summary>
-public sealed class PostgresStore : IStore
+public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStore
 {
     private readonly NpgsqlConnection _db;
     private readonly StoreConfig _cfg;
@@ -140,6 +141,61 @@ public sealed class PostgresStore : IStore
                 enrolled_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
             );
         ");
+
+        // ─── Cloud sync tables (offline-first-sync Phase 1) ────────────────────
+
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS cloud_mutations (
+                seq           BIGSERIAL PRIMARY KEY,
+                project       TEXT NOT NULL,
+                entity        TEXT NOT NULL,
+                entity_key    TEXT NOT NULL,
+                op            TEXT NOT NULL,
+                payload       JSONB NOT NULL,
+                created_by    TEXT DEFAULT '',
+                occurred_at   TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_cm_project_seq ON cloud_mutations(project, seq);
+        ");
+
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS cloud_sync_audit_log (
+                id            BIGSERIAL PRIMARY KEY,
+                project       TEXT NOT NULL,
+                action        TEXT NOT NULL,
+                outcome       TEXT NOT NULL,
+                contributor   TEXT DEFAULT '',
+                entry_count   INT DEFAULT 0,
+                reason_code   TEXT DEFAULT '',
+                created_at    TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_csal_project ON cloud_sync_audit_log(project, created_at);
+        ");
+
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS cloud_project_controls (
+                project       TEXT PRIMARY KEY,
+                sync_enabled  BOOL DEFAULT true,
+                pause_reason  TEXT DEFAULT '',
+                updated_at    TIMESTAMPTZ DEFAULT NOW()
+            );
+        ");
+
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS cloud_chunks (
+                chunk_id          TEXT PRIMARY KEY,
+                project           TEXT NOT NULL,
+                payload           JSONB NOT NULL,
+                created_by        TEXT DEFAULT '',
+                client_created_at TIMESTAMPTZ,
+                sessions_count    INT DEFAULT 0,
+                observations_count INT DEFAULT 0,
+                prompts_count     INT DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_cc_project ON cloud_chunks(project, chunk_id);
+        ");
+
+        // ─── Project migrations ────────────────────────────────────────────────
 
         Exec(@"
             CREATE TABLE IF NOT EXISTS project_migrations (
@@ -1501,6 +1557,187 @@ public sealed class PostgresStore : IStore
         cmd.Parameters.AddWithValue("@id", chunkId);
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ICloudMutationStore Implementation (offline-first-sync Phase 1)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public async Task<List<long>> InsertMutationBatchAsync(
+        IReadOnlyList<MutationEntry> entries,
+        string? createdBy = null,
+        CancellationToken ct = default)
+    {
+        if (entries.Count == 0) return [];
+
+        var seqs = new List<long>(entries.Count);
+        using var tx = _db.BeginTransaction();
+
+        try
+        {
+            foreach (var entry in entries)
+            {
+                await using var cmd = _db.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = @"
+                    INSERT INTO cloud_mutations (project, entity, entity_key, op, payload, created_by, occurred_at)
+                    VALUES (@project, @entity, @entity_key, @op, @payload, @created_by, NOW())
+                    RETURNING seq";
+
+                cmd.Parameters.AddWithValue("@project", entry.Project);
+                cmd.Parameters.AddWithValue("@entity", entry.Entity);
+                cmd.Parameters.AddWithValue("@entity_key", entry.EntityKey);
+                cmd.Parameters.AddWithValue("@op", entry.Op);
+                cmd.Parameters.AddWithValue("@payload", entry.Payload);
+                cmd.Parameters.AddWithValue("@created_by", (object?)createdBy ?? DBNull.Value);
+
+                var seq = (long)(await cmd.ExecuteScalarAsync(ct))!;
+                seqs.Add(seq);
+            }
+
+            tx.Commit();
+            return seqs;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public async Task<(List<StoredMutation> Mutations, bool HasMore, long LatestSeq)> ListMutationsSinceAsync(
+        long sinceSeq,
+        int limit,
+        List<string>? allowedProjects,
+        CancellationToken ct = default)
+    {
+        var mutations = new List<StoredMutation>();
+        await using var cmd = _db.CreateCommand();
+
+        var sql = @"
+            SELECT seq, project, entity, entity_key, op, payload, occurred_at
+            FROM cloud_mutations
+            WHERE seq > @sinceSeq";
+
+        if (allowedProjects is not null && allowedProjects.Count > 0)
+        {
+            var projectParams = new List<string>();
+            for (int i = 0; i < allowedProjects.Count; i++)
+            {
+                var paramName = $"@proj{i}";
+                projectParams.Add(paramName);
+                cmd.Parameters.AddWithValue(paramName, allowedProjects[i]);
+            }
+            sql += $" AND project = ANY({{{string.Join(",", projectParams)}}})";
+        }
+
+        sql += " ORDER BY seq ASC LIMIT @limit";
+
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("@sinceSeq", sinceSeq);
+        cmd.Parameters.AddWithValue("@limit", limit + 1); // Fetch one extra to detect has_more
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            mutations.Add(new StoredMutation(
+                r.GetInt64(0), // seq
+                r.GetString(1), // project
+                r.GetString(2), // entity
+                r.GetString(3), // entity_key
+                r.GetString(4), // op
+                r.GetString(5), // payload
+                r.GetDateTime(6).ToString("O") // occurred_at
+            ));
+        }
+
+        bool hasMore = mutations.Count > limit;
+        long latestSeq = mutations.Count > 0 ? mutations[^1].Seq : sinceSeq;
+
+        if (hasMore)
+            mutations.RemoveAt(mutations.Count - 1); // Remove the extra item
+
+        return (mutations, hasMore, latestSeq);
+    }
+
+    public async Task<bool> IsProjectSyncEnabledAsync(string project, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COALESCE(sync_enabled, true)
+            FROM cloud_project_controls
+            WHERE project = @project";
+        cmd.Parameters.AddWithValue("@project", project);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || (bool)result;
+    }
+
+    public async Task InsertAuditEntryAsync(AuditEntry entry, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO cloud_sync_audit_log (project, action, outcome, contributor, entry_count, reason_code, created_at)
+            VALUES (@project, @action, @outcome, @contributor, @entry_count, @reason_code, NOW())";
+
+        cmd.Parameters.AddWithValue("@project", entry.Project);
+        cmd.Parameters.AddWithValue("@action", entry.Action);
+        cmd.Parameters.AddWithValue("@outcome", entry.Outcome);
+        cmd.Parameters.AddWithValue("@contributor", (object?)entry.Contributor ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@entry_count", entry.EntryCount);
+        cmd.Parameters.AddWithValue("@reason_code", (object?)entry.ReasonCode ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ICloudChunkStore Implementation (offline-first-sync Phase 1 - schema only)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public async Task WriteChunkAsync(
+        string project,
+        string chunkId,
+        string createdBy,
+        DateTime clientCreatedAt,
+        byte[] payload,
+        CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO cloud_chunks (chunk_id, project, payload, created_by, client_created_at)
+            VALUES (@chunk_id, @project, @payload, @created_by, @client_created_at)
+            ON CONFLICT (chunk_id) DO UPDATE SET
+                payload = EXCLUDED.payload";
+
+        cmd.Parameters.AddWithValue("@chunk_id", chunkId);
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@payload", payload);
+        cmd.Parameters.AddWithValue("@created_by", createdBy);
+        cmd.Parameters.AddWithValue("@client_created_at", clientCreatedAt);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<byte[]?> ReadChunkAsync(string project, string chunkId, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT payload FROM cloud_chunks WHERE chunk_id = @chunk_id AND project = @project";
+        cmd.Parameters.AddWithValue("@chunk_id", chunkId);
+        cmd.Parameters.AddWithValue("@project", project);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is byte[] bytes ? bytes : null;
+    }
+
+    public async Task<bool> ChunkExistsAsync(string project, string chunkId, CancellationToken ct = default)
+    {
+        await using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM cloud_chunks WHERE chunk_id = @chunk_id AND project = @project";
+        cmd.Parameters.AddWithValue("@chunk_id", chunkId);
+        cmd.Parameters.AddWithValue("@project", project);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
