@@ -197,7 +197,11 @@ engram-dotnet/
 │   │   └── EngramServer.cs        ← 30 endpoints (rutas + middleware integrados)
 │   ├── Engram.Mcp/                ← Servidor MCP (transporte stdio)
 │   │   ├── EngramMcpServer.cs     ← Bootstrap y configuración del servidor MCP
-│   │   └── EngramTools.cs         ← 19 herramientas + McpConfig (ENGRAM_USER)
+│   │   └── EngramTools.cs         ← 20 herramientas + McpConfig (ENGRAM_USER)
+│   ├── Engram.Diagnostics/        ← Health check del ecosistema
+│   │   ├── IDiagnosticService.cs  ← Interface del servicio
+│   │   ├── DiagnosticService.cs   ← DB, HTTP, MCP health checks
+│   │   └── Models/DiagnosticResult.cs ← DTOs (ComponentHealth, DiagnosticResult)
 │   ├── Engram.Sync/               ← Sync git-friendly (gzip + JSONL)
 │   │   └── EngramSync.cs          ← Export/import de chunks comprimidos
 │   ├── Engram.Verification/       ← Verificación de compliance contra spec.md
@@ -230,9 +234,12 @@ engram-dotnet/
 │   ├── Engram.HttpStore.Tests/    ← HttpStore end-to-end (30 tests)
 │   ├── Engram.Obsidian.Tests/     ← Export, hubs, slug, graph (47 tests)
 │   ├── Engram.Verification.Tests/ ← Spec parser, verifier, traceability (28 tests)
-│   └── Engram.MdGeneration.Tests/ ← Templates, slugs, promotion (17 tests)
+│   ├── Engram.MdGeneration.Tests/ ← Templates, slugs, promotion (17 tests)
+│   ├── Engram.Diagnostics.Tests/  ← Health check tests (27 tests)
+│   ├── Engram.Sync.Tests/         ← Offline-first sync tests
+│   └── Engram.Server.Tests/       ← Cloud sync tests
 
-**Total**: 332 tests (322 Facts + 10 Theories) en 28 archivos.
+**Total**: ~380 tests en ~30 archivos.
 └── config/
     ├── cursor/
     │   ├── mcp.json               ← Config MCP para Cursor
@@ -586,7 +593,7 @@ Cursor **NEVER halts** on FK miss.
 
 ## Herramientas MCP
 
-Las mismas 15 herramientas del proyecto original, organizadas en perfiles:
+Las mismas 19 herramientas del proyecto original + 1 nueva (mem_doctor), organizadas en perfiles:
 
 **Perfil `agent`** (por defecto — herramientas para agentes de IA):
 
@@ -612,5 +619,6 @@ Las mismas 15 herramientas del proyecto original, organizadas en perfiles:
 | `mem_stats` | Estadísticas del sistema |
 | `mem_timeline` | Contexto cronológico |
 | `mem_merge_projects` | Consolidar variantes de nombre de proyecto |
+| `mem_doctor` | Health check del ecosistema (DB, HTTP server, MCP config) |
 
 Selección de perfil: `engram mcp --tools=agent` (default) | `--tools=admin` | `--tools=all`

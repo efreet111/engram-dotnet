@@ -264,6 +264,7 @@ Las **19 herramientas** disponibles:
 | `mem_traceability` | Generar matriz de trazabilidad RF/RNF → código |
 | `mem_promote_to_md` | Promover observación a archivo .md en el repo |
 | `mem_sync_md_to_repo` | Sincronizar observaciones a .md en lote |
+| `mem_doctor` | Health check del ecosistema (DB, HTTP server, MCP config) |
 
 ---
 
@@ -307,6 +308,9 @@ engram projects consolidate         Consolidar proyectos similares
   --dry-run                         Solo mostrar qué se consolidaría
 engram projects prune               Podar proyectos vacíos
   --dry-run                         Solo mostrar qué se podaría
+
+engram doctor                       Health check del ecosistema
+  --server <url>                    URL del servidor (default: ENGRAM_SERVER_URL)
 
 engram promote --id <n>             Promover observación a archivo .md
   --md-dir <path>                   Directorio destino (default: docs/decisions/)
