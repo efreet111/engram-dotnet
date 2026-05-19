@@ -43,15 +43,20 @@ public sealed class PostgresStoreFixture : IAsyncLifetime
 
     /// <summary>
     /// Clean up all data between tests to ensure isolation.
-    /// Call this at the start of each test or use [Collection] with fixture.
     /// </summary>
     public async Task ResetAsync()
     {
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
-        // Use TRUNCATE with CASCADE to handle FK constraints properly
+        // Simple cleanup - delete from leaf tables first to avoid FK issues
         await using var cmd = new NpgsqlCommand(@"
-            TRUNCATE TABLE observations, user_prompts, sessions, sync_chunks, sync_mutations, sync_enrolled_projects, cloud_mutations RESTART IDENTITY CASCADE;
+            DELETE FROM cloud_mutations;
+            DELETE FROM sync_mutations;
+            DELETE FROM sync_enrolled_projects;
+            DELETE FROM sync_chunks;
+            DELETE FROM observations;
+            DELETE FROM user_prompts;
+            DELETE FROM sessions;
             DELETE FROM sync_state WHERE target_key != 'cloud';
         ", conn);
         await cmd.ExecuteNonQueryAsync();
