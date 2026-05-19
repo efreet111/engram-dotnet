@@ -49,15 +49,10 @@ public sealed class PostgresStoreFixture : IAsyncLifetime
     {
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
+        // Use TRUNCATE with CASCADE to handle FK constraints properly
         await using var cmd = new NpgsqlCommand(@"
-            DELETE FROM observations;
-            DELETE FROM user_prompts;
-            DELETE FROM sessions;
-            DELETE FROM sync_chunks;
+            TRUNCATE TABLE observations, user_prompts, sessions, sync_chunks, sync_mutations, sync_enrolled_projects, cloud_mutations RESTART IDENTITY CASCADE;
             DELETE FROM sync_state WHERE target_key != 'cloud';
-            DELETE FROM sync_mutations;
-            DELETE FROM sync_enrolled_projects;
-            DELETE FROM cloud_mutations;
         ", conn);
         await cmd.ExecuteNonQueryAsync();
     }
