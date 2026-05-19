@@ -138,10 +138,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
             CREATE TABLE IF NOT EXISTS sync_enrolled_projects (
                 project     TEXT NOT NULL,
-                "user"      TEXT NOT NULL DEFAULT '',
+                ""user""    TEXT NOT NULL DEFAULT '',
                 enrolled_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
                 enrolled_by TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (project, "user")
+                PRIMARY KEY (project, ""user"")
             );
         ");
 
