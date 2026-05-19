@@ -11,26 +11,86 @@ namespace Engram.Sync;
 /// Implements debounce + poll pattern with push/pull cycles, failure ceiling, and panic recovery.
 /// Design: sdd/offline-first-sync/design/design.md §AD-5
 /// </summary>
-public sealed class SyncManager : BackgroundService
+public sealed class SyncManager : BackgroundService, ISyncStatusProvider
 {
+    private static readonly Action<ILogger, Exception?> CycleStart =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(2000, "SyncCycleStart"),
+            "Sync cycle starting");
+
+    private static readonly Action<ILogger, SyncPhase, int, Exception?> CycleComplete =
+        LoggerMessage.Define<SyncPhase, int>(
+            LogLevel.Information,
+            new EventId(2001, "SyncCycleComplete"),
+            "Sync cycle completed: phase={Phase}, duration={DurationMs}ms");
+
+    private static readonly Action<ILogger, int, int, Exception?> CycleFailed =
+        LoggerMessage.Define<int, int>(
+            LogLevel.Error,
+            new EventId(2002, "SyncCycleFailed"),
+            "Sync cycle failed (failure {Failures}/{Max})");
+
+    private static readonly Action<ILogger, int, int, Exception?> PushBatch =
+        LoggerMessage.Define<int, int>(
+            LogLevel.Information,
+            new EventId(2003, "SyncPushBatch"),
+            "Sync pushing {Count} mutations across {Projects} projects");
+
+    private static readonly Action<ILogger, int, long, Exception?> PullBatch =
+        LoggerMessage.Define<int, long>(
+            LogLevel.Information,
+            new EventId(2004, "SyncPullBatch"),
+            "Sync pulled {Count} mutations (latest seq {Seq})");
+
+    private static readonly Action<ILogger, int, int, Exception?> DeferredReplay =
+        LoggerMessage.Define<int, int>(
+            LogLevel.Information,
+            new EventId(2005, "SyncDeferredReplay"),
+            "Sync replayed {Replayed} deferred relations ({Dead} dead)");
+
+    private static readonly Action<ILogger, Exception?> PanicExit =
+        LoggerMessage.Define(
+            LogLevel.Critical,
+            new EventId(2006, "SyncPanicExit"),
+            "SyncManager panic exit");
+
+    private static readonly Action<ILogger, SyncPhase, SyncPhase, Exception?> PhaseTransition =
+        LoggerMessage.Define<SyncPhase, SyncPhase>(
+            LogLevel.Debug,
+            new EventId(2007, "SyncPhaseTransition"),
+            "Sync phase transition: {FromPhase} → {ToPhase}");
+
+    private static readonly Action<ILogger, string, TimeSpan, Exception?> SyncManagerStarting =
+        LoggerMessage.Define<string, TimeSpan>(
+            LogLevel.Information,
+            new EventId(2008, "SyncManagerStarting"),
+            "SyncManager starting (target={TargetKey}, poll={PollInterval})");
+
     private readonly ILocalSyncStore _store;
     private readonly IMutationTransport _transport;
     private readonly SyncManagerConfig _cfg;
     private readonly ILogger<SyncManager> _logger;
+    private readonly SyncMetrics _metrics;
 
     private SyncPhase _phase = SyncPhase.Idle;
     private int _consecutiveFailures;
     private DateTime? _backoffUntil;
 
-    public SyncManager(ILocalSyncStore store, IMutationTransport transport, SyncManagerConfig cfg, ILogger<SyncManager> logger)
+    public SyncManager(ILocalSyncStore store, IMutationTransport transport, SyncManagerConfig cfg, ILogger<SyncManager> logger, SyncMetrics metrics)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
     }
 
     public SyncPhase Phase => _phase;
+    public bool IsEnabled => _cfg.Enabled;
+    public int ConsecutiveFailures => _consecutiveFailures;
+    public DateTime? BackoffUntil => _backoffUntil;
+    public SyncMetrics Metrics => _metrics;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -40,7 +100,7 @@ public sealed class SyncManager : BackgroundService
             return;
         }
 
-        _logger.LogInformation("SyncManager starting (target={TargetKey}, poll={PollInterval})", _cfg.TargetKey, _cfg.PollInterval);
+        SyncManagerStarting(_logger, _cfg.TargetKey, _cfg.PollInterval, null);
 
         try
         {
@@ -52,7 +112,7 @@ public sealed class SyncManager : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "SyncManager panic exit (stack trace logged)");
+            PanicExit(_logger, ex);
             throw;
         }
     }
@@ -66,14 +126,14 @@ public sealed class SyncManager : BackgroundService
         {
             if (_consecutiveFailures >= _cfg.MaxConsecutiveFailures)
             {
-                _phase = SyncPhase.Disabled;
-                _logger.LogError("SyncManager disabled: failure ceiling reached ({Failures}/{Max})", _consecutiveFailures, _cfg.MaxConsecutiveFailures);
+                SetPhase(SyncPhase.Disabled);
+                CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, null);
                 return;
             }
 
             if (_backoffUntil.HasValue && DateTime.UtcNow < _backoffUntil.Value)
             {
-                _phase = SyncPhase.Backoff;
+                SetPhase(SyncPhase.Backoff);
                 await Task.Delay(_cfg.DebounceDuration, ct);
                 continue;
             }
@@ -92,15 +152,17 @@ public sealed class SyncManager : BackgroundService
 
     private async Task CycleAsync(CancellationToken ct)
     {
-        // Check failure ceiling at start of cycle (AD-5 requirement)
         if (_consecutiveFailures >= _cfg.MaxConsecutiveFailures)
         {
-            _phase = SyncPhase.Disabled;
-            _logger.LogError("SyncManager cycle aborted: failure ceiling reached ({Failures}/{Max})", _consecutiveFailures, _cfg.MaxConsecutiveFailures);
+            SetPhase(SyncPhase.Disabled);
+            CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, null);
             return;
         }
 
         var failedDuringPush = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        CycleStart(_logger, null);
 
         try
         {
@@ -111,31 +173,39 @@ public sealed class SyncManager : BackgroundService
                 return;
             }
 
-            _phase = SyncPhase.Pushing;
-            failedDuringPush = true; // Still in push phase
+            SetPhase(SyncPhase.Pushing);
+            failedDuringPush = true;
             await PushAsync(ct);
-            failedDuringPush = false; // Push completed successfully
+            failedDuringPush = false;
 
             var replayResult = await _store.ReplayDeferredAsync(ct);
             if (replayResult.ReplayCount > 0)
-                _logger.LogInformation("SyncManager replayed {Replayed} deferred relations ({Dead} dead)", replayResult.ReplayCount, replayResult.DeadCount);
+            {
+                DeferredReplay(_logger, replayResult.ReplayCount, replayResult.DeadCount, null);
+                _metrics.RecordDeferred(replayResult.ReplayCount, replayResult.DeadCount);
+            }
 
-            _phase = SyncPhase.Pulling;
+            SetPhase(SyncPhase.Pulling);
             await PullAsync(ct);
 
-            _phase = SyncPhase.Healthy;
+            SetPhase(SyncPhase.Healthy);
             _consecutiveFailures = 0;
             _backoffUntil = null;
             await _store.MarkSyncHealthyAsync(_cfg.TargetKey, ct);
-            _logger.LogDebug("SyncManager cycle completed successfully");
+
+            _metrics.MarkSyncAt(DateTime.UtcNow);
+            CycleComplete(_logger, _phase, (int)sw.Elapsed.TotalMilliseconds, null);
         }
         catch (Exception ex)
         {
-            _phase = failedDuringPush ? SyncPhase.PushFailed : SyncPhase.PullFailed;
+            SetPhase(failedDuringPush ? SyncPhase.PushFailed : SyncPhase.PullFailed);
             _consecutiveFailures++;
             _backoffUntil = DateTime.UtcNow + CalculateBackoff();
             await _store.MarkSyncFailureAsync(_cfg.TargetKey, ex.Message, _backoffUntil.Value, ct);
-            _logger.LogError(ex, "SyncManager cycle failed (failure {Failures}/{Max})", _consecutiveFailures, _cfg.MaxConsecutiveFailures);
+
+            _metrics.IncrementFailures();
+            _metrics.RecordError(ex.Message);
+            CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, ex);
         }
         finally
         {
@@ -148,7 +218,6 @@ public sealed class SyncManager : BackgroundService
         var pending = await _store.ListPendingSyncMutationsAsync(_cfg.TargetKey, _cfg.PushBatchSize, ct);
         if (pending.Count == 0) { _logger.LogDebug("SyncManager push: no pending mutations"); return; }
 
-        // Check for non-enrolled projects before pushing (AD-5 step 4)
         var nonEnrolled = await _store.CountPendingNonEnrolledAsync(_cfg.TargetKey, ct);
         if (nonEnrolled.Count > 0)
         {
@@ -158,7 +227,7 @@ public sealed class SyncManager : BackgroundService
         }
 
         var byProject = pending.GroupBy(m => m.Project).ToList();
-        _logger.LogInformation("SyncManager pushing {Count} mutations across {Projects} projects", pending.Count, byProject.Count);
+        PushBatch(_logger, pending.Count, byProject.Count, null);
 
         foreach (var group in byProject)
         {
@@ -174,6 +243,7 @@ public sealed class SyncManager : BackgroundService
                 }
                 await _store.AckSyncMutationSeqsAsync(_cfg.TargetKey, result.AcceptedSeqs, ct);
                 _logger.LogDebug("SyncManager push acked {Count} mutations for project {Project}", result.AcceptedSeqs.Count, group.Key);
+                _metrics.IncrementPushed(result.AcceptedSeqs.Count);
             }
             catch (MutationTransportException ex) when (ex.StatusCode == 409)
             {
@@ -203,11 +273,23 @@ public sealed class SyncManager : BackgroundService
                 totalPulled++;
             }
 
-            _logger.LogDebug("SyncManager pulled {Count} mutations (latest seq {Seq})", result.Mutations.Count, sinceSeq);
+            PullBatch(_logger, result.Mutations.Count, sinceSeq, null);
             if (!result.HasMore) break;
         }
 
-        if (totalPulled > 0) _logger.LogInformation("SyncManager pulled {Total} mutations total", totalPulled);
+        if (totalPulled > 0)
+        {
+            _logger.LogInformation("SyncManager pulled {Total} mutations total", totalPulled);
+            _metrics.IncrementPulled(totalPulled);
+        }
+    }
+
+    private void SetPhase(SyncPhase newPhase)
+    {
+        var oldPhase = _phase;
+        if (oldPhase == newPhase) return;
+        _phase = newPhase;
+        PhaseTransition(_logger, oldPhase, newPhase, null);
     }
 
     private TimeSpan CalculateBackoff()

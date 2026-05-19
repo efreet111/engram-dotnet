@@ -2,7 +2,9 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Engram.Server.Dtos;
+using Engram.Sync;
 using Engram.Store;
 
 namespace Engram.Server;
@@ -80,6 +82,12 @@ public static class CloudSyncEndpoints
                 return Results.StatusCode(501);
 
             return await HandleListEnrolledProjectsAsync(ctx, cloudStore);
+        });
+
+        // Phase 4: Observability — GET /sync/status
+        app.MapGet("/sync/status", async (HttpContext ctx, IStore store) =>
+        {
+            return await HandleSyncStatusAsync(ctx, store);
         });
     }
 
@@ -353,6 +361,68 @@ public static class CloudSyncEndpoints
             projects = projects.Select(p => new { project = p.Project, enrolled_at = p.EnrolledAt, enrolled_by = p.EnrolledBy }).ToList(),
             count = projects.Count
         }, JsonOpts);
+    }
+
+    /// <summary>
+    /// Handle GET /sync/status — consolidated sync observability endpoint.
+    /// Resolves ISyncStatusProvider optionally (null-safe when SyncManager not registered).
+    /// </summary>
+    private static async Task<IResult> HandleSyncStatusAsync(HttpContext ctx, IStore store)
+    {
+        var provider = ctx.RequestServices.GetService<ISyncStatusProvider>();
+
+        SyncState? state = null;
+        List<SyncMutation> pending = [];
+        if (store is ILocalSyncStore localStore)
+        {
+            state = await localStore.GetSyncStateAsync("cloud", ctx.RequestAborted);
+            pending = await localStore.ListPendingSyncMutationsAsync("cloud", 0, ctx.RequestAborted);
+        }
+
+        List<EnrolledProject> enrolled = [];
+        if (store is ICloudMutationStore cloudStore)
+        {
+            var user = ctx.Request.Headers[EngramServer.UserHeader].FirstOrDefault() ?? "";
+            enrolled = await cloudStore.GetEnrolledProjectsAsync(user, ctx.RequestAborted);
+        }
+
+        var metrics = provider?.Metrics;
+        var phase = provider?.Phase ?? SyncPhase.Idle;
+
+        var response = new SyncStatusResponse(
+            SyncEnabled: provider?.IsEnabled ?? false,
+            Phase: phase.ToString().ToLowerInvariant(),
+            Target: "cloud",
+            Cursor: new StatusCursorBody(
+                LastPushedSeq: state?.LastAckedSeq ?? metrics?.TotalPushed ?? 0,
+                LastPulledSeq: state?.LastPulledSeq ?? metrics?.TotalPulled ?? 0,
+                LastEnqueuedSeq: state?.LastEnqueuedSeq ?? 0
+            ),
+            Health: new StatusHealthBody(
+                Status: phase switch
+                {
+                    SyncPhase.Disabled => "disabled",
+                    SyncPhase.Backoff or SyncPhase.PushFailed or SyncPhase.PullFailed => "degraded",
+                    _ => "healthy"
+                },
+                ConsecutiveFailures: state?.ConsecutiveFailures ?? provider?.ConsecutiveFailures ?? 0,
+                BackoffUntil: provider?.BackoffUntil?.ToString("O"),
+                LastError: state?.LastError ?? metrics?.LastError,
+                LastSyncAt: metrics?.LastSyncAt is DateTime lastSync && lastSync > DateTime.MinValue
+                    ? lastSync.ToString("O")
+                    : null
+            ),
+            Counts: new StatusCountsBody(
+                PendingPush: pending.Count,
+                TotalPushed: metrics?.TotalPushed ?? 0,
+                TotalPulled: metrics?.TotalPulled ?? 0,
+                DeferredPending: metrics?.DeferredReplayed ?? 0
+            ),
+            EnrolledProjects: enrolled.Select(e => e.Project).ToList(),
+            PausedProjects: []
+        );
+
+        return Results.Json(response, JsonOpts);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

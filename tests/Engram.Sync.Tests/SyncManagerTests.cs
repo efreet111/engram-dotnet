@@ -61,7 +61,7 @@ public sealed class SyncManagerTests
     public void SyncManager_InitialPhase_IsIdle()
     {
         // Arrange & Act
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Assert
         Assert.Equal(SyncPhase.Idle, syncManager.Phase);
@@ -89,7 +89,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -130,7 +130,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -163,7 +163,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -224,7 +224,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(config.TargetKey, config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, config, _loggerMock.Object, new SyncMetrics());
 
         // Act - Run multiple cycles to reach failure ceiling
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -261,7 +261,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(config.TargetKey, config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, config, _loggerMock.Object, new SyncMetrics());
 
         // Act - Run cycles past ceiling
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -321,7 +321,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -348,7 +348,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -375,7 +375,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -405,7 +405,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -447,7 +447,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -487,7 +487,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -528,7 +528,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);
@@ -575,7 +575,7 @@ public sealed class SyncManagerTests
         _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(_config.TargetKey, _config.LeaseOwner, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object);
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
 
         // Act
         await InvokeCycleAsync(syncManager, CancellationToken.None);

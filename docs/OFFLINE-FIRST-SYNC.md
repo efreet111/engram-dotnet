@@ -1,7 +1,7 @@
 # Offline-First Sync — Feature Index
 
-> **Feature Status**: ✅ Phase 1 & 2 Complete | 🔴 Phase 3 & 4 Pending
-> **Last Updated**: 2026-05-17
+> **Feature Status**: ✅ Phase 1 & 2 Complete | ✅ Phase 3 & 4 Complete
+> **Last Updated**: 2026-05-19
 > **Branch**: Merged to `main` (commit `7e2c900`)
 > **PR**: #14 (merged)
 > **Issue**: [#13](https://github.com/efreet111/engram-dotnet/issues/13)
@@ -18,7 +18,7 @@ Last-write-wins conflict resolution.
 
 **Total Effort**: 32–44h across 4 phases.
 
-**Current Progress**: Phase 1 & 2 complete (~22-30h). Phase 3 & 4 pending (~10-14h).
+**Current Progress**: Phase 1 & 2 & 3 & 4 complete (~32-44h).
 
 ---
 
@@ -28,8 +28,8 @@ Last-write-wins conflict resolution.
 |-------|--------|------------|-------|
 | **Phase 1**: Mutation Journal + Server Endpoints | ✅ Complete | 100% | 26 tests |
 | **Phase 2**: Autosync Manager | ✅ Complete | 100% | Included |
-| **Phase 3**: Enrollment + Conflict Handling | 🔴 Pending | 0% | - |
-| **Phase 4**: Observability | 🔴 Pending | 0% | - |
+| **Phase 3**: Enrollment + Conflict Handling | ✅ Complete | 100% | Included |
+| **Phase 4**: Observability | ✅ Complete | 100% | Included |
 
 ---
 
@@ -104,49 +104,46 @@ Background service that orchestrates push + pull cycles with debounce, backoff, 
 
 ---
 
-### Phase 3: Enrollment + Conflict Handling — 🔴 PENDING (6–8h)
+### Phase 3: Enrollment + Conflict Handling — ✅ COMPLETE (6–8h)
 
 Enrollment management and relation FK deferral strategy.
 
 **Specification**: [`docs/PHASE3-ENROLLMENT-SPEC.md`](PHASE3-ENROLLMENT-SPEC.md) — Full API contracts, implementation details, and testing strategy.
 
-**Missing Endpoints**:
-- ❌ `/sync/enroll` — Add project to enrollment list (POST, DELETE, GET)
-- ❌ `/sync/pause` — Admin pause with reason (POST to pause, DELETE to resume)
-- ❌ `EnrolledProjectsProvider` for pull scoping
-- ❌ `ReplayDeferredAsync` implementation — FK deferral → `sync_apply_deferred`
+**Implemented Endpoints**:
+- ✅ `/sync/enroll` — POST (enroll), DELETE (unenroll), GET (list enrolled)
+- ✅ `/sync/pause` — POST (pause with reason), DELETE (resume)
+- ✅ `EnrolledProjectsProvider` for pull scoping
+- ✅ `ReplayDeferredAsync` — FK deferral → `sync_apply_deferred`
 
-**Tables** (already exist, need endpoints):
-- ✅ `cloud_project_controls` (sync_enabled flag)
-- ✅ `sync_enrolled_projects` (enrollment list)
-- ✅ `sync_apply_deferred` (FK misses)
-
-**To Start Phase 3**:
-1. Implement `/sync/enroll` endpoint (POST, DELETE, GET) — Task 3.1 (2h)
-2. Implement `/sync/pause` endpoint (POST, DELETE) — Task 3.2 (1.5h)
-3. Implement `EnrolledProjectsProvider` service — Task 3.1
-4. Update `CloudSyncEndpoints.Pull` to use enrolled projects table — Task 3.3 (1h)
-5. Implement `ReplayDeferredAsync` in SqliteStore — Task 3.4 (1.5h)
-6. Add tests for enrollment, pause, and deferred replay — All tasks
-
-**Estimated Effort**: 6h total (see PHASE3-ENROLLMENT-SPEC.md for detailed breakdown)
+**Files**:
+- `src/Engram.Server/CloudSyncEndpoints.cs` — enrollment + pause endpoints
+- `src/Engram.Store/SqliteStore.cs` — `ReplayDeferredAsync` implementation
 
 ---
 
-### Phase 4: Observability — 🔴 PENDING (4–6h)
+### Phase 4: Observability — ✅ COMPLETE (4–6h)
 
 Monitoring, CLI, and docs.
 
-**Missing**:
-- ❌ `/sync/status` endpoint — cursor position, last sync, health
-- ❌ `engram sync status` CLI command — full implementation
-- ❌ SyncManager metrics via `ILogger` — push/pull counts, errors, phase
-- ❌ Sync setup documentation
+**Implemented**:
+- ✅ `/sync/status` endpoint — cursor position, last sync, health, counts
+- ✅ `SyncMetrics` — thread-safe counters via `Interlocked`
+- ✅ `ISyncStatusProvider` — phase, failures, backoff, metrics
+- ✅ `engram sync status` CLI command — formateado + `--json`
+- ✅ LoggerMessage source-gen (EventId 2000-2007)
+- ✅ SyncManager metrics integration — push/pull/error counters
+- ✅ `docs/SYNC-SETUP.md` — full setup guide
+- ✅ `docs/OFFLINE-FIRST-SYNC.md` — status updated
 
-**Existing** (partial):
-- ⚠️ `--status` option in CLI (line 294 of Program.cs) — may not be fully implemented
-
-**Specification**: Phase 4 spec TBD after Phase 3 completion.
+**Files**:
+- `src/Engram.Sync/SyncMetrics.cs` — counters + snapshot
+- `src/Engram.Sync/ISyncStatusProvider.cs` — status interface
+- `src/Engram.Sync/SyncManager.cs` — LoggerMessage + metrics
+- `src/Engram.Server/CloudSyncEndpoints.cs` — `GET /sync/status`
+- `src/Engram.Cli/Program.cs` — `sync status [--json]`
+- `docs/SYNC-SETUP.md` — setup documentation
+- `tests/Engram.Sync.Tests/SyncMetricsTests.cs` — unit tests
 
 ---
 

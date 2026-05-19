@@ -150,3 +150,47 @@ public sealed record EnrollmentListResponse(
 public sealed record EnrolledProjectItem(
     [property: JsonPropertyName("project")] string Project,
     [property: JsonPropertyName("enrolled_at")] string EnrolledAt);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Status Response DTOs (Phase 4.1)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Sync status cursor data — seq numbers for push/pull/enqueue progress.
+/// </summary>
+public sealed record StatusCursorBody(
+    [property: JsonPropertyName("last_pushed_seq")] long LastPushedSeq,
+    [property: JsonPropertyName("last_pulled_seq")] long LastPulledSeq,
+    [property: JsonPropertyName("last_enqueued_seq")] long LastEnqueuedSeq);
+
+/// <summary>
+/// Sync health data — status, failures, backoff, error info.
+/// </summary>
+public sealed record StatusHealthBody(
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("consecutive_failures")] int ConsecutiveFailures,
+    [property: JsonPropertyName("backoff_until")] string? BackoffUntil,
+    [property: JsonPropertyName("last_error")] string? LastError,
+    [property: JsonPropertyName("last_sync_at")] string? LastSyncAt);
+
+/// <summary>
+/// Sync counts data — pending push and accumulated totals.
+/// </summary>
+public sealed record StatusCountsBody(
+    [property: JsonPropertyName("pending_push")] int PendingPush,
+    [property: JsonPropertyName("total_pushed")] long TotalPushed,
+    [property: JsonPropertyName("total_pulled")] long TotalPulled,
+    [property: JsonPropertyName("deferred_pending")] int DeferredPending);
+
+/// <summary>
+/// Full sync status response — returned from GET /sync/status.
+/// </summary>
+public sealed record SyncStatusResponse(
+    [property: JsonPropertyName("sync_enabled")] bool SyncEnabled,
+    [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("target")] string Target,
+    [property: JsonPropertyName("cursor")] StatusCursorBody Cursor,
+    [property: JsonPropertyName("health")] StatusHealthBody Health,
+    [property: JsonPropertyName("counts")] StatusCountsBody Counts,
+    [property: JsonPropertyName("enrolled_projects")] IReadOnlyList<string> EnrolledProjects,
+    [property: JsonPropertyName("paused_projects")] IReadOnlyList<string> PausedProjects);

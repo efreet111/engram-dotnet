@@ -8,7 +8,9 @@
 //   engram stats            Show memory stats
 //   engram export [file]    Export to JSON
 //   engram import <file>    Import from JSON
-//   engram sync             Export/import gzip chunks
+//   engram sync status [--json]  Show mutation-based sync status
+//   engram sync export       Export gzip chunk
+//   engram sync import       Import gzip chunks
 //   engram projects         Manage projects
 //   engram obsidian-export   Export memories to Obsidian vault
 //   engram version          Print version
@@ -19,6 +21,7 @@ using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
 using Engram.Server;
+using Engram.Server.Dtos;
 using Engram.Store;
 using Engram.Sync;
 using Engram.Sync.Transport;
@@ -289,51 +292,96 @@ importCmd.SetHandler(async (string file) =>
 
 // ─── sync ─────────────────────────────────────────────────────────────────────
 
-var syncCmd       = new Command("sync", "Sync memories with git-friendly compressed chunks");
-var syncImportOpt = new Option<bool>("--import", "Import new chunks from sync dir");
-var syncStatusOpt = new Option<bool>("--status", "Show sync status");
-syncCmd.AddOption(syncImportOpt);
-syncCmd.AddOption(syncStatusOpt);
-syncCmd.SetHandler(async (bool doImport, bool doStatus) =>
+var syncCmd = new Command("sync", "Sync operations");
+
+// sync status — mutation-based sync health via HTTP
+var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+var syncStatusJsonOpt = new Option<bool>("--json", "Output as JSON (machine-readable)");
+syncStatusCmd.AddOption(syncStatusJsonOpt);
+syncStatusCmd.SetHandler(async (bool json) =>
+{
+    var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL") ?? "http://localhost:7437";
+    try
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var response = await client.GetAsync($"{serverUrl}/sync/status");
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (json)
+        {
+            Console.WriteLine(body);
+            return;
+        }
+
+        var doc = JsonSerializer.Deserialize<JsonElement>(body);
+        var enabled = doc.GetProperty("sync_enabled").GetBoolean();
+        var phase = doc.GetProperty("phase").GetString() ?? "";
+        var health = doc.GetProperty("health");
+        var counts = doc.GetProperty("counts");
+        var cursor = doc.GetProperty("cursor");
+
+        Console.WriteLine($"Sync status (mutation-based):");
+        Console.WriteLine($"  Enabled:              {enabled}");
+        Console.WriteLine($"  Phase:                {phase}");
+        Console.WriteLine($"  Health:               {health.GetProperty("status").GetString()}");
+        Console.WriteLine($"  Consecutive failures: {health.GetProperty("consecutive_failures").GetInt32()}");
+        Console.WriteLine($"  Backoff until:        {health.GetProperty("backoff_until").GetString() ?? "—"}");
+        Console.WriteLine($"  Last sync:            {health.GetProperty("last_sync_at").GetString() ?? "—"}");
+        Console.WriteLine($"  Last error:           {health.GetProperty("last_error").GetString() ?? "—"}");
+        Console.WriteLine($"  Pending push:         {counts.GetProperty("pending_push").GetInt32()}");
+        Console.WriteLine($"  Total pushed:         {counts.GetProperty("total_pushed").GetInt64()}");
+        Console.WriteLine($"  Total pulled:         {counts.GetProperty("total_pulled").GetInt64()}");
+        Console.WriteLine($"  Last pushed seq:      {cursor.GetProperty("last_pushed_seq").GetInt64()}");
+        Console.WriteLine($"  Last pulled seq:      {cursor.GetProperty("last_pulled_seq").GetInt64()}");
+    }
+    catch (HttpRequestException)
+    {
+        Console.Error.WriteLine("error: No se pudo conectar al servidor — ¿está engram server corriendo?");
+        Environment.Exit(1);
+    }
+    catch (TaskCanceledException)
+    {
+        Console.Error.WriteLine("error: No se pudo conectar al servidor — ¿está engram server corriendo? (timeout)");
+        Environment.Exit(1);
+    }
+}, syncStatusJsonOpt);
+
+// sync export — export git-friendly chunks
+var syncExportCmd = new Command("export", "Export a new chunk to sync dir");
+syncExportCmd.SetHandler(async () =>
 {
     var syncCfg = SyncConfig.FromEnvironment();
     if (!syncCfg.IsConfigured)
-    {
         Console.Error.WriteLine("warning: ENGRAM_SYNC_REPO is not set. Using local sync dir only.");
-    }
+
     using var store = OpenStore();
     var sync  = new EngramSync(store, syncCfg);
-
-    if (doStatus)
-    {
-        var status = await sync.GetStatusAsync();
-        Console.WriteLine($"""
-            Sync status:
-              Enabled:        {status.Enabled}
-              Repo:           {(string.IsNullOrEmpty(status.RepoUrl) ? "(not configured)" : status.RepoUrl)}
-              Branch:         {status.Branch}
-              Total chunks:   {status.TotalChunks}
-              Synced chunks:  {status.SyncedChunks}
-              Pending import: {status.PendingChunks}
-            """);
-        return;
-    }
-
-    if (doImport)
-    {
-        var imported = await sync.ImportNewChunksAsync();
-        Console.WriteLine(imported == 0
-            ? "No new chunks to import."
-            : $"Imported {imported} observations from new chunks.");
-        return;
-    }
-
-    // Default: export
     var wrote = await sync.ExportChunkAsync();
     Console.WriteLine(wrote
         ? "New chunk exported to sync dir."
         : "Nothing new to sync — all memories already exported.");
-}, syncImportOpt, syncStatusOpt);
+});
+
+// sync import — import git-friendly chunks
+var syncImportCmd = new Command("import", "Import new chunks from sync dir");
+syncImportCmd.SetHandler(async () =>
+{
+    var syncCfg = SyncConfig.FromEnvironment();
+    if (!syncCfg.IsConfigured)
+        Console.Error.WriteLine("warning: ENGRAM_SYNC_REPO is not set. Using local sync dir only.");
+
+    using var store = OpenStore();
+    var sync  = new EngramSync(store, syncCfg);
+    var imported = await sync.ImportNewChunksAsync();
+    Console.WriteLine(imported == 0
+        ? "No new chunks to import."
+        : $"Imported {imported} observations from new chunks.");
+});
+
+syncCmd.AddCommand(syncStatusCmd);
+syncCmd.AddCommand(syncExportCmd);
+syncCmd.AddCommand(syncImportCmd);
 
 // ─── promote ─────────────────────────────────────────────────────────────────
 

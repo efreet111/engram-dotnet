@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Engram.Store;
+using Engram.Sync;
+using Engram.Sync.Transport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -36,6 +38,22 @@ public static class EngramServer
 
         builder.Services.AddSingleton(store);
         builder.Services.AddSingleton(cfg);
+
+        // Offline-first sync (Phase 2.4) — SyncManager background service
+        var syncConfig = SyncManagerConfig.FromEnvironment();
+        if (syncConfig.Enabled)
+        {
+            builder.Services.AddHttpClient("sync");
+            builder.Services.AddSingleton(syncConfig);
+            builder.Services.AddSingleton<IMutationTransport>(sp =>
+            {
+                var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
+                return new MutationTransport(httpClient, $"http://localhost:{cfg.Port}", cfg.User);
+            });
+            builder.Services.AddSingleton<SyncMetrics>();
+            builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
+            builder.Services.AddHostedService<SyncManager>();
+        }
 
         // CORS (optional — driven by ENGRAM_CORS_ORIGINS)
         if (!string.IsNullOrEmpty(cfg.CorsOrigins))
@@ -87,7 +105,6 @@ public static class EngramServer
         app.MapGet("/projects/list",                 (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectList(ctx, store)));
         app.MapGet("/projects/stats",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectStats(ctx, store)));
         app.MapPost("/projects/prune",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectPrune(ctx, store)));
-        app.MapGet("/sync/status",                  (Func<IResult>)HandleSyncStatus);
         app.MapPost("/md/promote/{id:long}",        (Func<HttpContext, Task<IResult>>)((ctx) => HandlePromoteToMd(ctx, store)));
         app.MapPost("/md/sync",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleSyncMd(ctx, store)));
         app.MapPost("/md/index",                    (Func<HttpContext, Task<IResult>>)((ctx) => HandleGenerateIndex(ctx, store)));
@@ -460,9 +477,6 @@ public static class EngramServer
         var migrations = await store.GetProjectMigrationsAsync();
         return Json(migrations);
     }
-
-    private static IResult HandleSyncStatus() =>
-        Json(new { enabled = false, message = "background sync is not configured" });
 
     // ─── MD Promotion Handlers ──────────────────────────────────────────────
 
