@@ -41,25 +41,27 @@ Operational diagnostics and repair tools — port from Go upstream.
 
 ---
 
-### Offline-First Sync (planned)
+### Offline-First Sync (✅ COMPLETE)
 
 > **Feature Index**: [`docs/OFFLINE-FIRST-SYNC.md`](../docs/OFFLINE-FIRST-SYNC.md)
-> **Branch**: [`feat/offline-first-sync`](https://github.com/efreet111/engram-dotnet/tree/feat/offline-first-sync)
+> **Branch**: Merged to `main` (commit `e24fe85`)
 > **PR**: [#14](https://github.com/efreet111/engram-dotnet/pull/14)
 > **SDD Artifact**: [`../sdd/offline-first-sync/`](../sdd/offline-first-sync/)
-> **Esfuerzo estimado**: **32-44h** (4 fases)
+> **Esfuerzo total**: **~35h** (4 fases completas)
 
 Team sync: local SQLite ↔ PostgreSQL server (TrueNAS `192.168.0.178:7437`).
 Local es source of truth offline, server es source of truth online. Last-write-wins.
 
 > ⚠️ **Estimaciones corregidas vs propuesta original**. Análisis comparativo contra Go upstream reveló que Phase 1 y Phase 2 estaban subestimadas.
 
-| Fase | Contenido | Esfuerzo | Artefactos |
-|------|-----------|----------|------------|
-| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | [`proposal.md`](../sdd/offline-first-sync/propose/proposal.md) §Phase 1 |
-| 2 | Autosync manager + debounce + backoff | **12-16h** | [`design.md`](../sdd/offline-first-sync/design/design.md) §AD-5 |
-| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | [`tasks.md`](../sdd/offline-first-sync/tasks/tasks.md) §Phase 3 |
-| 4 | Dashboard + observability + CLI | **4-6h** | [`tasks.md`](../sdd/offline-first-sync/tasks/tasks.md) §Phase 4 |
+| Fase | Contenido | Esfuerzo | Status |
+|------|-----------|----------|--------|
+| 1 | Mutation journal + server endpoints (MVP push/pull) | **10-14h** | ✅ Complete |
+| 2 | Autosync manager + debounce + backoff | **12-16h** | ✅ Complete |
+| 3 | Enrollment + conflict resolution (deferred replay) | **6-8h** | ✅ Complete |
+| 4 | Observability + CLI + docs | **3.5h** | ✅ Complete |
+
+**Implementation**: 73 tests (72 passing, 1 requires Docker), 0 build errors, full SDD artifacts.
 
 **Go reference**: `internal/sync/sync.go` (1324l), `internal/cloud/remote/transport.go` (421l),
 `internal/cloud/autosync/manager.go` (703l), `internal/cloud/cloudserver/mutations.go` (349l)
