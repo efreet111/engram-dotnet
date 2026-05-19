@@ -1079,9 +1079,22 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<ExportData> ExportAsync()
     {
-        var sessions = QueryObservations(
-            "SELECT id, project, directory, started_at, ended_at, summary FROM sessions ORDER BY started_at",
-            Array.Empty<NpgsqlParameter>()).Select(ReadSessionFromObs).ToList();
+        var sessions = new List<Session>();
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions ORDER BY started_at";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                sessions.Add(new Session
+                {
+                    Id = r.GetString(0),
+                    Project = r.GetString(1),
+                    Directory = r.GetString(2),
+                    StartedAt = r.GetString(3),
+                    EndedAt = r.IsDBNull(4) ? null : r.GetString(4),
+                    Summary = r.IsDBNull(5) ? null : r.GetString(5),
+                });
+        }
 
         var observations = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,

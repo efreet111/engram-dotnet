@@ -32,12 +32,34 @@ public sealed class PostgresStoreFixture : IAsyncLifetime
             DataDir = "/tmp", // not used by PostgresStore but required by StoreConfig
         };
         Store = new PostgresStore(cfg);
+        await ResetAsync(); // Clean DB at startup
     }
 
     public async Task DisposeAsync()
     {
         Store?.Dispose();
         await _container.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Clean up all data between tests to ensure isolation.
+    /// Call this at the start of each test or use [Collection] with fixture.
+    /// </summary>
+    public async Task ResetAsync()
+    {
+        await using var conn = new NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(@"
+            DELETE FROM observations;
+            DELETE FROM user_prompts;
+            DELETE FROM sessions;
+            DELETE FROM sync_chunks;
+            DELETE FROM sync_state WHERE target_key != 'cloud';
+            DELETE FROM sync_mutations;
+            DELETE FROM sync_enrolled_projects;
+            DELETE FROM cloud_mutations;
+        ", conn);
+        await cmd.ExecuteNonQueryAsync();
     }
 }
 
