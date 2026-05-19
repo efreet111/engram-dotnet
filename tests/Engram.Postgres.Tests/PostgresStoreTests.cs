@@ -145,6 +145,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task RecentSessions_FiltersAndReturnsCorrectCount()
     {
+        await _fixture.ResetAsync();
         await _fixture.Store.CreateSessionAsync("s1", "proj-a", "/a");
         await _fixture.Store.CreateSessionAsync("s2", "proj-a", "/b");
         await _fixture.Store.CreateSessionAsync("s3", "proj-b", "/c");
@@ -367,6 +368,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task DeleteSession_DeletesAssociatedPrompts()
     {
+        await _fixture.ResetAsync();
         var sessionId = $"sess-with-prompts-{Guid.NewGuid():N}";
         await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
         await _fixture.Store.AddPromptAsync(new AddPromptParams
@@ -460,6 +462,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task ListProjectNames_ReturnsDistinctProjects()
     {
+        await _fixture.ResetAsync();
         await SeedSession();
         await SeedObservation("obs-1", "content", project: "alpha");
         await SeedObservation("obs-2", "content", project: "beta");
@@ -491,6 +494,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task MergeProjects_ReassignsObservations()
     {
+        await _fixture.ResetAsync();
         await SeedSession();
         await SeedObservation("obs-old", "content", project: "old-proj");
 
@@ -566,6 +570,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task Search_TopicKeyShortcut_RanksFirst()
     {
+        await _fixture.ResetAsync();
         await SeedSession();
         await _fixture.Store.AddObservationAsync(new AddObservationParams
         {
