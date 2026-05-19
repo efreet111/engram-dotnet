@@ -41,18 +41,19 @@ public static class EngramServer
 
         // Offline-first sync (Phase 2.4) — SyncManager background service
         var syncConfig = SyncManagerConfig.FromEnvironment();
-        if (syncConfig.Enabled)
+        if (syncConfig.Enabled && store is ILocalSyncStore localSyncStore)
         {
+            var syncMetrics = new SyncMetrics();
             builder.Services.AddHttpClient("sync");
             builder.Services.AddSingleton(syncConfig);
+            builder.Services.AddSingleton(syncMetrics);
             builder.Services.AddSingleton<IMutationTransport>(sp =>
             {
                 var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
                 return new MutationTransport(httpClient, $"http://localhost:{cfg.Port}", cfg.User);
             });
-            builder.Services.AddSingleton<SyncMetrics>();
             builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
-            builder.Services.AddHostedService<SyncManager>();
+            builder.Services.AddHostedService(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
         }
 
         // CORS (optional — driven by ENGRAM_CORS_ORIGINS)

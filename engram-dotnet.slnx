@@ -21,5 +21,6 @@
     <Project Path="tests/Engram.Postgres.Tests/Engram.Postgres.Tests.csproj" />
     <Project Path="tests/Engram.Sync.Tests/Engram.Sync.Tests.csproj" />
     <Project Path="tests/Engram.Verification.Tests/Engram.Verification.Tests.csproj" />
+    <Project Path="tests/Engram.Cli.Tests/Engram.Cli.Tests.csproj" />
   </Folder>
 </Solution>

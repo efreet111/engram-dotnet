@@ -31,6 +31,6 @@
 
 ## Phase 6: Testing
 
-- [ ] 6.1 Unit test: `SyncMetrics` — `RecordPush`/`RecordPull` incrementan counters, `RecordFailure`, `GetSnapshot` refleja valores, thread-safety con `Parallel.For`.
-- [ ] 6.2 Integration test: `GET /sync/status` devuelve 200 + JSON con estructura correcta (cursor, health, counts, enrolled_projects). Testear con PostgresStore via Testcontainers.
-- [ ] 6.3 Integration test: CLI `sync status` conecta a server real y parsea respuesta. Testear con `HttpClient` contra WebApplicationFactory.
+- [x] 6.1 Unit test: `SyncMetrics` — `RecordPush`/`RecordPull` incrementan counters, `RecordFailure`, `GetSnapshot` refleja valores, thread-safety con `Parallel.For`.
+- [x] 6.2 Integration test: `GET /sync/status` devuelve 200 + JSON con estructura correcta (cursor, health, counts, enrolled_projects). Testear con PostgresStore via Testcontainers.
+- [x] 6.3 Integration test: CLI `sync status` conecta a server real y parsea respuesta. Testear con `HttpClient` contra WebApplicationFactory.
