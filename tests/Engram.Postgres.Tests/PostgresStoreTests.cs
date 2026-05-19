@@ -36,7 +36,7 @@ public sealed class PostgresStoreFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        Store.Dispose();
+        Store?.Dispose();
         await _container.DisposeAsync();
     }
 }
