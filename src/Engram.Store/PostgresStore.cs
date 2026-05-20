@@ -255,6 +255,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         if (!ColumnExists("user_prompts", "deleted_at"))
             Exec("ALTER TABLE user_prompts ADD COLUMN deleted_at TIMESTAMPTZ");
 
+        // ─── Phase 3.1 migration: enrollment UNIQUE constraint ─────────────────
+        // sync_enrolled_projects needs UNIQUE(project, user) for ON CONFLICT
+        EnsureEnrollmentConstraint();
+
         // ─── Normalisation (idempotent) ────────────────────────────────────────
 
         Exec("UPDATE observations SET scope = 'project' WHERE scope IS NULL OR scope = ''");
@@ -286,6 +290,27 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         using var cmd = _db.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Ensure sync_enrolled_projects has UNIQUE constraint on (project, "user")
+    /// Required for ON CONFLICT in EnrollProjectAsync INSERT.
+    /// </summary>
+    private void EnsureEnrollmentConstraint()
+    {
+        try
+        {
+            Exec(@"
+                DO $$ BEGIN
+                    ALTER TABLE sync_enrolled_projects ADD CONSTRAINT unique_project_user UNIQUE (project, ""user"");
+                EXCEPTION
+                    WHEN duplicate_table THEN NULL;
+                END $$;");
+        }
+        catch
+        {
+            // Constraint may already exist — idempotent migration
+        }
     }
 
     // ─── Dedupe window expression (PostgreSQL dialect) ────────────────────────
