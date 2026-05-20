@@ -57,8 +57,9 @@ public static class EngramServer
                     : $"http://localhost:{cfg.Port}";
                 return new MutationTransport(httpClient, syncUrl, cfg.User);
             });
+            builder.Services.AddSingleton<SyncManager>(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
             builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
-            builder.Services.AddHostedService(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncManager>());
         }
 
         // CORS (optional — driven by ENGRAM_CORS_ORIGINS)
