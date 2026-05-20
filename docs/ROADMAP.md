@@ -37,6 +37,25 @@
 
 ---
 
+### 🌲 Logging Infrastructure (spec ✅ creado)
+
+> **Spec**: [`sdd/logging-infrastructure/specs/logging-infrastructure.md`](../sdd/logging-infrastructure/specs/logging-infrastructure.md)
+> **Esfuerzo estimado**: 2-3h
+> **Estado**: Spec creado — endpoints sin visibilidad de errores
+
+Agregar middleware de logging estructurado para todos los endpoints:
+
+| # | Feature | Descripción |
+|---|---------|-------------|
+| 1 | Request/Response logging middleware | Log method, path, status, duration |
+| 2 | POST body error debugging | Log body preview on deserialization errors |
+| 3 | Global exception handler | Catch + log + JSON response with error details |
+| 4 | Structured JSON logs | Machine-parseable log format |
+
+**Por qué**: Sin esto, los errores 500 devuelven body vacío sin logs — imposible debuggear en producción.
+
+---
+
 ### PostgreSQL Backend — Bug Fixes (backlog)
 
 > **Estado**: 3 tests skippeados — requieren investigación y fix
@@ -254,9 +273,9 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 
 | Orden | Feature | Por qué primero |
 |-------|---------|----------------|
-| 1 | **Upstream Phase 2 (resume)** | ~5/10 tasks hechas. Faltan: structured errors, mem_current_project, export project filter, watch/since. ~4-6h. |
-| 2 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. **Requiere crear SDD primero**. |
-| 3 | **Offline-First Sync** | Team necesita sync. ~32-44h, 4 fases. Prioridad alta para equipo. |
+| 1 | **🌲 Logging Infrastructure** | **🔥 CRÍTICO** — Sin esto no podemos debuggear errores en producción. Bloquea TODO. ~2-3h. |
+| 2 | **Upstream Phase 2 (resume)** | ~5/10 tasks hechas. Faltan: structured errors, mem_current_project, export project filter, watch/since. ~4-6h. |
+| 3 | **Doctor Diagnostic** | Go upstream tiene impl completa (~1264 líneas). Feature isolated, no deps. |
 | 4 | **TTL Configurable** | Proposal ya existe. Independiente. |
 | 5 | **Backend Config File** | Proposal ya existe. Mejora DX significativamente. |
 | 6 | **Phase 3 — Breaking** | Requiere Phase 2 (structured errors). Cambia contratos de API. |
