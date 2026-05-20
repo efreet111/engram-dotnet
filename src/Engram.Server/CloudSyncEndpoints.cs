@@ -63,18 +63,46 @@ public static class CloudSyncEndpoints
         // Phase 3.1: Enrollment endpoints
         app.MapPost("/sync/enroll", async (HttpContext ctx, IStore store) =>
         {
+            Console.Error.WriteLine(">>> DEBUG: POST /sync/enroll reached");
+            System.Diagnostics.Debug.WriteLine(">>> DEBUG: POST /sync/enroll reached");
+
             if (store is not ICloudMutationStore cloudStore)
                 return Results.StatusCode(501);
 
-            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("CloudSyncEndpoints");
+            Console.Error.WriteLine(">>> DEBUG: store is ICloudMutationStore");
             try
             {
-                logger.LogInformation("Enrolling project...");
-                return await HandleEnrollProjectAsync(ctx, cloudStore);
+                var body = await ReadJsonAsync<EnrollmentRequest>(ctx, 1024 * 1024);
+                Console.Error.WriteLine($">>> DEBUG: body parsed: {body?.Project}");
+
+                if (body is null || string.IsNullOrEmpty(body.Project))
+                    return ErrorJson(ctx, "project is required", "invalid-request", 400);
+
+                var user = ctx.Request.Headers[EngramServer.UserHeader].FirstOrDefault() ?? "anonymous";
+                Console.Error.WriteLine($">>> DEBUG: user={user}, project={body.Project}");
+
+                var result = await cloudStore.EnrollProjectAsync(body.Project, user, ctx.RequestAborted);
+                Console.Error.WriteLine($">>> DEBUG: enroll result: {result?.Status}");
+
+                if (result.Status == "already_enrolled")
+                {
+                    return Results.Json(
+                        new { error = "project already enrolled", project = body.Project },
+                        JsonOpts,
+                        statusCode: 409);
+                }
+
+                return Results.Json(new
+                {
+                    project = result.Project,
+                    enrolled_at = result.EnrolledAt ?? DateTime.UtcNow.ToString("O"),
+                    enrolled_by = result.EnrolledBy ?? user
+                }, JsonOpts);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Enroll failed");
+                Console.Error.WriteLine($">>> DEBUG ERROR: {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine(ex.ToString());
                 return Results.Json(new { error = ex.Message, type = ex.GetType().Name }, JsonOpts, statusCode: 500);
             }
         });
@@ -440,14 +468,23 @@ public static class CloudSyncEndpoints
 
     private static async Task<T?> ReadJsonAsync<T>(HttpContext ctx, long maxBytes)
     {
-        ctx.Request.EnableBuffering();
-        
-        if (ctx.Request.ContentLength > maxBytes)
-            return default;
+        try
+        {
+            ctx.Request.EnableBuffering();
+            
+            if (ctx.Request.ContentLength > maxBytes)
+                return default;
 
-        var body = await JsonSerializer.DeserializeAsync<T>(ctx.Request.Body, JsonOpts);
-        ctx.Request.Body.Position = 0;
-        return body;
+            var body = await JsonSerializer.DeserializeAsync<T>(ctx.Request.Body, JsonOpts);
+            ctx.Request.Body.Position = 0;
+            return body;
+        }
+        catch (Exception ex)
+        {
+            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ReadJson");
+            logger.LogError(ex, "ReadJsonAsync failed");
+            return default;
+        }
     }
 
     private static IResult ErrorJson(HttpContext ctx, string error, string errorCode, int status, string? project = null)
