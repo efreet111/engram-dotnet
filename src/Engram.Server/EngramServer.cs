@@ -50,7 +50,12 @@ public static class EngramServer
             builder.Services.AddSingleton<IMutationTransport>(sp =>
             {
                 var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
-                return new MutationTransport(httpClient, $"http://localhost:{cfg.Port}", cfg.User);
+                // Use ENGRAM_SERVER_URL if set (remote sync), otherwise fallback to localhost
+                var remoteUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+                var syncUrl = !string.IsNullOrEmpty(remoteUrl)
+                    ? remoteUrl.TrimEnd('/')
+                    : $"http://localhost:{cfg.Port}";
+                return new MutationTransport(httpClient, syncUrl, cfg.User);
             });
             builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
             builder.Services.AddHostedService(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
