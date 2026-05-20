@@ -4,7 +4,47 @@
 
 Memoria persistente para agentes de IA. Fork a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
 
-Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex — solo se cambia `ENGRAM_URL`.
+**¿Por qué .NET 10?** Tipos fuertes, rendimiento nativo (AOT-ready), facilidad de despliegue en entornos enterprise Windows/Linux, y un ecosistema maduro para equipos que ya usan .NET. Misma API que el original — solo cambia `ENGRAM_URL`.
+
+Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex.
+
+---
+
+## 🏗️ Arquitectura
+
+```
+AGENTE DE IA                   ENGRAM-DOTNET                PERSISTENCIA
+(Claude/OpenCode/Cursor)                                    
+       │                                                     
+       ├── MCP stdio ──► engram mcp ───────►┐               
+       │                                     │               
+       │                          ┌──────────┴──────────┐    
+       │                          │  EngramServer (.NET) │    
+       └── HTTP REST ────────────►│  30 endpoints REST   │    
+                                  │  24 herramientas MCP │    
+                                  └──────────┬──────────┘    
+                                             │                
+                          ┌──────────────────┼──────────────────┐
+                          ▼                  ▼                  ▼
+                    ┌──────────┐      ┌────────────┐     ┌──────────┐
+                    │ SQLite   │      │ PostgreSQL │     │ Servidor │
+                    │ Local    │◄────►│ Remoto     │     │ Remoto   │
+                    │ (default)│ Sync │ (equipo)   │     │ (HttpStore)
+                    └──────────┘      └────────────┘     └──────────┘
+```
+
+**¿Cómo se ve una "memoria"?**
+
+```json
+{
+  "id": 1, "title": "Decisión: usar PostgreSQL", 
+  "content": "**What**: ... **Why**: ... **Where**: ... **Learned**: ...",
+  "type": "decision", "project": "team/mi-api", "scope": "team",
+  "topic_key": "architecture/db-choice", "created_at": "2026-05-20T..."
+}
+```
+
+Eso guarda el agente cuando llama `mem_save`. Después lo busca con `mem_search`. Simple.
 
 ---
 
@@ -51,7 +91,7 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET_KEY=cloud ./engram serve
 | Feature | Estado | Docs |
 |---------|--------|------|
 | **REST API** (30 endpoints) | ✅ Complete | [API Reference](docs/API-REFERENCE.md) |
-| **MCP Server** (19 tools) | ✅ Complete | — |
+| **MCP Server** (19 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
 | **Offline-First Sync** | ✅ Complete (4 phases) | [Sync Setup](docs/SYNC-SETUP.md) |
 | **Multi-User Isolation** | ✅ RFC-002 | [Multi-User](docs/MULTI-USER.md) |
 | **TTL Configurable** | ✅ Archived | — |

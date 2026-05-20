@@ -8,9 +8,12 @@
 
 ### Requisitos
 
-- Linux x64
-- .NET 10 SDK (solo para compilar)
-- Sin runtime externo — el binario es self-contained
+- **Linux x64** (para el binario publicado)
+- **.NET 10 SDK** ([descargar](https://dotnet.microsoft.com/download/dotnet/10.0)) — solo para compilar desde fuente
+- Opcional: **Docker** si querés PostgreSQL en vez de SQLite
+- Sin runtime externo requerido en producción — el binario es **self-contained**
+
+> 💡 **¿Windows o macOS?** Cambiá `-r linux-x64` por `-r win-x64` o `-r osx-x64` al compilar.
 
 ### Instalación
 
