@@ -1,152 +1,89 @@
-[← Volver al README](../README.md)
-
-# Guía de desarrollo — engram-dotnet
+# Development Guide — engram-dotnet
 
 ---
 
-## Requisitos
+## Requirements
 
-- .NET 10 SDK (`dotnet --version` debe mostrar `10.x.x`)
-- Linux, macOS o Windows (el binario de producción es linux-x64)
-
-Instalar .NET 10 SDK: https://dotnet.microsoft.com/download/dotnet/10.0
+- .NET 10 SDK (`dotnet --version` should show `10.x.x`)
+- Linux, macOS or Windows (production binary is linux-x64)
 
 ---
 
-## Compilar
-
-```bash
-# Clonar
-git clone https://github.com/efreet111/engram-dotnet
-cd engram-dotnet
-
-# Restaurar dependencias
-dotnet restore
-
-# Compilar toda la solución
-dotnet build
-```
-
----
-
-## Correr en modo desarrollo
-
-```bash
-# Servidor HTTP en puerto 7437
-dotnet run --project src/Engram.Cli -- serve
-
-# Servidor MCP (stdio) — modo local
-dotnet run --project src/Engram.Cli -- mcp
-
-# Servidor MCP en modo proxy (apunta a un servidor remoto)
-ENGRAM_URL=http://localhost:7437 ENGRAM_USER=dev.local \
-  dotnet run --project src/Engram.Cli -- mcp
-
-# Buscar
-dotnet run --project src/Engram.Cli -- search "auth"
-
-# Con variables de entorno personalizadas
-ENGRAM_DATA_DIR=/tmp/engram-dev dotnet run --project src/Engram.Cli -- serve
-```
-
----
-
-## Tests
-
-```bash
-# Todos los tests (124 en total)
-dotnet test
-
-# Por suite
-dotnet test tests/Engram.Store.Tests        # 51 — SQLite, dedup, FTS5
-dotnet test tests/Engram.Server.Tests       # 16 — HTTP endpoints
-dotnet test tests/Engram.Mcp.Tests          # 32 — herramientas MCP + McpConfig
-dotnet test tests/Engram.HttpStore.Tests    # 25 — HttpStore end-to-end con servidor real
-
-# Con output detallado
-dotnet test --logger "console;verbosity=detailed"
-
-# Con cobertura
-dotnet test --collect:"XPlat Code Coverage"
-```
-
-### Tests de paridad (Go vs .NET)
-
-Los tests de paridad verifican que engram-dotnet produce resultados idénticos al binario Go original para las mismas operaciones — especialmente la lógica de deduplicación.
-
-```bash
-# Requiere tener el binario Go en PATH como "engram-go"
-cd tests/parity
-./run_parity.sh
-```
-
----
-
-## Publicar binario self-contained
-
-```bash
-# Binario linux-x64 self-contained (para deploy en servidor)
-dotnet publish src/Engram.Cli \
-  -c Release \
-  -r linux-x64 \
-  --self-contained \
-  -o dist/
-
-# El binario queda en dist/engram
-./dist/engram version
-```
-
----
-
-## Estructura de la solución
+## Project Structure
 
 ```
-engram-dotnet.slnx         ← solución (9 proyectos)
 src/
-  Engram.Store/            ← core: SQLite + FTS5 + dedup + HttpStore proxy
-  Engram.Server/           ← HTTP REST API (librería)
-  Engram.Mcp/              ← MCP server (librería)
-  Engram.Sync/             ← Git sync (librería)
-  Engram.Cli/              ← entry point ejecutable
+├── Engram.Store/        ← Storage engine: IStore + 3 implementations
+│   ├── IStore.cs        ← Core interface (35+ methods)
+│   ├── SqliteStore.cs   ← SQLite implementation
+│   ├── PostgresStore.cs ← PostgreSQL implementation
+│   └── HttpStore.cs     ← Remote server proxy (via HTTP)
+├── Engram.Server/       ← HTTP REST API (ASP.NET Core Minimal APIs)
+│   ├── EngramServer.cs  ← 33 route handlers + DI
+│   └── CloudSyncEndpoints.cs ← 8 sync route handlers
+├── Engram.Sync/         ← Offline-first sync engine
+│   ├── SyncManager.cs   ← Background sync service
+│   └── Transport/       ← HTTP transport for sync
+├── Engram.Mcp/          ← MCP server (stdio transport, 27 tools)
+├── Engram.Diagnostics/  ← Doctor diagnostic tools
+├── Engram.Obsidian/     ← Obsidian vault export
+├── Engram.MdGeneration/ ← Markdown promotion tools
+└── Engram.Cli/          ← CLI entry point (System.CommandLine)
+
 tests/
-  Engram.Store.Tests/      ← unitarios + integración + paridad (51)
-  Engram.Server.Tests/     ← HTTP con WebApplicationFactory (16)
-  Engram.Mcp.Tests/        ← herramientas MCP + McpConfig (32)
-  Engram.HttpStore.Tests/  ← HttpStore end-to-end con servidor real (25)
-docs/                      ← documentación
-config/                    ← archivos de configuración para Cursor y VS Code
+├── Engram.Store.Tests/       ← 170 store tests
+├── Engram.Server.Tests/      ← 63 HTTP API tests
+├── Engram.Sync.Tests/        ← 32 sync tests
+├── Engram.Mcp.Tests/         ← 61 MCP tool tests
+├── Engram.Postgres.Tests/    ← PostgreSQL-specific tests
+└── Engram.Diagnostics.Tests/ ← Diagnostics tests
 ```
 
 ---
 
-## Convenciones de código
+## Running Tests
 
-- **Nullable**: habilitado en todos los proyectos (`<Nullable>enable</Nullable>`)
-- **Implicit usings**: habilitado
-- **Records** para tipos inmutables (modelos de dominio)
-- **Classes** para tipos mutables (params, config)
-- **JSON**: `[JsonPropertyName("snake_case")]` en todos los modelos para mantener compatibilidad con la API Go
-- **Async**: todos los métodos de IStore son `Task<T>` — no bloquear con `.Result` o `.Wait()`
-- **SQL**: directo en `SqliteStore.cs` como constantes `string` — sin ORM
+```bash
+# All tests (except Docker-dependent)
+dotnet test --filter "Category!=RequiresDocker"
+
+# Specific project
+dotnet test tests/Engram.Store.Tests/
+
+# Specific test
+dotnet test --filter "FullyQualifiedName~Search"
+```
 
 ---
 
-## Agregar un nuevo comando CLI
+## Building
 
-1. Crear `src/Engram.Cli/Commands/MiComandoCommand.cs`
-2. Definir `Command BuildCommand()` que retorna un `System.CommandLine.Command`
-3. Registrar en `Program.cs` con `rootCommand.AddCommand(MiComandoCommand.BuildCommand())`
+```bash
+# Development build
+dotnet build
+
+# Production binary (self-contained)
+dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
+
+# Run locally
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Engram.Cli -- serve
+```
 
 ---
 
-## Convenciones de commit
+## Adding a New Endpoint
 
-Conventional commits — sin atribución de AI:
+1. Add the route handler in `EngramServer.cs`
+2. Add the method to `IStore` (if store logic needed)
+3. Implement in `SqliteStore.cs`, `PostgresStore.cs`, `HttpStore.cs`
+4. Add tests
 
-```
-feat(cli): add --json flag to search command
-fix(store): prevent duplicate insert on retry within window
-docs(architecture): add dedup flow diagram
-refactor(store): extract hash normalization to Normalizers.cs
-chore(deps): bump Microsoft.Data.Sqlite to 9.0.5
-```
+---
+
+## Architecture Notes
+
+- **No MediatR, no CQRS, no Clean Architecture** — just minimal APIs + DI
+- **Strategy Pattern**: `IStore` interface with 3 implementations
+- **No controllers** — all routes are minimal API lambdas
+- **State is NOT shared** — each request is stateless
+- The complexity is in the **features**, not the framework

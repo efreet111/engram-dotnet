@@ -1,65 +1,58 @@
-# Multi-User Isolation — Guía de Uso
+# Multi-User Isolation
 
-> **RFC**: [RFC-002](rfcs/RFC-002-multi-user-isolation.md)
-
----
-
-## ¿Qué es?
-
-El aislamiento multi-usuario permite que múltiples desarrolladores compartan un servidor Engram centralizado manteniendo sus memorias **personales** aisladas, mientras las memorias **team** son compartidas.
+> **RFC**: [`rfcs/RFC-002-multi-user-isolation.md`](rfcs/RFC-002-multi-user-isolation.md)  
+> **Requires**: `ENGRAM_USER` environment variable
 
 ---
 
-## Conceptos clave
+## What Is It?
+
+Multi-user isolation allows multiple developers to share a single Engram server without their personal memories leaking into each other's context.
+
+Each developer has:
+- **Personal memories**: Only they can see (namespaced as `personal:{user}/*`)
+- **Team memories**: Visible to all enrolled developers (`team/*`)
+
+---
+
+## Key Concepts
 
 ### Scopes
 
-| Scope | Visibilidad | Ejemplo |
-|-------|-------------|---------|
-| `team` | Todos los devs del equipo | Decisiones de arquitectura, bugfixes críticos |
-| `personal:{user}` | Solo el dev dueño | Tool usage, comandos, file changes |
+| Scope | Visibility | Storage | Example |
+|-------|-----------|---------|---------|
+| `team` | Everyone on the server | `team/{project}` | `team/mi-api`, `team/frontend` |
+| `personal` | Only the creator | `personal:{user}/{project}` | `personal:victor.silgado/debug` |
 
-### Identidad del usuario
+### User identity
 
-El servidor identifica a cada dev mediante el header `X-Engram-User`:
+Each developer identifies via the `X-Engram-User` HTTP header or the `ENGRAM_USER` environment variable.
 
-1. **Explícita**: Variable de entorno `ENGRAM_USER=victor.silgado`
-2. **Implícita**: Usuario del sistema operativo (`Environment.UserName`)
+```
+Agent calls mem_save
+  → scope: team → project = team/{project}
+  → scope: personal → project = personal:{user}/{project}
+```
 
 ---
 
-## Configuración
+## Configuration
 
-### Servidor centralizado
+### Server (no changes needed)
 
-No requiere configuración especial — el aislamiento es automático.
+The server automatically handles namespacing. No special config required.
 
-```bash
-# Server (TrueNAS, Linux, etc.)
-./engram serve --port 7437
-```
-
-### Cliente MCP (cada dev)
-
-```bash
-# ~/.engram/config.json o variables de entorno
-ENGRAM_URL=http://192.168.0.178:7437
-ENGRAM_USER=victor.silgado  # ← Identidad explícita
-```
-
-### Opencode / Cursor config
+### Client (each developer)
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "engram": {
-        "command": "/home/user/.local/bin/engram",
-        "args": ["mcp", "--project", "my-api"],
-        "env": {
-          "ENGRAM_URL": "http://192.168.0.178:7437",
-          "ENGRAM_USER": "victor.silgado"
-        }
+  "mcpServers": {
+    "engram": {
+      "command": "engram",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_URL": "http://192.168.0.178:7437",
+        "ENGRAM_USER": "victor.silgado"  // ← YOUR unique identity
       }
     }
   }
@@ -68,226 +61,87 @@ ENGRAM_USER=victor.silgado  # ← Identidad explícita
 
 ---
 
-## Comportamiento
+## Behavior
 
-### Guardado de memorias
+### Saving memories
 
-#### Scope `team` (compartido)
-
-```json
-// mem_save con type=architecture
-{
-  "project": "my-api",
-  "scope": "team",
-  "type": "architecture",
-  "title": "JWT auth implementation",
-  "content": "..."
-}
-```
-
-**Resultado**: `project = "team/my-api"` — visible para todos.
-
-#### Scope `personal` (aislado)
-
-```json
-// mem_save con type=tool_use (auto-classified)
-{
-  "project": "my-api",
-  "scope": "personal",
-  "type": "tool_use",
-  "title": "Debugging session",
-  "content": "..."
-}
-```
-
-**Resultado**: `project = "victor.silgado/my-api"` — solo visible para `victor.silgado`.
-
-### Búsquedas
-
-#### Sin scope filter (wide-read)
-
-```bash
-mem_search query="auth"
-```
-
-**Comportamiento**:
-- Dev A ve: `team/*` + `personal:A/*`
-- Dev B ve: `team/*` + `personal:B/*`
-
-#### Con scope filter
-
-```bash
-mem_search query="auth" scope="team"
-```
-
-**Comportamiento**: Solo memorias `team/*` para todos.
-
----
-
-## Casos de uso
-
-### 1. Equipo nuevo — configurar identidades
-
-```bash
-# Cada dev configura su identidad
-# Dev 1
-export ENGRAM_USER=ana.gomez
-
-# Dev 2
-export ENGRAM_USER=juan.perez
-
-# Dev 3
-export ENGRAM_USER=victor.silgado
-```
-
-### 2. Memorias personales no se filtran
-
-```bash
-# Ana guarda debugging session
-mem_save --type tool_use --scope personal \
-  "Debug: null pointer en UserService"
-
-# Resultado: project = "ana.gomez/my-api"
-# Juan y Victor NO ven esta memoria
-```
-
-### 3. Decisiones compartidas
-
-```bash
-# Ana guarda decisión de arquitectura
-mem_save --type architecture --scope team \
-  "JWT vs Session authentication"
-
-# Resultado: project = "team/my-api"
-# Todo el equipo ve esta memoria
-```
-
-### 4. Migración de proyecto legacy
-
-Si ya tenías memorias sin namespacing:
-
-```bash
-# Listar proyectos
-engram projects list
-
-# Consolidar variantes
-engram projects consolidate --all
-
-# Podar proyectos vacíos
-engram projects prune --dry-run
-```
-
----
-
-## Verificación
-
-### Chequear identidad actual
-
-```bash
-# Desde el cliente MCP
-mem_current_project
-
-# Output esperado
-{
-  "project": "my-api",
-  "project_source": "git_remote",
-  "project_path": "/home/victor/proyectos/my-api",
-  "cwd": "/home/victor/proyectos/my-api",
-  "user": "victor.silgado"  # ← Identidad activa
-}
-```
-
-### Chequear aislamiento
-
-```bash
-# Dev A guarda memoria personal
-mem_save --scope personal --type tool_use \
-  "Test isolation"
-
-# Dev B busca la misma memoria
-mem_search query="Test isolation"
-
-# Resultado: 0 resultados (aislamiento funciona)
-
-# Dev B busca solo team
-mem_search query="Test isolation" scope="team"
-
-# Resultado: 0 resultados (es personal de Dev A)
-```
-
----
-
-## Troubleshooting
-
-### Problema: Memorias personales son visibles para otros
-
-**Causa**: `ENGRAM_USER` no está configurado — todos usan `global`.
-
-**Solución**:
-```bash
-# Configurar identidad explícita
-export ENGRAM_USER=victor.silgado
-
-# Reiniciar servidor MCP
-```
-
-### Problema: Header `X-Engram-User` no llega al servidor
-
-**Causa**: `HttpStore` no está enviando el header.
-
-**Solución**:
 ```csharp
-// Verificar Engram.Store/HttpStore.cs
-// Debe incluir:
-_request.DefaultRequestHeaders.Add("X-Engram-User", _config.User);
+// In SqliteStore.NormalizeProject()
+if (scope == "personal")
+{
+    if (v.StartsWith("personal:") || v.StartsWith("project:"))
+        return v;  // Already namespaced, keep it
+    return $"personal:{userId}";  // Namespace with identity
+}
 ```
 
-### Problema: Conflicto de nombres de proyecto
+### Searching
 
-**Causa**: Dos devs usan el mismo nombre de proyecto sin namespacing.
+- **Without scope filter**: Searches ALL projects the user has access to
+- **With scope filter**: `scope=team` or `scope=personal` limits results
 
-**Solución**:
-```bash
-# Listar proyectos duplicados
-engram projects list
+### Audit trail
 
-# Consolidar con namespacing
-engram projects consolidate --all
+```csharp
+// In CloudSyncEndpoints (pause/resume)
+var pausedBy = ctx.Request.Headers["X-Engram-User"].FirstOrDefault() ?? "admin";
 ```
 
 ---
 
-## Compatibilidad Legacy
+## Use Cases
 
-### Modo single-user (sin `ENGRAM_USER`)
-
-Si `ENGRAM_USER` no está configurado, el servidor usa identidad `global`:
-
-- Todas las memorias `personal` → `global/*`
-- Todas las memorias `team` → `team/*`
-
-**Recomendación**: Configurar `ENGRAM_USER` para todos los devs nuevos.
-
-### Migración desde legacy
+### 1. New team — configure identities
 
 ```bash
-# 1. Backup
-engram export backup-legacy.json
-
-# 2. Configurar identidades
+# Each developer sets their identity
 export ENGRAM_USER=victor.silgado
+export ENGRAM_URL=http://192.168.0.178:7437
+```
 
-# 3. Listar proyectos legacy
-engram projects list
+### 2. Personal memories don't leak
 
-# 4. Consolidar con namespacing
-engram projects consolidate --all
+```bash
+# Victor saves a personal note
+curl -X POST http://server:7437/observations \
+  -H "X-Engram-User: victor" \
+  -d '{"session_id":"s1","title":"Victor's personal note","type":"manual","project":"team/mi-api","scope":"personal"}'
+
+# Juan searches → DOESN'T see Victor's note
+curl -H "X-Engram-User: juan" http://server:7437/search?q=personal
+# → [] (empty)
+```
+
+### 3. Shared decisions
+
+```bash
+# Victor saves a team decision
+curl -X POST http://server:7437/observations \
+  -H "X-Engram-User: victor" \
+  -d '{"session_id":"s1","title":"Decision: use PostgreSQL","type":"architecture","project":"team/mi-api","scope":"team"}'
+
+# Both Victor and Juan can see it
+curl -H "X-Engram-User: juan" http://server:7437/search?q=PostgreSQL
+# → [Decision: use PostgreSQL]
 ```
 
 ---
 
-## Ver también
+## Verification
 
-- [RFC-002](rfcs/RFC-002-multi-user-isolation.md) — RFC técnico
-- [TEAM-SETUP.md](TEAM-SETUP.md) — Configuración de equipo
-- [SYNC.md](SYNC.md) — Git-based sync para distribuir memorias
+```bash
+# Test isolation end-to-end
+# 1. Victor enrolls
+curl -X POST http://server:7437/sync/enroll -H "X-Engram-User: victor" -d '{"project":"team/mi-api"}'
+
+# 2. Juan enrolls (different project)
+curl -X POST http://server:7437/sync/enroll -H "X-Engram-User: juan" -d '{"project":"team/frontend"}'
+
+# 3. Victor sees only his enrolled project
+curl -H "X-Engram-User: victor" http://server:7437/sync/enroll
+# → {"projects":[{"project":"team/mi-api"}],"count":1}
+
+# 4. Juan sees only his
+curl -H "X-Engram-User: juan" http://server:7437/sync/enroll
+# → {"projects":[{"project":"team/frontend"}],"count":1}
+```
