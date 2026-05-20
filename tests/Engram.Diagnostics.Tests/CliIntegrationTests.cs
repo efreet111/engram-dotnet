@@ -100,7 +100,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact]
     public async Task DoctorCommand_HealthyDatabase_ChecksAllComponents()
     {
         // Arrange
@@ -123,7 +122,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact(Skip = "Flaky test - timing issue with non-existent server")]
     public async Task DoctorCommand_UnhealthyHttpServer_ReturnsExitCode1()
     {
         // Arrange
@@ -161,7 +159,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact(Skip = "Flaky test - intermittent failure in CI")]
     public async Task DoctorCommand_PostgresBackend_ReportsCorrectBackend()
     {
         // Arrange - This test verifies that when using sqlite (default), 
@@ -179,7 +176,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact]
     public async Task DoctorCommand_OutputFormattedCorrectly()
     {
         // Arrange
@@ -203,7 +199,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact]
     public async Task DoctorCommand_WithServerOption_UsesProvidedUrl()
     {
         // Arrange
@@ -222,7 +217,6 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     [Fact(Skip = "Flaky in CI — doctor command execution has timeout issues")]
-    [Fact(Skip = "Flaky in CI — timeout issues with doctor command execution")]
     public async Task DoctorCommand_IsReadOnly_DoesNotModifyData()
     {
         // Arrange - Insert test data before running doctor
