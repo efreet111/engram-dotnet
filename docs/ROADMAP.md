@@ -11,8 +11,10 @@
 
 ## ✅ Completadas
 
-| Feature | PR | Descripción |
-|---------|----|-------------|
+| Feature | PR/Commit | Descripción |
+|---------|-----------|-------------|
+| Doctor Diagnostic | `dc9e5d1` | `engram doctor` CLI + `mem_doctor` MCP tool — health checks para DB, HTTP server, MCP config (27 tests) |
+| Multi-User Isolation | `80aac44` | RFC-002 — namespacing `personal:{user}`, header `X-Engram-User`, AutoClassifyScope para team vs personal |
 | Promotion Level 2 | direct | `mem_promote_to_md`, `mem_sync_md_to_repo`, `mem_generate_index` — promover observaciones a archivos .md en el repo, sync batch, generación de índice |
 | Verification Tools | direct | `mem_verify_artifact`, `mem_traceability` — verificar compliance de código contra spec.md, matriz de trazabilidad RF/RNF |
 | Upstream Parity Phase 2 — DELETE endpoints | [#8](https://github.com/efreet111/engram-dotnet/pull/8), [#11](https://github.com/efreet111/engram-dotnet/pull/11) | `DELETE /sessions/{id}`, `DELETE /prompts/{id}`, `handleDeleteSession`, `handleDeletePrompt` |
@@ -24,22 +26,6 @@
 ---
 
 ## 📋 Backlog — Features Prioritarias
-
-### Doctor Diagnostic (pendiente de SDD)
-
-> **Go source**: `internal/diagnostic/` + `cmd/engram/doctor.go` (~1264 líneas Go → ~800cs .NET)
-> **Esfuerzo estimado**: 4-6h
-> **Estado**: Sin SDD creado — mover a backlog hasta que exista proposal
-
-Operational diagnostics and repair tools — port from Go upstream.
-
-| # | Feature | Descripción |
-|---|---------|-------------|
-| 1 | Check registry | Ejecutar checks individuales (DB integrity, sync state, orphan chunks) |
-| 2 | Repair actions | Auto-fix para problemas detectables (reconstruir índice, limpiar orphans) |
-| 3 | `engram doctor` CLI | Comando unificado `check` + `repair` con output estructurado |
-
----
 
 ### Offline-First Sync (✅ COMPLETE)
 
