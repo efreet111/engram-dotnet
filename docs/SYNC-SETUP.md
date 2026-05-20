@@ -1,244 +1,233 @@
-# Sync Setup — Mutation-Based Offline-First Sync
+# Offline-First Sync — Setup Guide
 
-> Guía de configuración para habilitar la sincronización bidireccional de mutaciones entre SQLite local y PostgreSQL remoto.
-
----
-
-## Cuándo usar Sync
-
-| Escenario | Recomendación |
-|---|---|
-| 1 desarrollador, single machine | No activar sync (default) |
-| Team 2+ developers con TrueNAS server | Activar sync con `ENGRAM_SYNC_ENABLED=true` |
-| Offline-first / conexión intermitente | Sync obligatorio |
-| Alta disponibilidad multi-instancia | Sync obligatorio |
+> **Version**: 1.0  
+> **Requires**: engram-dotnet v1.1.0+ with PostgreSQL backend
 
 ---
 
-## Requisitos
+## When to Use Sync
 
-| Componente | Versión |
-|---|---|
-| PostgreSQL 15+ en TrueNAS | `192.168.0.178:7437` |
-| engram-dotnet | 1.3.0+ |
-| Proyecto enrolado en sync vía `POST /sync/enroll` | Phase 3+ |
-
----
-
-## Variables de entorno
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `ENGRAM_SYNC_ENABLED` | `true` | Activar el background SyncManager (default: habilitado) |
-| `ENGRAM_SYNC_TARGET` | `cloud` | Clave del target de sync |
-| `ENGRAM_SYNC_POLL_SECONDS` | `30` | Intervalo entre ciclos de sync (segundos) |
-| `ENGRAM_SYNC_DEBOUNCE_MS` | `500` | Debounce antes de arrancar (ms) |
-| `ENGRAM_SYNC_PUSH_BATCH` | `100` | Mutaciones máximas por push |
-| `ENGRAM_SYNC_PULL_BATCH` | `100` | Mutaciones máximas por pull |
-| `ENGRAM_SYNC_MAX_FAILURES` | `10` | Umbral de failure ceiling |
-| `ENGRAM_SYNC_BACKOFF_BASE_MS` | `1000` | Backoff inicial (ms, exponencial) |
-| `ENGRAM_SYNC_BACKOFF_MAX_MS` | `300000` | Backoff máximo (ms = 5min) |
-| `ENGRAM_SYNC_LEASE_OWNER` | hostname | Owner del lease de sync |
-| `ENGRAM_SERVER_URL` | `http://localhost:7437` | URL del servidor (para CLI) |
-| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` para server-side |
-| `ENGRAM_PG_CONNECTION` | — | Connection string de PostgreSQL |
+| Scenario | Recommended |
+|----------|-------------|
+| Single developer, local only | SQLite (default, no sync needed) |
+| 2-5 devs, shared server | PostgreSQL + multi-user (no sync needed) |
+| **5-20 devs, offline work** | **PostgreSQL + Offline-First Sync** |
+| Disaster recovery | Sync + periodic backups |
 
 ---
 
-## Setup paso a paso
+## How It Works
 
-### 1. Configurar PostgreSQL en TrueNAS
-
-Seguí [`POSTGRES-SETUP.md`](POSTGRES-SETUP.md) para tener PostgreSQL funcionando con schema completo.
-
-### 2. Configurar variables de entorno del servidor
-
-```bash
-export ENGRAM_DB_TYPE=postgres
-export ENGRAM_PG_CONNECTION="Host=192.168.0.178;Port=7437;Database=engram;Username=engram;Password=tu_password"
-export ENGRAM_SYNC_ENABLED=true
-export ENGRAM_SERVER_URL=http://localhost:7437
 ```
-
-### 3. Iniciar el servidor
-
-```bash
-engram serve --port 7437
-# Output esperado:
-# [engram] starting HTTP server on :7437 (PostgreSQL)
-# SyncManager starting (target=cloud, poll=00:01:00)
-```
-
-### 4. Enrolar proyectos (Phase 3+)
-
-```bash
-curl -X POST http://localhost:7437/sync/enroll \
-  -H "Content-Type: application/json" \
-  -d '{"project": "team/mi-proyecto"}'
-# {"project":"team/mi-proyecto","enrolled_at":"2026-05-19T...","enrolled_by":""}
-```
-
-### 5. Verificar sync status
-
-```bash
-engram sync status
-```
-
-Output esperado:
-```
-Sync status (mutation-based):
-  Enabled:              True
-  Phase:                Healthy
-  Health:               healthy
-  Consecutive failures: 0
-  Backoff until:        —
-  Last sync:            2026-05-19T12:00:00.0000000Z
-  Last error:           —
-  Pending push:         0
-  Total pushed:         42
-  Total pulled:         17
-  Last pushed seq:      42
-  Last pulled seq:      17
-```
-
-Formato machine-readable:
-```bash
-engram sync status --json
-# {"sync_enabled":true,"phase":"healthy","target":"cloud",...}
+┌─────────────────────────────────────────────────────┐
+│                  CLIENT (each dev)                    │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │  Local SQLite: fast reads/writes, works offline │ │
+│  │  SyncManager: background service               │ │
+│  │    → Push: local mutations → server (POST)     │ │
+│  │    → Pull: server mutations → local (GET)      │ │
+│  └─────────────────────────────────────────────────┘ │
+└────────────────────────┬────────────────────────────┘
+                         │ HTTP (port 7437)
+┌────────────────────────▼────────────────────────────┐
+│                  SERVER (TrueNAS/Linux)                │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │  PostgreSQL: cloud_mutations, enrolled_projects │ │
+│  │  REST API: 8 sync endpoints                     │ │
+│  │  Audit log: cloud_sync_audit_log                │ │
+│  └─────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Arquitectura
+## Server Setup (TrueNAS / Debian)
+
+### Prerequisites
+
+- Linux server (Debian/Ubuntu recommended)
+- PostgreSQL 15+
+- .NET 10 SDK (to build) or pre-built binary
+- Docker (optional, for containerized deployment)
+
+### Option A: Docker Compose (Recommended)
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: engram
+      POSTGRES_USER: engram
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  engram:
+    build: .
+    ports:
+      - "7437:7437"
+    environment:
+      ENGRAM_DB_TYPE: postgres
+      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=secret"
+      ENGRAM_SYNC_ENABLED: "true"
+      ENGRAM_SYNC_TARGET: "cloud"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+```
+
+```bash
+docker compose up -d
+```
+
+### Option B: Systemd (Manual)
+
+```bash
+# 1. Build
+git clone https://github.com/efreet111/engram-dotnet
+cd engram-dotnet
+dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o /opt/engram/
+
+# 2. Create systemd service
+cat > /etc/systemd/system/engram.service << 'EOF'
+[Unit]
+Description=Engram Memory Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/opt/engram/engram serve
+Restart=always
+User=engram
+Environment="ENGRAM_DB_TYPE=postgres"
+Environment="ENGRAM_PG_CONNECTION=Host=localhost;Database=engram;Username=engram;Password=secret"
+Environment="ENGRAM_SYNC_ENABLED=true"
+Environment="ENGRAM_SYNC_TARGET=cloud"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now engram
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENGRAM_SYNC_ENABLED` | `true` | Enable the background SyncManager |
+| `ENGRAM_SYNC_TARGET` | `cloud` | Sync target key |
+| `ENGRAM_SYNC_POLL_SECONDS` | `30` | Interval between sync cycles (seconds) |
+| `ENGRAM_SYNC_DEBOUNCE_MS` | `500` | Debounce before starting a cycle (ms) |
+| `ENGRAM_SYNC_PUSH_BATCH` | `100` | Max mutations per push batch |
+| `ENGRAM_SYNC_PULL_BATCH` | `100` | Max mutations per pull batch |
+| `ENGRAM_SYNC_MAX_FAILURES` | `10` | Failure ceiling before disabling sync |
+| `ENGRAM_SYNC_BACKOFF_BASE_MS` | `1000` | Initial backoff (ms, exponential) |
+| `ENGRAM_SYNC_BACKOFF_MAX_MS` | `300000` | Maximum backoff (ms = 5min) |
+
+---
+
+## Client Setup (Each Developer)
+
+### 1. Run Engram Locally
+
+```bash
+ENGRAM_DATA_DIR=~/.engram \
+ENGRAM_SERVER_URL=http://server:7437 \
+ENGRAM_USER=victor.silgado \
+ENGRAM_SYNC_ENABLED=true \
+ENGRAM_SYNC_TARGET=cloud \
+./engram serve --port 7442
+```
+
+### 2. Enroll Your Project
+
+```bash
+curl -X POST http://localhost:7442/sync/enroll \
+  -H "X-Engram-User: victor.silgado" \
+  -d '{"project":"team/mi-api"}'
+```
+
+> **Note**: The local enrollment is stored in your local SQLite. The SyncManager checks this before pushing.
+
+### 3. Verify
+
+```bash
+# Check sync status
+curl http://localhost:7442/sync/status
+
+# Check enrolled projects
+curl -H "X-Engram-User: victor" http://localhost:7442/sync/enroll
+```
+
+---
+
+## Workflow
+
+### Normal Operation
 
 ```
-┌──────────────────────────────┐     push/pull HTTP     ┌──────────────────────┐
-│   SQLite (local)             │ ◄────────────────────► │  PostgreSQL (server) │
-│   ┌──────────────────────┐   │   POST /sync/mutations/ │  ┌────────────────┐ │
-│   │ SyncManager          │   │         push            │  │ CloudSync      │ │
-│   │ (BackgroundService)  │───┼─────────────────────────┼─►│ Endpoints      │ │
-│   │ ILocalSyncStore      │   │   GET /sync/mutations/  │  │ ICloudMutation │ │
-│   │ IMutationTransport   │◄──┼─────────────────────────┼──│ Store          │ │
-│   └──────────────────────┘   │         pull            │  └────────────────┘ │
-└──────────────────────────────┘                         └──────────────────────┘
+1. Agent saves memory via mem_save()
+2. Memory goes to LOCAL SQLite (instant, always works)
+3. SyncManager detects pending mutation (poll every 30s)
+4. SyncManager pushes to server POST /sync/mutations/push
+5. Server stores in PostgreSQL cloud_mutations
+6. Other devs' SyncManager pulls GET /sync/mutations/pull
+7. Mutations applied to their local SQLite
 ```
 
-### Ciclo de sync
+### Offline Scenario
 
-1. **Lease**: `AcquireSyncLeaseAsync` — prevení concurrencia
-2. **Push**: enviar mutaciones pendientes al server
-   - Agrupar por proyecto
-   - Drenar batch (`PushBatchSize`)
-   - Manejar pause (409 Conflict)
-   - Ack seqs aceptadas
-3. **Deferred Replay**: reintentar relaciones FK diferidas
-4. **Pull**: recibir mutaciones del server
-   - Loop cursor (`since_seq` → `has_more`)
-   - Aplicar mutaciones localmente
-5. **Healthy**: marcar sync exitoso
-6. **Failure**: backoff exponencial + failure ceiling
+```
+1. Developer works offline (no server connection)
+2. Agent saves memories → local SQLite (works fine)
+3. SyncManager tries to push → fails → retries with backoff
+4. When connection is restored → SyncManager pushes pending
+5. All offline memories are now on the server
+```
+
+---
+
+## Monitoring
+
+### Key Metrics
+
+```bash
+# Server health
+curl http://server:7437/health
+
+# Sync status
+curl http://server:7437/sync/status
+
+# Server logs
+docker logs -f engram
+```
+
+### Log Output
+
+```
+info: HTTP[0] POST /sync/mutations/push → 200 (142ms)
+info: SyncManager[2001] Cycle completed: pushed=5, pulled=3
+warn: SyncManager[2002] Cycle failed (failure 3/10): connection refused
+crit: SyncManager[2006] Panic exit: ...
+```
 
 ---
 
 ## Troubleshooting
 
-### Sync no arranca
-
-```
-SyncManager disabled (ENGRAM_SYNC_ENABLED=false)
-```
-
-**Solución**: Configurá `ENGRAM_SYNC_ENABLED=true`.
-
-### 409 Pause
-
-```
-SyncManager push paused for project team/mi-proyecto: sync-paused
-```
-
-**Causa**: El server pausó el sync para ese proyecto (ej: deploy, mantenimiento).
-**Solución**: Resumí desde el server:
-```bash
-curl -X DELETE http://localhost:7437/sync/pause \
-  -H "Content-Type: application/json" \
-  -d '{"project": "team/mi-proyecto"}'
-```
-
-### Failure ceiling reached
-
-```
-Sync cycle failed (failure 5/5)
-SyncManager disabled: failure ceiling reached (5/5)
-```
-
-**Causa**: 5 ciclos consecutivos fallidos.
-**Solución**: Revisá logs del server, verificá conectividad de red, reiniciá el servidor.
-
-### Connection refused (CLI)
-
-```
-error: No se pudo conectar al servidor — ¿está engram server corriendo?
-```
-
-**Causa**: `engram sync status` no encuentra el servidor HTTP.
-**Solución**: Verificá que `engram serve` esté corriendo y `ENGRAM_SERVER_URL` apunte al puerto correcto.
-
-### Lease no adquirido
-
-```
-SyncManager cycle skipped: lease not acquired
-```
-
-**Causa**: Otra instancia de SyncManager tiene el lease activo.
-**Solución**: Es normal si hay múltiples instancias. El lease expira en 1 minuto.
-
----
-
-## Monitoreo
-
-### Eventos de logging (EventId)
-
-| ID  | Evento             | Level     | Descripción |
-|-----|---------------------|-----------|-------------|
-| 2000| SyncCycleStart      | Info      | Ciclo comenzó |
-| 2001| SyncCycleComplete   | Info      | Ciclo completado exitosamente |
-| 2002| SyncCycleFailed     | Error     | Ciclo falló |
-| 2003| SyncPushBatch       | Info      | Push batch enviado |
-| 2004| SyncPullBatch       | Info      | Pull batch recibido |
-| 2005| SyncDeferredReplay  | Info      | Replay de relaciones deferidas |
-| 2006| SyncPanicExit       | Critical  | Error no manejado en SyncManager |
-| 2007| SyncPhaseTransition | Debug     | Cambio de fase |
-
-### Sync status endpoint
-
-```bash
-curl http://localhost:7437/sync/status | jq .
-```
-
-```json
-{
-  "sync_enabled": true,
-  "phase": "healthy",
-  "target": "cloud",
-  "cursor": {
-    "last_pushed_seq": 42,
-    "last_pulled_seq": 17,
-    "last_enqueued_seq": 42
-  },
-  "health": {
-    "status": "healthy",
-    "consecutive_failures": 0,
-    "backoff_until": null,
-    "last_error": null,
-    "last_sync_at": "2026-05-19T12:00:00.0000000Z"
-  },
-  "counts": {
-    "pending_push": 0,
-    "total_pushed": 42,
-    "total_pulled": 17,
-    "deferred_pending": 0
-  },
-  "enrolled_projects": ["team/mi-proyecto"],
-  "paused_projects": []
-}
-```
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Sync disabled in `/sync/status` | `ENGRAM_SYNC_ENABLED` not set | Set to `true` |
+| Push fails with 500 | Old binary on server | `docker compose up -d --build` |
+| Pull returns no data | Project not enrolled | `POST /sync/enroll` |
+| SyncManager in backoff | Too many consecutive failures | Check server logs |
+| Mutation transport 501 | SQLite backend (no ICloudMutationStore) | Use PostgreSQL |
+| Address already in use | Port 7437 occupied | `fuser -k 7437/tcp` |

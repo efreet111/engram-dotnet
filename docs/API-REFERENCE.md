@@ -1,17 +1,17 @@
-# Engram API Reference — Sync Endpoints
+# Engram API Reference
 
-> **Propósito**: Referencia completa para humanos de todos los endpoints REST de engram-dotnet.  
+> **Purpose**: Complete REST API reference for humans.  
 > **Server**: `http://192.168.0.178:7437`  
-> **Formato**: JSON con `snake_case`  
-> **Header**: `X-Engram-User: {identidad}` (obligatorio para sync)
+> **Format**: JSON with `snake_case`  
+> **Auth**: Header `X-Engram-User: {identity}` (required for sync endpoints)
 
 ---
 
-## 📋 Generales
+## 📋 General
 
 ### `GET /health`
 
-Devuelve el estado del servidor y el backend activo.
+Returns server status and active backend.
 
 ```bash
 curl http://192.168.0.178:7437/health
@@ -21,11 +21,9 @@ curl http://192.168.0.178:7437/health
 {"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
 ```
 
----
-
 ### `GET /stats`
 
-Devuelve estadísticas de uso: total de observaciones, sesiones, prompts.
+Returns usage statistics: total observations, sessions, prompts.
 
 ```bash
 curl http://192.168.0.178:7437/stats
@@ -35,13 +33,13 @@ curl http://192.168.0.178:7437/stats
 
 ## 📋 Sessions
 
-| Método | Endpoint | Descripción |
+| Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/sessions` | Crear sesión |
-| GET | `/sessions/{id}` | Obtener sesión |
-| POST | `/sessions/{id}/end` | Finalizar sesión (con summary) |
-| GET | `/sessions/recent` | Listar sesiones recientes |
-| DELETE | `/sessions/{id}` | Eliminar sesión |
+| POST | `/sessions` | Create a session |
+| GET | `/sessions/{id}` | Get session details |
+| POST | `/sessions/{id}/end` | End a session (with summary) |
+| GET | `/sessions/recent` | List recent sessions |
+| DELETE | `/sessions/{id}` | Delete a session |
 
 ### POST /sessions
 
@@ -59,13 +57,13 @@ curl -X POST http://192.168.0.178:7437/sessions \
 
 ## 📋 Observations
 
-| Método | Endpoint | Descripción |
+| Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/observations` | Crear observación |
-| GET | `/observations/{id}` | Obtener observación |
-| PATCH | `/observations/{id}` | Actualizar observación |
-| DELETE | `/observations/{id}` | Eliminar (soft-delete) |
-| POST | `/observations/passive` | Captura pasiva automática |
+| POST | `/observations` | Create an observation |
+| GET | `/observations/{id}` | Get observation details |
+| PATCH | `/observations/{id}` | Update an observation |
+| DELETE | `/observations/{id}` | Soft-delete an observation |
+| POST | `/observations/passive` | Automatic passive capture |
 
 ### POST /observations
 
@@ -74,7 +72,7 @@ curl -X POST http://192.168.0.178:7437/observations \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"session-1",
-    "title":"Mi decisión",
+    "title":"My decision",
     "content":"**What**: ... **Why**: ... **Where**: ... **Learned**: ...",
     "type":"decision",
     "project":"team/mi-api",
@@ -82,22 +80,22 @@ curl -X POST http://192.168.0.178:7437/observations \
   }'
 ```
 
-Parámetros clave:
+Key parameters:
 - `type`: `decision | architecture | bugfix | pattern | learning | discovery | config | manual`
-- `scope`: `team` (compartido) o `personal` (privado del user)
-- `topic_key`: para upserts — si existe, la actualiza
-- `project`: namespace del proyecto
+- `scope`: `team` (shared) or `personal` (private)
+- `topic_key`: for upserts — if it exists, updates the observation
+- `project`: project namespace
 
 ---
 
 ## 📋 Search
 
-| Método | Endpoint | Parámetros |
+| Method | Endpoint | Parameters |
 |--------|----------|------------|
 | GET | `/search` | `q`, `project`, `type`, `limit` |
 
 ```bash
-curl "http://192.168.0.178:7437/search?q=arquitectura+sync&project=team/mi-api&limit=10"
+curl "http://192.168.0.178:7437/search?q=architecture+sync&project=team/mi-api&limit=10"
 ```
 
 ```json
@@ -111,11 +109,33 @@ curl "http://192.168.0.178:7437/search?q=arquitectura+sync&project=team/mi-api&l
 
 ---
 
+## 📋 Prompts
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/prompts` | Save a user prompt |
+| GET | `/prompts/recent` | List recent prompts |
+| GET | `/prompts/search` | Search prompts |
+| DELETE | `/prompts/{id}` | Delete a prompt |
+
+---
+
+## 📋 Projects
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/projects/list` | List all projects |
+| GET | `/projects/stats` | Project statistics |
+| POST | `/projects/migrate` | Merge projects |
+| POST | `/projects/prune` | Delete a project and its data |
+
+---
+
 ## 🔁 Offline-First Sync
 
-### POST /sync/enroll — Inscribir proyecto
+### POST /sync/enroll — Enroll a project
 
-Inscribe un proyecto en el sync (sin esto, no participa).
+Registers a project for synchronization. Without this, the project won't sync.
 
 ```bash
 curl -X POST http://192.168.0.178:7437/sync/enroll \
@@ -128,13 +148,13 @@ curl -X POST http://192.168.0.178:7437/sync/enroll \
 {"project":"team/mi-api","enrolled_at":"2026-05-20 16:39:25.064291","enrolled_by":"victor.silgado"}
 ```
 
-| Código | Significado |
-|--------|-------------|
-| 200 | ✅ Inscripto correctamente |
-| 409 | ⚠️ Ya estaba inscripto |
-| 400 | ❌ Faltó `project` |
+| Code | Meaning |
+|------|---------|
+| 200 | ✅ Enrolled successfully |
+| 409 | ⚠️ Already enrolled |
+| 400 | ❌ Missing `project` |
 
-### GET /sync/enroll — Listar proyectos inscritos
+### GET /sync/enroll — List enrolled projects
 
 ```bash
 curl -H "X-Engram-User: victor.silgado" http://192.168.0.178:7437/sync/enroll
@@ -144,7 +164,7 @@ curl -H "X-Engram-User: victor.silgado" http://192.168.0.178:7437/sync/enroll
 {"projects":[{"project":"team/mi-api","enrolled_at":"...","enrolled_by":"victor.silgado"}],"count":1}
 ```
 
-### DELETE /sync/enroll — Desinscribir proyecto
+### DELETE /sync/enroll — Unenroll a project
 
 ```bash
 curl -X DELETE "http://192.168.0.178:7437/sync/enroll?project=team/mi-api" \
@@ -155,22 +175,22 @@ curl -X DELETE "http://192.168.0.178:7437/sync/enroll?project=team/mi-api" \
 {"project":"team/mi-api","unenrolled_at":"2026-05-20T13:55:22.811Z","status":"unenrolled"}
 ```
 
-### POST /sync/pause — Pausar sync (admin)
+### POST /sync/pause — Pause sync (admin)
 
-Detiene temporalmente el sync para un proyecto (útil para mantenimiento).
+Temporarily stops sync for a project (useful for maintenance).
 
 ```bash
 curl -X POST http://192.168.0.178:7437/sync/pause \
   -H "Content-Type: application/json" \
   -H "X-Engram-User: admin" \
-  -d '{"project":"team/mi-api","reason":"Mantenimiento programado"}'
+  -d '{"project":"team/mi-api","reason":"Scheduled maintenance"}'
 ```
 
 ```json
-{"project":"team/mi-api","paused":true,"paused_at":"2026-05-20T...","paused_by":"admin","reason":"Mantenimiento programado"}
+{"project":"team/mi-api","paused":true,"paused_at":"2026-05-20T...","paused_by":"admin","reason":"Scheduled maintenance"}
 ```
 
-### DELETE /sync/pause — Reanudar sync
+### DELETE /sync/pause — Resume sync
 
 ```bash
 curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
@@ -181,7 +201,7 @@ curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
 {"project":"team/mi-api","paused":false,"resumed_at":"2026-05-20T...","resumed_by":"admin"}
 ```
 
-### GET /sync/status — Estado completo del sync
+### GET /sync/status — Full sync status
 
 ```bash
 curl http://192.168.0.178:7437/sync/status
@@ -192,11 +212,7 @@ curl http://192.168.0.178:7437/sync/status
   "sync_enabled": false,
   "phase": "idle",
   "target": "cloud",
-  "cursor": {
-    "last_pushed_seq": 142,
-    "last_pulled_seq": 89,
-    "last_enqueued_seq": 145
-  },
+  "cursor": {"last_pushed_seq": 142, "last_pulled_seq": 89, "last_enqueued_seq": 145},
   "health": {
     "status": "healthy",
     "consecutive_failures": 0,
@@ -205,34 +221,27 @@ curl http://192.168.0.178:7437/sync/status
     "last_sync_at": null
   },
   "counts": {
-    "pending_push": 0,
-    "total_pushed": 142,
-    "total_pulled": 89,
-    "deferred_pending": 0
+    "pending_push": 0, "total_pushed": 142, "total_pulled": 89, "deferred_pending": 0
   },
   "enrolled_projects": ["team/mi-api"],
   "paused_projects": []
 }
 ```
 
-### POST /sync/mutations/push — Push manual
+### POST /sync/mutations/push — Manual push
 
-Envía mutaciones locales al servidor.
+Sends local mutations to the server.
 
 ```bash
 curl -X POST http://192.168.0.178:7437/sync/mutations/push \
   -H "Content-Type: application/json" \
   -H "X-Engram-User: victor.silgado" \
-  -d '{
-    "entries": [
-      {"project":"team/mi-api","entity":"observation","entity_key":"obs_123","op":"upsert","payload":"{...}"}
-    ]
-  }'
+  -d '{"entries":[{"project":"team/mi-api","entity":"observation","entity_key":"obs_123","op":"upsert","payload":"{}"}]}'
 ```
 
-### GET /sync/mutations/pull — Pull manual
+### GET /sync/mutations/pull — Manual pull
 
-Trae mutaciones del servidor desde un punto específico.
+Fetches mutations from the server starting from a specific seq.
 
 ```bash
 curl "http://192.168.0.178:7437/sync/mutations/pull?since_seq=0&project=team/mi-api&limit=100"
@@ -273,29 +282,48 @@ engram doctor --server http://192.168.0.178:7437
 
 ---
 
-## 🧪 Códigos de Estado
+## 📊 MD Promotion & Index
 
-| Código | Significado | Solución |
-|--------|-------------|----------|
-| 200 | ✅ OK | — |
-| 400 | ❌ Bad Request | Revisá los campos requeridos |
-| 404 | ❌ Not Found | El recurso no existe |
-| 409 | ⚠️ Conflict | Ya existe (enroll) o sync pausado |
-| 500 | ❌ Server Error | Revisá logs del servidor |
-| 501 | ❌ Not Implemented | El backend no soporta esta feature |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/md/promote/{id}` | Promote an observation to a .md file |
+| POST | `/md/sync` | Sync all promoted .md files to the repo |
+| POST | `/md/index` | Generate a markdown index file |
 
 ---
 
-## 🌐 Variables de Entorno
+## 🧹 Retention (TTL)
 
-| Variable | Default | Descripción |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/retention/stats` | Get retention statistics by age bucket |
+| POST | `/retention/prune` | Delete observations past their TTL |
+
+---
+
+## 🧪 HTTP Status Codes
+
+| Code | Meaning | Solution |
+|------|---------|----------|
+| 200 | ✅ OK | — |
+| 400 | ❌ Bad Request | Check required fields |
+| 404 | ❌ Not Found | Resource doesn't exist |
+| 409 | ⚠️ Conflict | Already enrolled or sync paused |
+| 500 | ❌ Server Error | Check server logs |
+| 501 | ❌ Not Implemented | Backend doesn't support this feature |
+
+---
+
+## 🌐 Environment Variables
+
+| Variable | Default | Description |
 |----------|---------|-------------|
-| `ENGRAM_SERVER_URL` | — | URL del servidor remoto |
-| `ENGRAM_USER` | — | Identidad del usuario |
-| `ENGRAM_DATA_DIR` | `~/.engram` | Directorio local de datos |
-| `ENGRAM_DB_TYPE` | `sqlite` | Tipo de base de datos (`sqlite`, `postgres`) |
-| `ENGRAM_PG_CONNECTION` | — | Connection string PostgreSQL |
-| `ENGRAM_SYNC_ENABLED` | `false` | Habilita sync automático |
-| `ENGRAM_SYNC_TARGET_KEY` | `cloud` | Target de sync |
-| `ENGRAM_SYNC_POLL_INTERVAL` | `30s` | Intervalo de poll |
-| `ENGRAM_SYNC_DEBOUNCE_DURATION` | `5s` | Debounce antes de push |
+| `ENGRAM_SERVER_URL` | — | Remote server URL |
+| `ENGRAM_USER` | — | User identity |
+| `ENGRAM_DATA_DIR` | `~/.engram` | Local data directory |
+| `ENGRAM_DB_TYPE` | `sqlite` | Database type (`sqlite`, `postgres`) |
+| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string |
+| `ENGRAM_SYNC_ENABLED` | `true` | Enable automatic sync |
+| `ENGRAM_SYNC_TARGET` | `cloud` | Sync target key |
+| `ENGRAM_SYNC_POLL_SECONDS` | `30` | Sync poll interval (seconds) |
+| `ENGRAM_SYNC_DEBOUNCE_MS` | `500` | Debounce before sync (ms) |
