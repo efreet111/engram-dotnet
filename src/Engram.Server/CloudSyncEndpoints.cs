@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Engram.Server.Dtos;
 using Engram.Sync;
 using Engram.Store;
@@ -65,7 +66,17 @@ public static class CloudSyncEndpoints
             if (store is not ICloudMutationStore cloudStore)
                 return Results.StatusCode(501);
 
-            return await HandleEnrollProjectAsync(ctx, cloudStore);
+            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("CloudSyncEndpoints");
+            try
+            {
+                logger.LogInformation("Enrolling project...");
+                return await HandleEnrollProjectAsync(ctx, cloudStore);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Enroll failed");
+                return Results.Json(new { error = ex.Message, type = ex.GetType().Name }, JsonOpts, statusCode: 500);
+            }
         });
 
         app.MapDelete("/sync/enroll", async (HttpContext ctx, IStore store) =>
