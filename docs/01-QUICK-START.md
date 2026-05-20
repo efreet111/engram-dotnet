@@ -164,8 +164,8 @@ CREATE DATABASE engram;
 ENGRAM_DB_TYPE=postgres \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=postgres;Password=NoAdmin.210725" \
 ENGRAM_SYNC_ENABLED=true \
-ENGRAM_SYNC_TARGET_KEY=cloud \
-ENGRAM_SYNC_POLL_INTERVAL=30s \
+ENGRAM_SYNC_TARGET=cloud \
+ENGRAM_SYNC_POLL_SECONDS=30s \
 ./engram serve
 ```
 
@@ -181,8 +181,8 @@ ENGRAM_SYNC_POLL_INTERVAL=30s \
         "ENGRAM_SERVER_URL": "http://192.168.0.178:7437",
         "ENGRAM_USER": "victor.silgado",
         "ENGRAM_SYNC_ENABLED": "true",
-        "ENGRAM_SYNC_TARGET_KEY": "cloud",
-        "ENGRAM_SYNC_POLL_INTERVAL": "30s",
+        "ENGRAM_SYNC_TARGET": "cloud",
+        "ENGRAM_SYNC_POLL_SECONDS": "30s",
         "ENGRAM_DATA_DIR": "~/.engram"
       }
     }

@@ -29,15 +29,15 @@
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `ENGRAM_SYNC_ENABLED` | `false` | Activar el background SyncManager |
-| `ENGRAM_SYNC_TARGET_KEY` | `cloud` | Clave del target de sync |
-| `ENGRAM_SYNC_POLL_INTERVAL` | `00:01:00` | Intervalo entre ciclos de sync |
-| `ENGRAM_SYNC_DEBOUNCE_DURATION` | `00:00:30` | Debounce antes de arrancar |
-| `ENGRAM_SYNC_PUSH_BATCH_SIZE` | `500` | Mutaciones máximas por push |
-| `ENGRAM_SYNC_PULL_BATCH_SIZE` | `500` | Mutaciones máximas por pull |
-| `ENGRAM_SYNC_MAX_CONSECUTIVE_FAILURES` | `5` | Umbral de failure ceiling |
-| `ENGRAM_SYNC_BASE_BACKOFF` | `00:00:05` | Backoff inicial (exponencial) |
-| `ENGRAM_SYNC_MAX_BACKOFF` | `00:05:00` | Backoff máximo |
+| `ENGRAM_SYNC_ENABLED` | `true` | Activar el background SyncManager (default: habilitado) |
+| `ENGRAM_SYNC_TARGET` | `cloud` | Clave del target de sync |
+| `ENGRAM_SYNC_POLL_SECONDS` | `30` | Intervalo entre ciclos de sync (segundos) |
+| `ENGRAM_SYNC_DEBOUNCE_MS` | `500` | Debounce antes de arrancar (ms) |
+| `ENGRAM_SYNC_PUSH_BATCH` | `100` | Mutaciones máximas por push |
+| `ENGRAM_SYNC_PULL_BATCH` | `100` | Mutaciones máximas por pull |
+| `ENGRAM_SYNC_MAX_FAILURES` | `10` | Umbral de failure ceiling |
+| `ENGRAM_SYNC_BACKOFF_BASE_MS` | `1000` | Backoff inicial (ms, exponencial) |
+| `ENGRAM_SYNC_BACKOFF_MAX_MS` | `300000` | Backoff máximo (ms = 5min) |
 | `ENGRAM_SYNC_LEASE_OWNER` | hostname | Owner del lease de sync |
 | `ENGRAM_SERVER_URL` | `http://localhost:7437` | URL del servidor (para CLI) |
 | `ENGRAM_DB_TYPE` | `sqlite` | `postgres` para server-side |
