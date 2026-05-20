@@ -2,7 +2,7 @@
 
 > **engram** `/ˈen.ɡræm/` — *neurociencia*: la huella física de un recuerdo en el cerebro.
 
-Memoria persistente para agentes de IA. Puerto a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
+Memoria persistente para agentes de IA. Fork a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
 
 Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex — solo se cambia `ENGRAM_URL`.
 
@@ -34,7 +34,7 @@ ENGRAM_DB_TYPE=postgres ENGRAM_PG_CONNECTION="..." ./engram serve
 
 > **Resultado**: Servidor compartido, cada dev con su identidad (`ENGRAM_USER`), memorias aisladas.
 
-### 🏢 IT Admin (5-15 personas)
+### 🏢 IT Admin (5-20 personas)
 [➜ Guía rápida para equipo completo con sync offline-first](docs/01-QUICK-START.md#-it-admin)
 
 ```bash
