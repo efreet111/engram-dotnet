@@ -1626,7 +1626,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 cmd.Transaction = tx;
                 cmd.CommandText = @"
                     INSERT INTO cloud_mutations (project, entity, entity_key, op, payload, created_by, occurred_at)
-                    VALUES (@project, @entity, @entity_key, @op, @payload, @created_by, NOW())
+                    VALUES (@project, @entity, @entity_key, @op, @payload::jsonb, @created_by, NOW())
                     RETURNING seq";
 
                 cmd.Parameters.AddWithValue("@project", entry.Project);
@@ -1892,7 +1892,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO cloud_chunks (chunk_id, project, payload, created_by, client_created_at)
-            VALUES (@chunk_id, @project, @payload, @created_by, @client_created_at)
+            VALUES (@chunk_id, @project, @payload::jsonb, @created_by, @client_created_at)
             ON CONFLICT (chunk_id) DO UPDATE SET
                 payload = EXCLUDED.payload";
 
