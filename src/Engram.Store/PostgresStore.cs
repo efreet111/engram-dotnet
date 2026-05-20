@@ -1808,24 +1808,22 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<PauseResult> PauseProjectAsync(string project, string reason, string pausedBy, CancellationToken ct = default)
     {
-        var pausedAt = DateTime.UtcNow.ToString("O");
-        
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO cloud_project_controls (project, sync_enabled, pause_reason, paused_at, paused_by)
-            VALUES (@project, false, @reason, @paused_at, @paused_by)
+            VALUES (@project, false, @reason, NOW() AT TIME ZONE 'utc', @paused_by)
             ON CONFLICT (project) DO UPDATE SET
                 sync_enabled = false,
                 pause_reason = EXCLUDED.pause_reason,
-                paused_at = EXCLUDED.paused_at,
+                paused_at = NOW() AT TIME ZONE 'utc',
                 paused_by = EXCLUDED.paused_by
             RETURNING paused_at";
         cmd.Parameters.AddWithValue("@project", project);
         cmd.Parameters.AddWithValue("@reason", reason);
-        cmd.Parameters.AddWithValue("@paused_at", pausedAt);
         cmd.Parameters.AddWithValue("@paused_by", pausedBy);
 
-        await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        var pausedAt = result?.ToString();
 
         // Log audit entry
         await InsertAuditEntryAsync(new AuditEntry(
@@ -1848,20 +1846,17 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<PauseResult> ResumeProjectAsync(string project, string resumedBy, CancellationToken ct = default)
     {
-        var resumedAt = DateTime.UtcNow.ToString("O");
-        
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             UPDATE cloud_project_controls
             SET sync_enabled = true, pause_reason = NULL, paused_at = NULL, paused_by = NULL,
-                resumed_at = @resumed_at, resumed_by = @resumed_by
+                resumed_at = NOW() AT TIME ZONE 'utc', resumed_by = @resumed_by
             WHERE project = @project
             RETURNING resumed_at";
         cmd.Parameters.AddWithValue("@project", project);
-        cmd.Parameters.AddWithValue("@resumed_at", resumedAt);
         cmd.Parameters.AddWithValue("@resumed_by", resumedBy);
 
-        await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(ct);
 
         // Log audit entry
         await InsertAuditEntryAsync(new AuditEntry(
@@ -1875,7 +1870,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         return new PauseResult(
             Project: project,
             Paused: false,
-            ResumedAt: resumedAt,
+            ResumedAt: result?.ToString(),
             ResumedBy: resumedBy
         );
     }
