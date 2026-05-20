@@ -29,9 +29,10 @@ El proyecto original está escrito en Go. En entornos donde el equipo trabaja co
 | HTTP API | ✅ | ✅ idéntica |
 | MCP server | ✅ | ✅ idéntico (19 herramientas) |
 | Git sync | ✅ | ✅ idéntico |
+| Offline-first sync | ❌ | ✅ Phase 1-4 complete — local SQLite ↔ PostgreSQL server |
 | Auth JWT | Opcional | Opcional (`ENGRAM_JWT_SECRET`) |
 | TUI | Bubbletea | No incluida en v1 |
-| Obsidian export | ✅ | Fase 2 |
+| Obsidian export | ✅ | ✅ Complete — incremental sync, graph.json, 47 tests |
 | Servidor compartido | 1 instancia por dev | ✅ diseñado para equipos |
 
 ---
@@ -69,6 +70,41 @@ flowchart TD
     C --> E[("SQLite — compartido con el equipo")]
     D --> F[("SQLite — privado del dev")]
 ```
+
+---
+
+## Offline-First Sync (Team Collaboration)
+
+**Feature completa** — permite trabajar offline y sincronizar cuando hay conexión.
+
+```mermaid
+flowchart LR
+    Local[("SQLite Local<br/>~/.engram/")]
+    Server[("PostgreSQL Server<br/>TrueNAS")]
+    Sync[SyncManager]
+    
+    Local <-->|bidirectional| Sync
+    Sync <-->|HTTP REST| Server
+```
+
+**Comandos**:
+```bash
+# Ver estado del sync
+./engram sync status
+
+# Con detalles JSON
+./engram sync status --json
+```
+
+**Setup**: Ver [`docs/SYNC-SETUP.md`](docs/SYNC-SETUP.md) para configuración completa.
+
+**Fases implementadas**:
+- ✅ Phase 1: Mutation journal + push/pull endpoints
+- ✅ Phase 2: Autosync manager (background service)
+- ✅ Phase 3: Enrollment + pause management + conflict resolution
+- ✅ Phase 4: Observability (status endpoint, CLI, structured logging)
+
+**Tests**: 84 tests (72 unit + 12 integration), 98.4% passing.
 
 ---
 

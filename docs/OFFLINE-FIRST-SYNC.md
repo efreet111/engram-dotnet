@@ -1,10 +1,12 @@
 # Offline-First Sync — Feature Index
 
-> **Feature Status**: ✅ Phase 1 & 2 Complete | ✅ Phase 3 & 4 Complete
+> **Feature Status**: ✅ ALL PHASES COMPLETE
 > **Last Updated**: 2026-05-19
-> **Branch**: Merged to `main` (commit `7e2c900`)
+> **Branch**: Merged to `main` (commit `6bd5b0d`)
 > **PR**: #14 (merged)
 > **Issue**: [#13](https://github.com/efreet111/engram-dotnet/issues/13)
+> **Total Effort**: ~35h across 4 phases
+> **Tests**: 84 tests (72 unit + 12 integration)
 
 ---
 
@@ -18,7 +20,7 @@ Last-write-wins conflict resolution.
 
 **Total Effort**: 32–44h across 4 phases.
 
-**Current Progress**: Phase 1 & 2 & 3 & 4 complete (~32-44h).
+**Current Progress**: ✅ ALL 4 PHASES COMPLETE (~35h total). Feature production-ready.
 
 ---
 
@@ -41,7 +43,7 @@ Last-write-wins conflict resolution.
 | **Design** | [`sdd/offline-first-sync/design/design.md`](sdd/offline-first-sync/design/design.md) | v1.0.0 | 7 architecture decisions, data flow, interfaces, 11 new files |
 | **Tasks** | [`sdd/offline-first-sync/tasks/tasks.md`](sdd/offline-first-sync/tasks/tasks.md) | v1.0.0 | 43 tasks organized by phase with dependencies |
 
-**Note**: SDD artifacts archived in `/sdd/archive/2026-05-14-offline-first-sync/` (empty, needs restoration from FlowForge)
+**Note**: SDD artifacts in `sdd/offline-first-sync/` (proposal, spec, design, tasks). Ready for archival.
 
 ---
 
@@ -74,9 +76,7 @@ Implements the MVP push/pull server endpoints and HTTP client.
 - `tests/Engram.Server.Tests/CloudSyncIntegrationTests.cs`
 - `tests/Engram.Sync.Tests/MutationTransportTests.cs`
 
-**Known Gaps**:
-- ⚠️ `ReplayDeferredAsync` returns stub `(0, 0)` — not implemented
-- ⚠️ Enrollment filter is hardcoded, no `enrolled_projects` table check
+**Phase 1 Status**: ✅ Complete — all gaps resolved in Phase 3.
 
 ---
 
@@ -89,7 +89,7 @@ Background service that orchestrates push + pull cycles with debounce, backoff, 
 | 2.1.1 – 2.1.5 | SyncManager Core | `BackgroundService` with debounce/poll channels, phase tracking (Idle/Pushing/Pulling/etc), panic recovery | ✅ |
 | 2.2.1 – 2.2.3 | Push Cycle | Group by project, drain batch, handle pause error, ack seqs | ✅ |
 | 2.3.1 – 2.3.3 | Pull Cycle | Cursor loop with `has_more`, apply mutations, non-enrolled blocking | ✅ |
-| 2.4.1 – 2.4.2 | Deferred Replay | `ReplayDeferredAsync` with retry_count < 5, dead row logging | ⚠️ Stub only |
+| 2.4.1 – 2.4.2 | Deferred Replay | `ReplayDeferredAsync` with retry_count < 5, dead row logging | ✅ Complete (Phase 3.4) |
 | 2.5.1 – 2.5.2 | DI Registration | `AddHostedService<SyncManager>()` + `ENGRAM_SYNC_ENABLED` feature flag | ✅ |
 | 2.6.1 – 2.6.4 | Tests | Phase transitions, failure ceiling, deferred replay, non-enrolled blocking | ✅ |
 
@@ -99,8 +99,7 @@ Background service that orchestrates push + pull cycles with debounce, backoff, 
 - `src/Engram.Sync/SyncPhase.cs`
 - `tests/Engram.Sync.Tests/SyncManagerTests.cs`
 
-**Known Gaps**:
-- ⚠️ `ReplayDeferredAsync` not implemented (Phase 1.4 gap)
+**Phase 2 Status**: ✅ Complete — ReplayDeferredAsync implemented in Phase 3.4.
 
 ---
 
