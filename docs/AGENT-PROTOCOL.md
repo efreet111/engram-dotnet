@@ -1,149 +1,148 @@
 # Engram Agent Protocol — Sync Collaboration
 
-> **Versión**: 1.0  
-> **Propósito**: Protocolo para que agentes de IA usen correctamente el sync multi-usuario.  
-> **Lee esto ANTES de guardar o buscar memorias en un entorno de equipo.**
+> **Version**: 1.0  
+> **Purpose**: Protocol for AI agents to correctly use multi-user sync.  
+> **Read this BEFORE saving or searching memories in a team environment.**
 
 ---
 
-## 1. ¿Por Qué Existe Esto?
+## 1. Why Does This Exist?
 
-**Problema**: Cuando 5 desarrolladores trabajan con Engram, cada uno tiene su SQLite local. Las memorias de Victor no las ve Juan, las decisiones de Ana no las ve Pedro. El equipo no tiene una "memoria compartida".
+**Problem**: When 5 developers work with Engram, each has their own SQLite database. Victor's memories are invisible to Juan, Ana's decisions are invisible to Pedro. The team has no "shared brain."
 
-**Solución**: Offline-First Sync. Cada developer tiene SQLite local (rápido, offline), y un servidor PostgreSQL compartido sincroniza las memorias de equipo automáticamente.
-
----
-
-## 2. Reglas de Oro para Agentes
-
-### Regla #1: Siempre especificá `scope`
-
-```markdown
-// ✅ Scope TEAM: todos lo ven
-mem_save(title="Decisión: ORM", ..., project="team/mi-api", scope="team")
-
-// ✅ Scope PERSONAL: solo vos lo ves  
-mem_save(title="Debug temporal", ..., project="team/mi-api", scope="personal")
-```
-
-| Scope | Visibilidad | Sync |
-|-------|-------------|------|
-| `team` | Todo el equipo | ✅ Se sincroniza al servidor |
-| `personal` | Solo el usuario actual | ❌ Se queda en SQLite local |
-
-### Regla #2: En proyectos, usá prefijo `team/`
-
-```markdown
-✅ project: "team/mi-api"      → Sincronizado, visible para todos
-✅ project: "team/flowforge"   → Sincronizado, visible para todos
-❌ project: "mi-api"           → NO sincronizado (no tiene prefijo team/)
-✅ project: "personal:debug"   → NO sincronizado (prefijo personal:)
-```
-
-### Regla #3: Antes de cerrar sesión, verificá sync
-
-```markdown
-// Verificar que las memorias se sincronizaron
-mem_sync_status()
-
-// Si hay errores:
-// 1. Verificar servidor: GET /health
-// 2. Verificar enrolled: GET /sync/enroll
-// 3. Verificar pause: GET /sync/status → .paused_projects
-```
-
-### Regla #4: Si no encontrás memoria, buscá en el equipo
-
-```markdown
-// Buscar SOLO en tu proyecto
-mem_search(query="arquitectura")
-
-// Buscar en TODO el equipo (si tenés acceso)
-mem_search(query="decisión ORM", project="team/mi-api")
-```
+**Solution**: Offline-First Sync. Each developer has local SQLite (fast, offline), and a shared PostgreSQL server syncs team memories automatically via the SyncManager.
 
 ---
 
-## 3. Protocolo de Comunicación
+## 2. Golden Rules for Agents
 
-### 3.1 Modelo de Datos
+### Rule #1: Always specify `scope`
+
+```markdown
+// ✅ TEAM scope: everyone sees it
+mem_save(title="Decision: use ORM", ..., project="team/mi-api", scope="team")
+
+// ✅ PERSONAL scope: only you see it  
+mem_save(title="Temp debug note", ..., project="team/mi-api", scope="personal")
+```
+
+| Scope | Visibility | Sync |
+|-------|-----------|------|
+| `team` | Whole team | ✅ Synced to server |
+| `personal` | Only current user | ❌ Stays in local SQLite |
+
+### Rule #2: Use `team/` prefix for shared projects
+
+```markdown
+✅ project: "team/mi-api"      → Synced, visible to all
+✅ project: "team/flowforge"   → Synced, visible to all
+❌ project: "mi-api"           → NOT synced (no team/ prefix)
+✅ project: "personal:debug"   → NOT synced (personal: prefix)
+```
+
+### Rule #3: Before closing a session, verify sync
+
+```markdown
+// Check sync health via HTTP endpoint
+curl http://server:7437/sync/status
+
+// Or via CLI
+engram sync status
+```
+
+### Rule #4: If you can't find a memory, search the team project
+
+```markdown
+// Search only in your project
+mem_search(query="architecture")
+
+// Search in team project (if you have access)
+mem_search(query="ORM decision", project="team/mi-api")
+```
+
+---
+
+## 3. Communication Protocol
+
+### 3.1 Data Model
 
 ```
-Observación = {
-  id: long,              // Auto-incremental
-  session_id: string,     // Sesión donde se creó
-  title: string,          // Título searchable
-  content: string,        // **What**...**Why**...**Where**...**Learned**
-  type: string,           // decision | architecture | bugfix | pattern | learning | discovery | config
-  project: string,        // team/{proyecto} o personal:{user}/{proyecto}
-  scope: string,          // team | personal
-  topic_key: string|null, // Para upserts (mismo topic_key = actualizar)
-  created_at: string,     // ISO timestamp
+Observation = {
+  id: long,              // Auto-increment
+  session_id: string,    // Session where it was created
+  title: string,         // Searchable title
+  content: string,       // **What**...**Why**...**Where**...**Learned**
+  type: string,          // decision | architecture | bugfix | pattern | learning | discovery | config
+  project: string,       // team/{project} or personal:{user}/{project}
+  scope: string,         // team | personal
+  topic_key: string|null,// For upserts (same topic_key = update)
+  created_at: string,    // ISO timestamp
 }
 ```
 
-### 3.2 Almacenamiento Estratificado
+### 3.2 Storage Layering
 
 ```
 ┌──────────────────────────────────────────────┐
-│              NIVEL 1: OPERATIVA               │
-│  Qué: sessions, debugging, tool_use, command  │
-│  Dónde: SQLite local + PostgreSQL server      │
-│  TTL: 30-90 días según tipo                   │
-│  Quién escribe: el agente automáticamente     │
+│           LEVEL 1: OPERATIONAL                │
+│  What: sessions, debugging, tool_use, command  │
+│  Where: local SQLite + PostgreSQL server       │
+│  TTL: 30-90 days by type                       │
+│  Who writes: agent automatically               │
 ├──────────────────────────────────────────────┤
-│              NIVEL 2: ESTRUCTURADA             │
-│  Qué: decisiones, arquitecturas, patrones     │
-│  Dónde: .md versionados en el repo + metadatos │
-│  TTL: permanente (se borra con PR)            │
-│  Quién escribe: Memory Agent (Fase 4) + humano │
+│           LEVEL 2: STRUCTURED                  │
+│  What: decisions, architecture, patterns       │
+│  Where: .md files in repo + metadata           │
+│  TTL: permanent (removed with PR)              │
+│  Who writes: Memory Agent (Phase 4) + human    │
 └──────────────────────────────────────────────┘
 ```
 
-### 3.3 Flujo de Sync (SyncManager)
+### 3.3 Sync Flow (SyncManager)
 
 ```
-1. El agente llama mem_save()
-2. La observación se guarda en SQLite LOCAL (inmediato, offline-safe)
-3. SyncManager detecta nueva mutación (cada 30s o por debounce)
-4. SyncManager hace POST /sync/mutations/push al servidor
-5. Servidor guarda en PostgreSQL (cloud_mutations)
-6. Otros developers: GET /sync/mutations/pull → reciben la mutación
-7. Apply local: la observación aparece en sus SQLite locales
+1. Agent calls mem_save()
+2. Observation saved in LOCAL SQLite (immediate, offline-safe)
+3. SyncManager detects new mutation (poll every 30s or on debounce)
+4. SyncManager POSTs /sync/mutations/push to server
+5. Server stores in PostgreSQL (cloud_mutations table)
+6. Other developers' SyncManager GETs /sync/mutations/pull
+7. Mutations applied to their local SQLite
 ```
 
 ### 3.4 Conflict Resolution
 
-- **Last-write-wins**: Si dos developers guardan la misma observación, gana la más reciente
-- **FK deferral**: Si una mutación falla por FK (ej: sesión no existe), se guarda en `sync_apply_deferred` y se reintenta hasta 5 veces
-- **Manualmente**: Si hay conflicto, `mem_doctor` puede diagnosticar
+- **Last-write-wins**: If two devs save the same observation, the most recent wins
+- **FK deferral**: If a mutation fails due to FK (e.g., session doesn't exist), it goes to `sync_apply_deferred` and retries up to 5 times
+- **Manual**: If there's a conflict, run `engram doctor` to diagnose
 
 ---
 
-## 4. Herramientas MCP (las que el agente llama)
+## 4. MCP Tools
 
-| Herramienta | Cuándo usarla | Ejemplo |
-|-------------|---------------|---------|
-| `mem_save` | **Siempre** que descubrís algo | Guardar decisión, patrón, bugfix |
-| `mem_search` | **Antes** de empezar una tarea | Buscar contexto de sesiones anteriores |
-| `mem_context` | **Al inicio** de sesión | Recuperar sesiones previas del proyecto |
-| `mem_session_summary` | **Al cerrar** sesión | Documentar lo que se hizo |
-| `mem_sync_status` | **Antes de cerrar** | Verificar que el sync esté sano |
-| `mem_doctor` | **Cuando algo falla** | Diagnosticar DB, HTTP, MCP |
+| Tool | When to use | Example |
+|------|-------------|---------|
+| `mem_save` | **Always** when you discover something | Save decision, pattern, bugfix |
+| `mem_search` | **Before** starting a task | Find context from previous sessions |
+| `mem_context` | **At session start** | Recover previous sessions for the project |
+| `mem_session_summary` | **At session end** | Document what was done |
+| `mem_get_observation` | **To read full content** | Get complete text of a search result |
+| `mem_update` | **To correct a memory** | Fix outdated information |
+| `mem_doctor` | **When something fails** | Diagnose DB, HTTP, MCP health |
 
-### Ejemplo completo de flujo de agente:
+### Agent flow example:
 
 ```markdown
-// 1. Inicio de sesión: recuperar contexto
+// 1. Session start: recover context
 mem_context(project="team/mi-api")
 
-// 2. Buscar si ya hay decisiones similares
-mem_search(query="autenticación JWT", project="team/mi-api")
+// 2. Search for similar decisions
+mem_search(query="JWT authentication", project="team/mi-api")
 
-// 3. Hacer el trabajo...
-// 4. Guardar la decisión
+// 3. Do the work...
+// 4. Save the decision
 mem_save(
-  title="Decisión: usar JWT con refresh tokens",
+  title="Decision: use JWT with refresh tokens",
   content="**What**: ... **Why**: ... **Where**: ... **Learned**: ...",
   type="decision",
   project="team/mi-api",
@@ -151,36 +150,50 @@ mem_save(
   topic_key="architecture/auth-model"
 )
 
-// 5. Verificar sync
-mem_sync_status()
+// 5. Check sync via CLI
+engram sync status
 
-// 6. Verificar que el equipo pueda verlo
-// El SyncManager se encarga automáticamente del push al servidor
+// 6. The SyncManager automatically pushes to the server
 ```
 
 ---
 
-## 5. Operaciones Humanas (SysAdmin)
+## 5. Human Operations (SysAdmin)
 
-Para operaciones administrativas, los humanos usan:
-
-| Operación | Comando |
+| Operation | Command |
 |-----------|---------|
-| Ver estado del sync | `engram sync status` o `curl /sync/status` |
-| Ver enrollemos | `curl -H "X-Engram-User: X" /sync/enroll` |
-| Enrollar proyecto | `POST /sync/enroll` |
-| Pausar sync | `POST /sync/pause` |
-| Diagnosticar | `engram doctor --server http://servidor:7437` |
-| Ver logs | `docker logs -f engram` o `journalctl -u engram-server` |
+| Check sync status | `engram sync status` or `curl /sync/status` |
+| View enrolled projects | `curl -H "X-Engram-User: user" /sync/enroll` |
+| Enroll a project | `POST /sync/enroll` |
+| Pause sync | `POST /sync/pause` |
+| Diagnose system | `engram doctor --server http://server:7437` |
+| View logs | `docker logs -f engram` or `journalctl -u engram-server` |
 
 ---
 
-## 6. Troubleshooting para Agentes
+## 6. Troubleshooting for Agents
 
-| Síntoma | Qué hacer |
-|---------|-----------|
-| `mem_search` no devuelve memorias del equipo | Verificar que la búsqueda incluya `project` correcto |
-| `mem_sync_status` muestra errores | Ejecutar `mem_doctor` para diagnóstico completo |
-| `curl /sync/enroll` devuelve 409 | El proyecto ya está inscripto — continuar normalmente |
-| `curl /sync/status` devuelve `sync_enabled: false` | El SyncManager no está activo — las memorias SOLO son locales |
-| Error 500 en POST | Ver logs del servidor — el error ahora se loguea completo |
+| Symptom | What to do |
+|---------|------------|
+| `mem_search` returns no team memories | Check search includes correct `project` |
+| `curl /sync/enroll` returns 409 | Project already enrolled — continue normally |
+| `curl /sync/status` shows `sync_enabled: false` | SyncManager is off — memories are LOCAL only |
+| HTTP 500 on POST | Check server logs — errors are now fully logged |
+
+---
+
+## 7. Quick Reference
+
+```bash
+# Check if server is alive
+curl http://server:7437/health
+
+# View enrolled projects
+curl -H "X-Engram-User: victor" http://server:7437/sync/enroll
+
+# Run full diagnostics
+engram doctor --server http://server:7437
+
+# CLI sync status
+engram sync status
+```
