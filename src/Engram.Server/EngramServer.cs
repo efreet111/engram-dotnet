@@ -68,6 +68,32 @@ public static class EngramServer
 
         var app = builder.Build();
 
+        // Global exception handler for debugging
+        app.Use(async (ctx, next) =>
+        {
+            try
+            {
+                await next(ctx);
+            }
+            catch (Exception ex)
+            {
+                var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
+                var logger = loggerFactory.CreateLogger("EngramServer");
+                logger.LogError(ex, "Unhandled exception processing {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+                ctx.Response.StatusCode = 500;
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.WriteAsync(
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        error = ex.Message,
+                        type = ex.GetType().Name,
+#if DEBUG
+                        stackTrace = ex.ToString()
+#endif
+                    }));
+            }
+        });
+
         if (!string.IsNullOrEmpty(cfg.CorsOrigins))
             app.UseCors();
 
