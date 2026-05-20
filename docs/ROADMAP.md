@@ -49,6 +49,27 @@ Operational diagnostics and repair tools — port from Go upstream.
 > **SDD Artifact**: [`../sdd/offline-first-sync/`](../sdd/offline-first-sync/)
 > **Esfuerzo total**: **~35h** (4 fases completas)
 
+---
+
+### PostgreSQL Backend — Bug Fixes (backlog)
+
+> **Estado**: 3 tests skippeados — requieren investigación y fix
+> **Esfuerzo estimado**: 2-3h
+> **Engram**: `architecture/postgres-store-bugs`
+
+Tests fallando en `PostgresStoreTests.cs`:
+
+| Test | Problema | Causa probable |
+|------|----------|----------------|
+| `Search_TopicKeyShortcut_RanksFirst` | FTS5 ranking difiere (0.06 vs -1000) | PostgreSQL FTS ranking function diferente de SQLite |
+| `DeleteSession_HasActiveObservations_Throws` | Session not found después de failed delete | FK constraint hace rollback en Postgres, SQLite puede comportarse distinto |
+| `MergeProjects_ReassignsObservations` | GetObservationAsync devuelve null post-merge | Transaction scope o isolation level issue |
+
+**Fix requerido**:
+1. Investigar comportamiento de FK constraints en Postgres vs SQLite
+2. Revisar transaction isolation levels
+3. Ajustar tests o implementación según corresponda
+
 Team sync: local SQLite ↔ PostgreSQL server (TrueNAS `192.168.0.178:7437`).
 Local es source of truth offline, server es source of truth online. Last-write-wins.
 
