@@ -63,6 +63,7 @@ public sealed class PostgresStoreFixture : IAsyncLifetime
     }
 }
 
+[Trait("Category", "RequiresDocker")]
 public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
 {
     private readonly PostgresStoreFixture _fixture;

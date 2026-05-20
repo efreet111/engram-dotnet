@@ -95,6 +95,7 @@ public sealed class CloudSyncPostgresFixture : IAsyncLifetime
 /// Integration tests: Push → cloud_mutations → Pull roundtrip using real PostgreSQL.
 /// </summary>
 [Collection("CloudSyncPostgres")]
+[Trait("Category", "RequiresDocker")]
 public class CloudSyncIntegrationTests : IClassFixture<CloudSyncPostgresFixture>
 {
     private readonly CloudSyncPostgresFixture _fixture;
