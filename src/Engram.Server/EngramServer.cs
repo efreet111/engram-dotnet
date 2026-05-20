@@ -68,29 +68,64 @@ public static class EngramServer
 
         var app = builder.Build();
 
-        // Global exception handler for debugging
+        // Global request logging + error handling middleware
         app.Use(async (ctx, next) =>
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("HTTP");
             try
             {
                 await next(ctx);
             }
             catch (Exception ex)
             {
-                var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
-                var logger = loggerFactory.CreateLogger("EngramServer");
-                logger.LogError(ex, "Unhandled exception processing {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
-                ctx.Response.StatusCode = 500;
-                ctx.Response.ContentType = "application/json";
-                await ctx.Response.WriteAsync(
-                    System.Text.Json.JsonSerializer.Serialize(new
+                sw.Stop();
+                logger.LogError(ex, "HTTP {Method} {Path} → 500 ({Duration}ms) — {ErrorType}: {ErrorMsg}",
+                    ctx.Request.Method, ctx.Request.Path, sw.ElapsedMilliseconds,
+                    ex.GetType().Name, ex.Message);
+                
+                // Try to read request body for debugging
+                string bodyPreview = "";
+                try
+                {
+                    ctx.Request.EnableBuffering();
+                    if (ctx.Request.Body != null && ctx.Request.ContentLength > 0 && ctx.Request.ContentLength < 65536)
+                    {
+                        using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
+                        var body = await reader.ReadToEndAsync();
+                        bodyPreview = body.Length > 1024 ? body[..1024] + "..." : body;
+                        ctx.Request.Body.Position = 0;
+                    }
+                }
+                catch { /* best-effort */ }
+                
+                if (!ctx.Response.HasStarted)
+                {
+                    ctx.Response.StatusCode = 500;
+                    ctx.Response.ContentType = "application/json";
+                    await ctx.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(new
                     {
                         error = ex.Message,
                         type = ex.GetType().Name,
-#if DEBUG
+                        bodyPreview = string.IsNullOrEmpty(bodyPreview) ? null : bodyPreview,
                         stackTrace = ex.ToString()
-#endif
                     }));
+                }
+            }
+            finally
+            {
+                sw.Stop();
+                if (ctx.Response.StatusCode >= 400)
+                {
+                    logger.LogWarning("HTTP {Method} {Path} → {Status} ({Duration}ms)",
+                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+                }
+                else
+                {
+                    logger.LogInformation("HTTP {Method} {Path} → {Status} ({Duration}ms)",
+                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+                }
             }
         });
 
