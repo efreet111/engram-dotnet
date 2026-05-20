@@ -1,94 +1,96 @@
 # engram-dotnet
 
-> **engram** `/ˈen.ɡræm/` — *neurociencia*: la huella física de un recuerdo en el cerebro.
+> **engram** `/ˈen.ɡræm/` — *neuroscience*: the physical trace of a memory in the brain.
 
-Memoria persistente para agentes de IA. Una reimplementación a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
+Persistent memory for AI coding agents. A **.NET 10 C#** port of the original [engram](https://github.com/Gentleman-Programming/engram) by [Alan Buscaglia](https://github.com/Gentleman-Programming).
 
-**¿Por qué .NET 10?** Tipos fuertes, rendimiento nativo (AOT-ready), facilidad de despliegue en entornos enterprise Windows/Linux, y un ecosistema maduro para equipos que ya usan .NET. Misma API que el original — solo cambia `ENGRAM_URL`.
+**Why .NET 10?** Strong typing, native performance (AOT-ready), easy deployment in enterprise Windows/Linux environments, and a mature ecosystem for teams already on .NET. Same API as the original — just change `ENGRAM_URL`.
 
-Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex.
+Compatible with Claude Code, OpenCode, Gemini CLI, Cursor, Codex.
 
 ---
 
-## 🏗️ Arquitectura
+## 🏗️ Architecture
 
 ```
-AGENTE DE IA                   ENGRAM-DOTNET                PERSISTENCIA
+AI AGENT                       ENGRAM-DOTNET                STORAGE
 (Claude/OpenCode/Cursor)                                    
        │                                                     
        ├── MCP stdio ──► engram mcp ───────►┐               
        │                                     │               
        │                          ┌──────────┴──────────┐    
        │                          │  EngramServer (.NET) │    
-       └── HTTP REST ────────────►│  30 endpoints REST   │    
-                                  │  24 herramientas MCP │    
+       └── HTTP REST ────────────►│  30 REST endpoints   │    
+                                  │  24 MCP tools        │    
                                   └──────────┬──────────┘    
                                              │                
                           ┌──────────────────┼──────────────────┐
                           ▼                  ▼                  ▼
                     ┌──────────┐      ┌────────────┐     ┌──────────┐
-                    │ SQLite   │      │ PostgreSQL │     │ Servidor │
-                    │ Local    │◄────►│ Remoto     │     │ Remoto   │
-                    │ (default)│ Sync │ (equipo)   │     │ (HttpStore)
+                    │ SQLite   │      │ PostgreSQL │     │ Remote   │
+                    │ Local    │◄────►│ Server     │     │ Server   │
+                    │ (default)│ Sync │ (team)     │     │ (HttpStore)
                     └──────────┘      └────────────┘     └──────────┘
 ```
 
-**¿Cómo se ve una "memoria"?**
+**Note on architecture**: engram-dotnet uses a **simple Strategy Pattern** (`IStore` interface with `SqliteStore`, `PostgresStore`, `HttpStore` implementations). No MediatR, no CQRS, no Clean Architecture — just minimal APIs + dependency injection. The complexity is in the features, not the framework.
+
+### What does a "memory" look like?
 
 ```json
 {
-  "id": 1, "title": "Decisión: usar PostgreSQL", 
+  "id": 1, "title": "Decision: use PostgreSQL", 
   "content": "**What**: ... **Why**: ... **Where**: ... **Learned**: ...",
   "type": "decision", "project": "team/mi-api", "scope": "team",
   "topic_key": "architecture/db-choice", "created_at": "2026-05-20T..."
 }
 ```
 
-Eso guarda el agente cuando llama `mem_save`. Después lo busca con `mem_search`. Simple.
+That's what the agent saves when it calls `mem_save`. Later it finds it with `mem_search`. Simple.
 
 ---
 
-## 👤 ¿Quién sos?
+## 👤 Who are you?
 
-Elegí tu perfil y seguí las instrucciones correspondientes:
+Choose your profile and follow the guide:
 
 ### 🧑 Solo Developer
-[➜ Guía rápida para usar engram solo](docs/01-QUICK-START.md#-solo-developer)
+[➜ Quick start for solo developer](docs/01-QUICK-START.md#-solo-developer)
 
 ```bash
-# Lo mínimo para arrancar
+# Minimum to get started
 git clone https://github.com/efreet111/engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 ./dist/engram serve
 ```
 
-> **Resultado**: Servidor local con SQLite, listo para conectar tu agente.
+> **Result**: Local SQLite server, ready to connect your agent.
 
-### 👥 Team Leader (2-5 personas)
-[➜ Guía rápida para equipo con servidor compartido](docs/01-QUICK-START.md#-team-leader)
+### 👥 Team Leader (2-5 people)
+[➜ Quick start for shared server team](docs/01-QUICK-START.md#-team-leader)
 
 ```bash
-# Servidor centralizado + multi-user isolation
+# Centralized server + multi-user isolation
 ENGRAM_DB_TYPE=postgres ENGRAM_PG_CONNECTION="..." ./engram serve
 ```
 
-> **Resultado**: Servidor compartido, cada dev con su identidad (`ENGRAM_USER`), memorias aisladas.
+> **Result**: Shared server, each dev has identity (`ENGRAM_USER`), isolated memories.
 
-### 🏢 IT Admin (5-20 personas)
-[➜ Guía rápida para equipo completo con sync offline-first](docs/01-QUICK-START.md#-it-admin)
+### 🏢 IT Admin (5-20 people)
+[➜ Quick start for full offline-first sync](docs/01-QUICK-START.md#-it-admin)
 
 ```bash
 # PostgreSQL + offline-first sync + enrollment
-ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET_KEY=cloud ./engram serve
+ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 ```
 
-> **Resultado**: Sync bidireccional, trabajo offline, enroll de proyectos, pause/resume admin.
+> **Result**: Bidirectional sync, offline work, project enrollment, admin pause/resume.
 
 ---
 
 ## ⚡ Features
 
-| Feature | Estado | Docs |
+| Feature | Status | Docs |
 |---------|--------|------|
 | **REST API** (30 endpoints) | ✅ Complete | [API Reference](docs/API-REFERENCE.md) |
 | **MCP Server** (19 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
@@ -100,24 +102,31 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET_KEY=cloud ./engram serve
 
 ---
 
-## 📚 Documentación
+## 📚 Documentation
 
-| Documento | Para quién |
-|-----------|-----------|
-| [📖 Guía Rápida por Persona](docs/01-QUICK-START.md) | Todos |
-| [📖 API Reference](docs/API-REFERENCE.md) | Humanos (curl, parámetros, respuestas) |
-| [🤖 Agent Protocol](docs/AGENT-PROTOCOL.md) | Agentes IA (tools, scope, sync) |
+| Doc | Audience |
+|-----|----------|
+| [📖 Quick Start by Persona](docs/01-QUICK-START.md) | Everyone |
+| [📖 API Reference](docs/API-REFERENCE.md) | Humans (curl, parameters, responses) |
+| [🤖 Agent Protocol](docs/AGENT-PROTOCOL.md) | AI agents (tools, scope, sync) |
 | [📖 Sync Setup](docs/SYNC-SETUP.md) | SysAdmins (PostgreSQL, env vars) |
-| [📖 Multi-User](docs/MULTI-USER.md) | Team leads (identidad, isolation) |
+| [📖 Multi-User](docs/MULTI-USER.md) | Team leads (identity, isolation) |
+| [📖 MCP Config](docs/MCP-CONFIG.md) | AI agent setup (Cursor, Claude, OpenCode) |
 
 ---
 
-## 🙏 Créditos
+## 📖 Spanish version
 
-Este proyecto es un port a .NET 10 C# del original [engram](https://github.com/Gentleman-Programming/engram) por [Alan Buscaglia](https://github.com/Gentleman-Programming). **Todo el mérito del diseño y la idea pertenece al proyecto original.** Licencia MIT.
+➜ **[README.es.md](README.es.md)** — Documentación en español.
 
 ---
 
-## 🚀 Siguiente
+## 🙏 Credits
 
-➜ **[docs/01-QUICK-START.md](docs/01-QUICK-START.md)** — Elegí tu perfil y empezá.
+This is a .NET 10 C# port of the original [engram](https://github.com/Gentleman-Programming/engram) by [Alan Buscaglia](https://github.com/Gentleman-Programming). **All design credit belongs to the original project.** MIT License.
+
+---
+
+## 🚀 Next
+
+➜ **[docs/01-QUICK-START.md](docs/01-QUICK-START.md)** — Pick your profile and start.

@@ -283,3 +283,4 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | 8 | **Observability** | Útil pero no bloqueante. |
 | 9 | **Tool Deferral** | SDK .NET no soporta — en investigación. |
 | 10 | **Global Error Logging** | Agregar middleware de manejo de errores en todos los handlers. Muchos endpoints devuelven 500 sin body ni log. ~2-3h. |
+| 11 | 🐘 **Refactor Clases Gigantes** | Separar PostgresStore.cs (~2100 líneas) y SqliteStore.cs (~2400 líneas) por dominio. No cambia lógica, solo mover métodos a archivos parciales. ~4-6h. |
