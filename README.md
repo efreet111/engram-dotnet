@@ -2,7 +2,7 @@
 
 > **engram** `/ˈen.ɡræm/` — *neurociencia*: la huella física de un recuerdo en el cerebro.
 
-Memoria persistente para agentes de IA. Fork a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
+Memoria persistente para agentes de IA. Una reimplementación a **.NET 10 C#** del proyecto original [engram](https://github.com/Gentleman-Programming/engram).
 
 Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex — solo se cambia `ENGRAM_URL`.
 
