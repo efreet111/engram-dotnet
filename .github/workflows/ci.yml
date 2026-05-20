@@ -34,8 +34,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release
 
-      - name: Test (SQLite only — exclude Postgres)
-        run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests" --logger "console;verbosity=normal"
+      - name: Test (SQLite only — exclude Postgres + Docker tests)
+        run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests&Category!=RequiresDocker" --logger "console;verbosity=normal"
 
   # ─── PostgreSQL Tests (Testcontainers via Docker) ───────────────────────────
   test-postgres:
