@@ -1716,7 +1716,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             SELECT project, enrolled_at, enrolled_by FROM sync_enrolled_projects
-            WHERE user = @user
+            WHERE ""user"" = @user
             ORDER BY enrolled_at DESC";
         cmd.Parameters.AddWithValue("@user", user);
 
@@ -1736,9 +1736,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO sync_enrolled_projects (project, user, enrolled_by, enrolled_at)
+            INSERT INTO sync_enrolled_projects (project, ""user"", enrolled_by, enrolled_at)
             VALUES (@project, @user, @user, NOW() AT TIME ZONE 'utc')
-            ON CONFLICT (project, user) DO NOTHING
+            ON CONFLICT (project, ""user"") DO NOTHING
             RETURNING enrolled_at";
         cmd.Parameters.AddWithValue("@project", project);
         cmd.Parameters.AddWithValue("@user", user);
@@ -1759,7 +1759,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         await using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             DELETE FROM sync_enrolled_projects
-            WHERE project = @project AND user = @user
+            WHERE project = @project AND ""user"" = @user
             RETURNING enrolled_at";
         cmd.Parameters.AddWithValue("@project", project);
         cmd.Parameters.AddWithValue("@user", user);
