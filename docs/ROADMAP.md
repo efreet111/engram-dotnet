@@ -263,3 +263,4 @@ Port del servidor HTTP a Python para equipos con stack Python-first.
 | 7 | **Phase 4 — Memory Relations** | Go upstream ✅ done. Complex — cloud + LLM judge. |
 | 8 | **Observability** | Útil pero no bloqueante. |
 | 9 | **Tool Deferral** | SDK .NET no soporta — en investigación. |
+| 10 | **Global Error Logging** | Agregar middleware de manejo de errores en todos los handlers. Muchos endpoints devuelven 500 sin body ni log. ~2-3h. |
