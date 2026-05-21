@@ -1,516 +1,322 @@
-# Offline-First Sync — Casos de Uso y Validación
+# Offline-First Sync — Test Cases & Validation
 
 **Feature**: Offline-First Sync (Phases 1-4 ✅ Complete)  
-**Server**: TrueNAS PostgreSQL en `192.168.0.178:7437`  
-**Cliente**: Local SQLite + SyncManager background service
+**Server**: TrueNAS PostgreSQL at `192.168.0.178:7437`  
+**Client**: Local SQLite + SyncManager background service
 
 ---
 
-## 📋 Pre-requisitos
+## 📋 Prerequisites
 
-### Variables de Entorno
+### Environment Variables
 
 ```bash
-# Cliente (local)
+# Client (local)
 export ENGRAM_DATA_DIR=~/.engram
 export ENGRAM_SERVER_URL=http://192.168.0.178:7437
 export ENGRAM_USER=victor.silgado
 export ENGRAM_SYNC_ENABLED=true
-export ENGRAM_SYNC_TARGET_KEY=cloud
-export ENGRAM_SYNC_POLL_INTERVAL=30s
-export ENGRAM_SYNC_DEBOUNCE_DURATION=5s
-export ENGRAM_SYNC_MAX_CONSECUTIVE_FAILURES=10
-
-# Server (TrueNAS)
-export ENGRAM_DATA_DIR=/data/engram
-export ENGRAM_DB_TYPE=postgres
-export ENGRAM_PG_CONNECTION_STRING="Host=localhost;Database=engram;Username=engram;Password=***"
-export ENGRAM_SERVER_PORT=7437
+export ENGRAM_SYNC_TARGET=cloud
+export ENGRAM_SYNC_POLL_SECONDS=30
+export ENGRAM_SYNC_DEBOUNCE_MS=5000
+export ENGRAM_SYNC_MAX_FAILURES=10
 ```
 
-### Verificación Inicial
+### Initial Verification
 
 ```bash
-# 1. Verificar que el server está corriendo
+# 1. Server is running
 curl http://192.168.0.178:7437/health
+# Expected: {"status":"ok","backend":"PostgreSQL"}
 
-# Expected: {"status":"ok","service":"engram","version":"1.1.0","backend":"PostgreSQL"}
-
-# 2. Verificar sync status local
+# 2. Check sync status
 engram sync status
 
-# Expected: Sync enabled, target=cloud, cursor positions
-
-# 3. Verificar enrolled projects
+# 3. Check enrolled projects
 curl http://192.168.0.178:7437/sync/enroll
 # Expected: {"projects":[],"count":0}
 ```
 
 ---
 
-## 🧪 CASOS DE USO
+## 🧪 Test Cases
 
-### CASO 1: Primer Enrollment de Proyecto
+### TEST 1: First Project Enrollment
 
-**Objetivo**: Enroll un proyecto para que participe del sync.
-
-**Pre-condición**: 
-- Server corriendo
-- Sync habilitado localmente
-- Proyecto `team/mi-api` existe localmente
-
-**Pasos**:
+**Goal**: Enroll a project for sync.
 
 ```bash
-# 1. Enroll del proyecto
+# 1. Enroll
 curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "Content-Type: application/json" \
   -H "X-Engram-User: victor.silgado" \
   -d '{"project":"team/mi-api"}'
 
-# 2. Verificar enrollment
-curl http://192.168.0.178:7437/sync/enroll \
-  -H "X-Engram-User: victor.silgado"
-
-# 3. Verificar sync status
-engram sync status --json
+# 2. Verify
+curl http://192.168.0.178:7437/sync/enroll -H "X-Engram-User: victor.silgado"
 ```
 
-**Resultado Esperado**:
-```json
-{
-  "project": "team/mi-api",
-  "enrolled_at": "2026-05-19T20:00:00Z",
-  "enrolled_by": "victor.silgado"
-}
-```
-
-**Criterio de Aceptación**:
-- ✅ Proyecto aparece en lista de enrolled
-- ✅ Sync status muestra proyecto enrolled
-- ✅ No hay errores en logs del SyncManager
+**Acceptance**: ✅ Project appears in enrolled list
 
 ---
 
-### CASO 2: Push de Mutaciones (Online)
+### TEST 2: Push Mutations (Online)
 
-**Objetivo**: Verificar que las memorias locales se sincronizan al server.
-
-**Pre-condición**:
-- Proyecto enrolled
-- SyncManager corriendo
-
-**Pasos**:
+**Goal**: Verify local memories sync to the server.
 
 ```bash
-# 1. Crear memoria local
+# 1. Create local memory
 engram mem_save "Test sync observation" \
   --title "Offline-First Test" \
   --type manual \
   --project team/mi-api
 
-# 2. Esperar sync (poll interval 30s)
+# 2. Wait for sync (poll interval)
 sleep 35
 
-# 3. Verificar en server
-curl http://192.168.0.178:7437/search?q=Offline-First+Test \
-  -H "X-Engram-User: victor.silgado"
+# 3. Verify on server
+curl http://192.168.0.178:7437/search?q=Offline-First+Test
 
-# 4. Verificar sync status
+# 4. Check sync status
 engram sync status
 ```
 
-**Resultado Esperado**:
-- `pending_push` debería ser 0 después del sync
-- Memoria aparece en búsqueda del server
-- SyncManager logs muestran `CycleComplete` con pushed count
-
-**Criterio de Aceptación**:
-- ✅ Memoria replicada en server
-- ✅ Cursor `last_pushed_seq` actualizado
-- ✅ No hay errores de conexión
+**Acceptance**: ✅ Memory replicated to server, cursor updated
 
 ---
 
-### CASO 3: Pull de Mutaciones (Otro Cliente)
+### TEST 3: Pull Mutations (Second Client)
 
-**Objetivo**: Verificar que un segundo cliente recibe las memorias del primero.
-
-**Pre-condición**:
-- Cliente 1 ya sincronizó memoria
-- Cliente 2 tiene mismo proyecto enrolled
-
-**Pasos**:
+**Goal**: Verify a second client receives memories from the first.
 
 ```bash
-# Cliente 2:
+# As juan.perez:
 export ENGRAM_USER=juan.perez
-export ENGRAM_DATA_DIR=~/.engram-juan
 
-# 1. Enroll del mismo proyecto
+# 1. Enroll same project
 curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "Content-Type: application/json" \
   -H "X-Engram-User: juan.perez" \
   -d '{"project":"team/mi-api"}'
 
-# 2. Esperar pull sync
+# 2. Wait for pull
 sleep 35
 
-# 3. Buscar memoria creada por Cliente 1
+# 3. Search Victor's memory
 engram search "Offline-First Test"
-
-# 4. Verificar sync status
-engram sync status
 ```
 
-**Resultado Esperado**:
-- Memoria de Cliente 1 aparece en Cliente 2
-- `last_pulled_seq` actualizado
-- Logs muestran `PullBatch` event
-
-**Criterio de Aceptación**:
-- ✅ Bidireccionalidad verificada
-- ✅ No hay duplicados
-- ✅ Timestamps preservados
+**Acceptance**: ✅ Victor's memory visible to Juan
 
 ---
 
-### CASO 4: Trabajo Offline + Sync Diferido
+### TEST 4: Offline Work + Deferred Sync
 
-**Objetivo**: Verificar que las memorias creadas offline se sincronizan al reconectar.
-
-**Pre-condición**:
-- Proyecto enrolled
-- SyncManager corriendo
-
-**Pasos**:
+**Goal**: Verify memories created offline sync when connection is restored.
 
 ```bash
-# 1. Detener server (simular offline)
+# 1. Stop server (simulate offline)
 ssh root@192.168.0.178 "systemctl stop engram-server"
 
-# 2. Crear memorias offline
+# 2. Create memories offline
 engram mem_save "Offline observation 1" --project team/mi-api
 engram mem_save "Offline observation 2" --project team/mi-api
 
-# 3. Verificar pending mutations
+# 3. Verify pending mutations
 engram sync status --json | jq '.counts.pending_push'
 # Expected: 2
 
-# 4. Logs del SyncManager (debería mostrar reintentos)
-journalctl -u engram -f | grep "Connection refused"
-
-# 5. Reiniciar server
+# 4. Restart server
 ssh root@192.168.0.178 "systemctl start engram-server"
-sleep 5
-
-# 6. Esperar sync
 sleep 35
 
-# 7. Verificar que se sincronizó
+# 5. Verify sync completed
 engram sync status --json | jq '.counts.pending_push'
 # Expected: 0
-
 curl http://192.168.0.178:7437/search?q=Offline+observation
 ```
 
-**Resultado Esperado**:
-- Offline: `pending_push` incrementa
-- Reconexión: SyncManager detecta server y hace push
-- Memorias aparecen en server
-
-**Criterio de Aceptación**:
-- ✅ Offline: no hay errores fatales, solo reintentos
-- ✅ Reconexión: sync automático
-- ✅ No se pierden memorias
+**Acceptance**: ✅ Offline: no errors, pending_push increments. Reconnect: auto-sync.
 
 ---
 
-### CASO 5: Pause/Resume Sync (Admin)
+### TEST 5: Pause/Resume Sync (Admin)
 
-**Objetivo**: Verificar que admin puede pausar sync para mantenimiento.
-
-**Pre-condición**:
-- Proyecto enrolled
-- Usuario es admin
-
-**Pasos**:
+**Goal**: Verify admin can pause sync for maintenance.
 
 ```bash
-# 1. Pausar sync
+# 1. Pause
 curl -X POST http://192.168.0.178:7437/sync/pause \
-  -H "Content-Type: application/json" \
   -H "X-Engram-User: admin" \
   -d '{"project":"team/mi-api","reason":"Database maintenance"}'
 
-# 2. Intentar push (debería fallar con 409)
+# 2. Push should fail with 409
 curl -X POST http://192.168.0.178:7437/sync/mutations/push \
   -H "Content-Type: application/json" \
-  -H "X-Engram-User: victor.silgado" \
+  -H "X-Engram-User: victor" \
   -d '{"entries":[{"project":"team/mi-api","entity":"observation","entity_key":"test","op":"upsert","payload":"{}"}]}'
-
 # Expected: HTTP 409 Conflict
-# {"error_class":"policy","error_code":"sync-paused","error":"..."}
 
-# 3. Verificar paused projects
-curl http://192.168.0.178:7437/sync/status | jq '.paused_projects'
-
-# 4. Reanudar sync
+# 3. Resume
 curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 
-# 5. Verificar reanudado
+# 4. Verify resumed
 curl http://192.168.0.178:7437/sync/status | jq '.paused_projects'
 # Expected: []
 ```
 
-**Resultado Esperado**:
-- Pause: HTTP 409 con error `sync-paused`
-- Resume: Sync se reanuda automáticamente
-
-**Criterio de Aceptación**:
-- ✅ Pause bloquea push
-- ✅ Resume permite push
-- ✅ Audit log registra pause/resume events
+**Acceptance**: ✅ Pause blocks push, resume allows it
 
 ---
 
-### CASO 6: Deferred Replay (FK Misses)
+### TEST 6: Deferred Replay (FK Misses)
 
-**Objetivo**: Verificar que las mutaciones que fallan por FK constraints se reintentan.
-
-**Pre-condición**:
-- Proyecto enrolled
-- Tabla `sync_apply_deferred` existe
-
-**Pasos**:
+**Goal**: Verify mutations that fail due to FK constraints are retried.
 
 ```bash
-# 1. Crear observación con referencia a sesión inexistente (simular FK miss)
-# Esto debería ir a sync_apply_deferred
-
-# 2. Verificar deferred queue
+# 1. Check deferred queue
 sqlite3 ~/.engram/engram.db "SELECT COUNT(*) FROM sync_apply_deferred;"
 
-# 3. Crear sesión faltante
-engram mem_save_session "test-session" --project team/mi-api
+# 2. Create deferred entry (simulate FK miss)
+# Then create the missing FK target
 
-# 4. Esperar replay
+# 3. Wait for replay
 sleep 35
 
-# 5. Verificar deferred queue vacía
+# 4. Verify queue empty
 sqlite3 ~/.engram/engram.db "SELECT COUNT(*) FROM sync_apply_deferred;"
 # Expected: 0
-
-# 6. Verificar logs
-journalctl -u engram -f | grep "DeferredReplay"
 ```
 
-**Resultado Esperado**:
-- FK miss va a `sync_apply_deferred`
-- Al crear sesión, replay automático
-- `retry_count` incrementa en fallos
-
-**Criterio de Aceptación**:
-- ✅ FK misses no bloquean cursor
-- ✅ Replay automático cuando FK se resuelve
-- ✅ Dead rows logueadas después de 5 reintentos
+**Acceptance**: ✅ FK misses don't block cursor, auto-replay works
 
 ---
 
-### CASO 7: Sync Status Endpoint
+### TEST 7: Sync Status Endpoint
 
-**Objetivo**: Verificar observabilidad del sync.
-
-**Pasos**:
+**Goal**: Verify sync observability.
 
 ```bash
-# 1. Obtener status completo
+# 1. Full status
 curl http://192.168.0.178:7437/sync/status | jq
 
-# 2. Verificar estructura
+# Expected structure:
 {
   "sync_enabled": true,
   "phase": "healthy",
-  "target": "cloud",
-  "cursor": {
-    "last_pushed_seq": 142,
-    "last_pulled_seq": 89,
-    "last_enqueued_seq": 145
-  },
-  "health": {
-    "status": "healthy",
-    "consecutive_failures": 0,
-    "backoff_until": null,
-    "last_error": null,
-    "last_sync_at": "2026-05-19T20:00:00Z"
-  },
-  "counts": {
-    "pending_push": 0,
-    "total_pushed": 142,
-    "total_pulled": 89,
-    "deferred_pending": 0
-  },
+  "cursor": {"last_pushed_seq": 142, "last_pulled_seq": 89, ...},
+  "health": {"status": "healthy", "consecutive_failures": 0, ...},
+  "counts": {"pending_push": 0, "total_pushed": 142, ...},
   "enrolled_projects": ["team/mi-api"],
   "paused_projects": []
 }
 
-# 3. CLI status
+# 2. CLI status
 engram sync status
 
-# 4. CLI status JSON
+# 3. CLI JSON
 engram sync status --json | jq
 ```
 
-**Resultado Esperado**:
-- Todos los campos presentes
-- Cursors actualizados
-- Health status correcto
-
-**Criterio de Aceptación**:
-- ✅ Endpoint responde < 100ms
-- ✅ Datos coherentes con DB
-- ✅ CLI formateo correcto
+**Acceptance**: ✅ All fields present, data consistent
 
 ---
 
-### CASO 8: Multi-User Isolation + Sync
+### TEST 8: Multi-User Isolation + Sync
 
-**Objetivo**: Verificar que usuarios distintos no ven memorias personales entre sí.
-
-**Pre-condición**:
-- Dos usuarios enrolled en mismo proyecto team
-
-**Pasos**:
+**Goal**: Verify users don't see each other's personal memories.
 
 ```bash
-# Usuario 1: victor.silgado
+# User 1: victor
 export ENGRAM_USER=victor.silgado
-engram mem_save "Personal de Victor" --scope personal --project mi-api
+engram mem_save "Victor's personal" --scope personal --project mi-api
 
-# Usuario 2: juan.perez
+# User 2: juan
 export ENGRAM_USER=juan.perez
-engram mem_save "Personal de Juan" --scope personal --project mi-api
+engram mem_save "Juan's personal" --scope personal --project mi-api
 
-# Usuario 1: Buscar memorias
+# Victor searches
 export ENGRAM_USER=victor.silgado
-engram search "Personal"
+engram search "personal"
+# Expected: Only "Victor's personal"
 
-# Expected: Solo ve "Personal de Victor"
-
-# Usuario 2: Buscar memorias
-export ENGRAM_USER=juan.perez
-engram search "Personal"
-
-# Expected: Solo ve "Personal de Juan"
-
-# Ambos: Ver memorias team
-export ENGRAM_USER=victor.silgado
+# Both see team memories
 engram mem_save "Team memory" --scope team --project mi-api
-
-export ENGRAM_USER=juan.perez
-engram search "Team memory"
-
-# Expected: Ambos ven "Team memory"
 ```
 
-**Resultado Esperado**:
-- `personal:victor.silgado/*` solo visible para Victor
-- `personal:juan.perez/*` solo visible para Juan
-- `team/mi-api/*` visible para ambos
-
-**Criterio de Aceptación**:
-- ✅ Aislamiento personal verificado
-- ✅ Team compartido verificado
-- ✅ Namespacing correcto en sync
+**Acceptance**: ✅ `personal:{user}` isolated, `team/*` shared
 
 ---
 
-## 📊 MÉTRICAS DE VALIDACIÓN
+## 📊 Validation Metrics
 
-| Métrica | Target | Cómo medir |
-|---------|--------|------------|
-| **Push latency (p95)** | < 500ms | `/sync/status` endpoint |
-| **Pull latency (p95)** | < 1000ms | SyncManager logs |
-| **Sync success rate** | > 99% | `cloud_sync_audit_log` table |
-| **Deferred replay success** | > 95% | `sync_apply_deferred.retry_count` |
-| **Offline tolerance** | Indefinido | Pending mutations queue |
-| **Failure ceiling** | 10 consecutive failures | SyncManager phase transitions |
+| Metric | Target | How to measure |
+|--------|--------|---------------|
+| Push latency (p95) | < 500ms | `/sync/status` endpoint |
+| Pull latency (p95) | < 1000ms | SyncManager logs |
+| Sync success rate | > 99% | `cloud_sync_audit_log` table |
+| Deferred replay success | > 95% | `sync_apply_deferred.retry_count` |
+| Failure ceiling | 10 consecutive | SyncManager phase transitions |
 
 ---
 
-## 🐛 TROUBLESHOOTING
+## 🐛 Troubleshooting
 
-### Sync no arranca
+### Sync won't start
 
 ```bash
-# 1. Verificar ENGRAM_SYNC_ENABLED
+# 1. Check ENGRAM_SYNC_ENABLED
 echo $ENGRAM_SYNC_ENABLED
 # Expected: true
 
-# 2. Verificar logs
+# 2. Check logs
 journalctl -u engram -f | grep "SyncManager"
 
-# 3. Verificar server reachable
-curl http://192.168.0.178:7437/health
-
-# 4. Reiniciar SyncManager
+# 3. Restart
 systemctl restart engram
 ```
 
 ### 409 Sync Paused
 
 ```bash
-# Verificar paused projects
+# Check paused projects
 curl http://192.168.0.178:7437/sync/status | jq '.paused_projects'
 
-# Resume si es necesario
+# Resume
 curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 ```
 
-### Pending mutations no bajan
+### Pending mutations not decreasing
 
 ```bash
-# Verificar pending count
+# Check pending count
 engram sync status --json | jq '.counts.pending_push'
 
-# Verificar logs de error
+# Check error logs
 journalctl -u engram -f | grep "CycleFailed"
-
-# Forzar sync manual (si existe comando)
-engram sync --force
 ```
 
-### Deferred queue crece
+### Deferred queue growing
 
 ```bash
-# Verificar deferred rows
+# Check deferred rows
 sqlite3 ~/.engram/engram.db "SELECT COUNT(*), AVG(retry_count) FROM sync_apply_deferred;"
 
-# Verificar dead rows (retry_count >= 5)
+# Check dead rows (retry_count >= 5)
 sqlite3 ~/.engram/engram.db "SELECT * FROM sync_apply_deferred WHERE retry_count >= 5;"
-
-# Investigar causa de FK misses
-sqlite3 ~/.engram/engram.db "SELECT DISTINCT entity_key FROM sync_apply_deferred;"
 ```
 
 ---
 
-## ✅ CHECKLIST DE VALIDACIÓN
+## ✅ Validation Checklist
 
-- [ ] CASO 1: Enrollment funciona
-- [ ] CASO 2: Push online funciona
-- [ ] CASO 3: Pull entre clientes funciona
-- [ ] CASO 4: Offline + reconexión funciona
-- [ ] CASO 5: Pause/Resume funciona
-- [ ] CASO 6: Deferred replay funciona
-- [ ] CASO 7: Sync status endpoint funciona
-- [ ] CASO 8: Multi-user isolation + sync funciona
-- [ ] Métricas dentro de targets
-- [ ] Logs sin errores críticos
-- [ ] Audit trail completo
-
----
-
-**Ready for production validation!** 🚀
+- [ ] TEST 1: Enrollment works
+- [ ] TEST 2: Push online works
+- [ ] TEST 3: Pull between clients works
+- [ ] TEST 4: Offline + reconnection works
+- [ ] TEST 5: Pause/Resume works
+- [ ] TEST 6: Deferred replay works
+- [ ] TEST 7: Sync status endpoint works
+- [ ] TEST 8: Multi-user isolation + sync works
+- [ ] Metrics within targets
+- [ ] No critical log errors
