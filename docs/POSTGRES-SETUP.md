@@ -1,296 +1,194 @@
 # PostgreSQL Setup — engram-dotnet
 
-> Guía de configuración para ejecutar engram-dotnet con PostgreSQL como backend de persistencia.
+> Guide for running engram-dotnet with PostgreSQL as the persistence backend.
 
 ---
 
-## Cuándo usar PostgreSQL
+## When to Use PostgreSQL
 
-| Escenario | Recomendación |
-|---|---|
-| 1-4 desarrolladores concurrentes | SQLite (default) |
-| 5+ desarrolladores concurrentes | PostgreSQL |
-| Necesidad de backups automatizados | PostgreSQL |
-| Alta disponibilidad / replicación | PostgreSQL |
-| Deployment en infraestructura enterprise | PostgreSQL |
+| Scenario | Recommendation |
+|----------|---------------|
+| 1-4 concurrent developers | SQLite (default) |
+| 5+ concurrent developers | PostgreSQL |
+| Automated backups needed | PostgreSQL |
+| High availability / replication | PostgreSQL |
+| Enterprise infrastructure | PostgreSQL |
 
-PostgreSQL elimina la contención de escritura de SQLite y permite escalabilidad horizontal con connection pooling.
-
----
-
-## Requisitos
-
-| Componente | Versión mínima |
-|---|---|
-| PostgreSQL | 15+ (requerido para `GENERATED ALWAYS AS STORED`) |
-| engram-dotnet | 1.3.0+ |
-| Npgsql (NuGet) | 9.0.* (incluido en el paquete) |
-
-Managed services compatibles: **Neon**, **Supabase**, **AWS RDS**, **Azure Database for PostgreSQL**, **Google Cloud SQL**.
+PostgreSQL eliminates SQLite's write contention and enables horizontal scaling with connection pooling.
 
 ---
 
-## Configuración rápida
+## Firewall & Ports
 
-### 1. Variables de entorno
-
-```bash
-export ENGRAM_DB_TYPE=postgres
-export ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=secret"
-```
-
-### 2. Iniciar el servidor
+Make sure port **7437** is open between:
+- Developers ↔ Server (for REST API access)
+- Server ↔ PostgreSQL (for database connection)
+- SyncManager ↔ Server (for mutation push/pull)
 
 ```bash
-./engram serve
-# Output: [engram] starting HTTP server on :7437 (PostgreSQL)
-```
-
-### 3. Verificar
-
-```bash
-curl http://localhost:7437/health
-# {"status":"ok"}
-
-./engram stats
-# Engram Memory Stats
-#   Sessions:     0
-#   Observations: 0
-#   Prompts:      0
-#   Projects:     none yet
-#   Database:     PostgreSQL (localhost)
+# On the server (Debian/Ubuntu)
+sudo ufw allow 7437/tcp
 ```
 
 ---
 
-## Docker Compose
-
-### docker-compose.yml
+## Quick Start (Docker)
 
 ```yaml
-version: "3.8"
-
+# docker-compose.yml
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: engram-postgres
-    restart: unless-stopped
     environment:
       POSTGRES_DB: engram
       POSTGRES_USER: engram
-      POSTGRES_PASSWORD: ${ENGRAM_PG_PASSWORD:-engram-secret}
-    volumes:
-      - pg-data:/var/lib/postgresql/data
+      POSTGRES_PASSWORD: supersecret
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U engram -d engram"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U engram"]
+      interval: 5s
       timeout: 5s
       retries: 5
 
   engram:
-    image: engram-dotnet:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: engram
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    build: .
     ports:
       - "7437:7437"
     environment:
       ENGRAM_DB_TYPE: postgres
-      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=${ENGRAM_PG_PASSWORD:-engram-secret}"
-      ENGRAM_PORT: "7437"
-      # Opcional — auth JWT
-      # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
-      # Opcional — CORS
-      # ENGRAM_CORS_ORIGINS: "http://truenas.local"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=supersecret"
+      ENGRAM_SYNC_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
-  pg-data:
-```
-
-### Iniciar
-
-```bash
-# Con contraseña por defecto
-docker compose up -d
-
-# Con contraseña personalizada
-ENGRAM_PG_PASSWORD=mi-secreto docker compose up -d
+  pgdata:
 ```
 
 ---
 
-## Migración desde SQLite
+## Manual Setup
 
-### Opción A: Export/Import (recomendada)
+### 1. Install PostgreSQL
 
 ```bash
-# 1. Exportar desde SQLite
-ENGRAM_DATA_DIR=~/.engram ./engram export engram-backup.json
+# Debian/Ubuntu
+sudo apt install postgresql postgresql-contrib
+sudo systemctl enable --now postgresql
 
-# 2. Configurar PostgreSQL
-export ENGRAM_DB_TYPE=postgres
-export ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=secret"
-
-# 3. Importar en PostgreSQL
-./engram import engram-backup.json
+# Verify
+psql --version
 ```
 
-### Opción B: Fresh start
+### 2. Create Database and User
 
-Simplemente configura las variables de entorno y arranca. `PostgresStore` crea el schema automáticamente al conectar.
-
----
-
-## Schema
-
-`PostgresStore` crea automáticamente las siguientes tablas al conectar:
-
-| Tabla | Propósito |
-|---|---|
-| `sessions` | Sesiones de trabajo |
-| `observations` | Memorias persistidas |
-| `user_prompts` | Prompts del usuario |
-| `sync_chunks` | Registro de chunks sincronizados |
-| `sync_state` | Estado del sync |
-| `sync_mutations` | Cola de mutaciones pendientes |
-| `sync_enrolled_projects` | Proyectos enrolados en sync |
-
-### Full-Text Search
+```bash
+sudo -u postgres psql
+```
 
 ```sql
--- Columna generada automáticamente
-ALTER TABLE observations ADD COLUMN search_vector tsvector
-  GENERATED ALWAYS AS (
-    to_tsvector('simple',
-      coalesce(title,'') || ' ' || coalesce(content,'') || ' ' ||
-      coalesce(tool_name,'') || ' ' || coalesce(type,'') || ' ' ||
-      coalesce(project,'') || ' ' || coalesce(topic_key,'')
-    )
-  ) STORED;
+CREATE DATABASE engram;
+CREATE USER engram WITH PASSWORD 'supersecret';
+GRANT ALL PRIVILEGES ON DATABASE engram TO engram;
+\q
+```
 
--- Índice GIN para búsquedas rápidas
-CREATE INDEX idx_obs_fts ON observations USING GIN(search_vector);
+### 3. Test Connection
 
--- Índice parcial solo para observaciones activas
-CREATE INDEX idx_obs_fts_active ON observations USING GIN(search_vector)
-  WHERE deleted_at IS NULL;
+```bash
+# From local machine
+PGPASSWORD=supersecret psql -h 192.168.0.178 -U engram -d engram -c "SELECT 1;"
+# → ?column?
+# →        1
+```
+
+### 4. Start engram
+
+```bash
+ENGRAM_DB_TYPE=postgres \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=supersecret" \
+./engram serve
+```
+
+Tables are created **automatically** on first startup.
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ENGRAM_DB_TYPE` | ✅ | Must be `postgres` |
+| `ENGRAM_PG_CONNECTION` | ✅ | PostgreSQL connection string |
+
+### Connection String Format
+
+```
+Host=server;Database=engram;Username=user;Password=pass
+Host=server;Port=5432;Database=engram;Username=user;Password=pass  # Custom port
+Host=server;Database=engram;Username=user;Password=pass;SSLMode=Require  # SSL
 ```
 
 ---
 
-## Connection Pooling
-
-Npgsql usa connection pooling por defecto. Para ajustar:
+## Verification
 
 ```bash
-# En la connection string
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=secret;MaxPoolSize=100;MinPoolSize=5"
-```
+# Check backend
+curl http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
 
-| Parámetro | Default | Recomendado |
-|---|---|---|
-| `MaxPoolSize` | 100 | 50-200 según carga |
-| `MinPoolSize` | 0 | 5-10 para evitar cold starts |
-| `Connection Idle Lifetime` | 300s | 300s (default) |
-| `Connection Pruning Interval` | 10s | 10s (default) |
+# Check tables (via psql)
+sudo -u postgres psql -d engram -c "\dt"
+
+# Expected tables:
+# - sessions
+# - observations
+# - user_prompts
+# - sync_mutations
+# - sync_state
+# - sync_enrolled_projects
+# - cloud_mutations
+# - cloud_project_controls
+# - cloud_sync_audit_log
+# - project_migrations
+```
 
 ---
 
 ## Troubleshooting
 
-### Error: ENGRAM_PG_CONNECTION is required
-
-```
-error: ENGRAM_PG_CONNECTION is required when ENGRAM_DB_TYPE=postgres
-```
-
-**Solución**: Asegurate de que la variable de entorno esté configurada:
-```bash
-export ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=secret"
-```
-
-### Error: Connection refused
-
-```
-Npgsql.NpgsqlException: Connection refused
-```
-
-**Solución**: Verificá que PostgreSQL esté corriendo:
-```bash
-docker ps | grep postgres
-# o
-pg_isready -h localhost -p 5432
-```
-
-### Error: GENERATED ALWAYS AS STORED no soportado
-
-```
-ERROR: syntax error at or near "GENERATED"
-```
-
-**Solución**: Tu versión de PostgreSQL es menor a 15. Actualizá a PG 15+.
-
-### Verificar que el backend es PostgreSQL
-
-```bash
-./engram stats
-# Database: PostgreSQL (localhost)  ← confirma que está usando PG
-```
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `28P01` (password auth failed) | Wrong password | Check `ENGRAM_PG_CONNECTION` |
+| `42P01` (relation does not exist) | Tables not created | First startup creates them automatically |
+| `57P03` (cannot connect to server) | PostgreSQL not running | `systemctl start postgresql` |
+| `08001` (connection refused) | Wrong host/port | Check PostgreSQL port (default 5432) |
+| Column type mismatch | Schema vs code mismatch | `docker compose up -d --build` |
 
 ---
 
-## Monitoreo
+## Maintenance
 
-### Queries útiles
+### Backup
+
+```bash
+pg_dump -h localhost -U engram -d engram > engram_backup_$(date +%Y%m%d).sql
+```
+
+### Restore
+
+```bash
+createdb -h localhost -U engram engram_restore
+psql -h localhost -U engram -d engram_restore < engram_backup.sql
+```
+
+### Monitor active connections
 
 ```sql
--- Observaciones por proyecto
-SELECT project, COUNT(*) as count
-FROM observations
-WHERE deleted_at IS NULL
-GROUP BY project
-ORDER BY count DESC;
-
--- Tamaño de la base de datos
-SELECT pg_size_pretty(pg_database_size('engram'));
-
--- Índices más grandes
-SELECT indexname, pg_size_pretty(pg_relation_size(indexname::regclass)) as size
-FROM pg_indexes
-WHERE schemaname = 'public'
-ORDER BY pg_relation_size(indexname::regclass) DESC
-LIMIT 10;
-
--- Observaciones recientes
-SELECT id, type, title, project, created_at
-FROM observations
-WHERE deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT 20;
+SELECT count(*) FROM pg_stat_activity WHERE datname = 'engram';
 ```
-
----
-
-## Seguridad
-
-- **Nunca** commitees la connection string con contraseña en el repo
-- Usá variables de entorno o secrets manager (Vault, AWS Secrets Manager, etc.)
-- En producción, configurá `ENGRAM_JWT_SECRET` para autenticación
-- Restringí el acceso al puerto 5432 a la red interna solamente
-- Usá SSL en la connection string para conexiones remotas:
-  ```
-  Host=db.example.com;Database=engram;Username=engram;Password=secret;SSL Mode=Require
-  ```

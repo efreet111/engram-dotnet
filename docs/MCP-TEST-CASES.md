@@ -1,24 +1,24 @@
-# MCP Tools — Casos de Prueba
+# MCP Tools — Test Cases
 
-> **Propósito**: Verificar que las 24 herramientas MCP funcionan correctamente.  
+> **Purpose**: Verify all 27 MCP tools work correctly.  
 > **Server**: `http://192.168.0.178:7437` (PostgreSQL)  
-> **Requiere**: `engram mcp` corriendo localmente O curl directo a la API REST.
+> **Requires**: `engram mcp` running locally OR direct curl to REST API.
 
 ---
 
-## 📋 Pre-requisitos
+## 📋 Prerequisites
 
 ```bash
-# 1. Server debe estar corriendo
+# 1. Server must be running
 curl http://192.168.0.178:7437/health
 # → {"status":"ok","backend":"postgres"}
 
-# 2. Tener un proyecto enrolled
+# 2. Enroll a test project
 curl -X POST http://192.168.0.178:7437/sync/enroll \
   -H "X-Engram-User: victor.silgado" \
   -d '{"project":"team/mcp-test"}'
 
-# 3. Crear sesión de prueba
+# 3. Create a test session
 curl -X POST http://192.168.0.178:7437/sessions \
   -H "Content-Type: application/json" \
   -d '{"id":"mcp-test-session","project":"team/mcp-test","directory":"/tmp"}'
@@ -26,7 +26,7 @@ curl -X POST http://192.168.0.178:7437/sessions \
 
 ---
 
-## 🧪 CASO 1: `mem_save` — Guardar memoria
+## 🧪 CASE 1: `mem_save` — Save a memory
 
 **Endpoint**: POST /observations
 
@@ -36,8 +36,8 @@ curl -X POST http://192.168.0.178:7437/observations \
   -H "X-Engram-User: victor.silgado" \
   -d '{
     "session_id":"mcp-test-session",
-    "title":"Prueba MCP - Decisión técnica",
-    "content":"**What**: Decisión de prueba\n**Why**: Verificar mem_save\n**Where**: tests/\n**Learned**: Funciona",
+    "title":"MCP Test - Technical Decision",
+    "content":"**What**: Test decision\n**Why**: Verify mem_save\n**Where**: tests/\n**Learned**: Works",
     "type":"decision",
     "project":"team/mcp-test",
     "topic_key":"testing/mcp-save"
@@ -46,88 +46,88 @@ curl -X POST http://192.168.0.178:7437/observations \
 
 **Expected**: 200 + `{"id":<number>,"status":"created"}`
 
-**Criterio**: ✅ Memoria creada y visible vía search
+**Criteria**: ✅ Memory created and visible via search
 
 ---
 
-## 🧪 CASO 2: `mem_search` — Buscar memorias
+## 🧪 CASE 2: `mem_search` — Search memories
 
 **Endpoint**: GET /search
 
 ```bash
-# Búsqueda simple
-curl "http://192.168.0.178:7437/search?q=Prueba+MCP&limit=5" \
+# Simple search
+curl "http://192.168.0.178:7437/search?q=MCP+Test&limit=5" \
   -H "X-Engram-User: victor.silgado" | jq '.[] | {id: .observation.id, title: .observation.title, rank: .rank}'
 
-# Búsqueda por proyecto
-curl "http://192.168.0.178:7437/search?q=Prueba+MCP&project=team/mcp-test" | jq '. | length'
+# Search by project
+curl "http://192.168.0.178:7437/search?q=MCP+Test&project=team/mcp-test" | jq '. | length'
 
-# Búsqueda por tipo
-curl "http://192.168.0.178:7437/search?q=decisión&type=decision" | jq '. | length'
+# Search by type
+curl "http://192.168.0.178:7437/search?q=decision&type=decision" | jq '. | length'
 ```
 
-**Expected**: Resultados con `observation.id`, `observation.title`, `rank` > 0
+**Expected**: Results with `observation.id`, `observation.title`, `rank` > 0
 
 ---
 
-## 🧪 CASO 3: `mem_get_observation` — Ver observación
+## 🧪 CASE 3: `mem_get_observation` — View observation
 
 **Endpoint**: GET /observations/{id}
 
 ```bash
-# Usar el ID del CASO 1
-curl http://192.168.0.178:7437/observations/ID_DEL_CASO1 | jq
+# Use the ID from CASE 1
+curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq
 ```
 
-**Expected**: JSON completo con `title`, `content`, `type`, `project`, etc.
+**Expected**: Full JSON with `title`, `content`, `type`, `project`, etc.
 
 ---
 
-## 🧪 CASO 4: `mem_update` — Actualizar memoria
+## 🧪 CASE 4: `mem_update` — Update a memory
 
 **Endpoint**: PATCH /observations/{id}
 
 ```bash
-curl -X PATCH http://192.168.0.178:7437/observations/ID_DEL_CASO1 \
+curl -X PATCH http://192.168.0.178:7437/observations/ID_FROM_CASE1 \
   -H "Content-Type: application/json" \
-  -d '{"title":"Prueba MCP - ACTUALIZADO","content":"**What**: Versión actualizada"}'
+  -d '{"title":"MCP Test - UPDATED","content":"**What**: Updated version"}'
 ```
 
 **Expected**: 200 + `{"status":"updated"}`
 
-**Verificar**:
+**Verify**:
 ```bash
-curl http://192.168.0.178:7437/observations/ID_DEL_CASO1 | jq '.title'
-# → "Prueba MCP - ACTUALIZADO"
+curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq '.title'
+# → "MCP Test - UPDATED"
 ```
 
 ---
 
-## 🧪 CASO 5: `mem_delete` — Eliminar memoria
+## 🧪 CASE 5: `mem_delete` — Delete a memory
 
 **Endpoint**: DELETE /observations/{id}
 
 ```bash
-# Crear memoria temporal
+# Create temp memory
 curl -X POST http://192.168.0.178:7437/observations \
   -H "Content-Type: application/json" \
-  -d '{"session_id":"mcp-test-session","title":"Temp","content":"Para borrar","type":"manual","project":"team/mcp-test"}'
+  -d '{"session_id":"mcp-test-session","title":"Temp","content":"To delete","type":"manual","project":"team/mcp-test"}'
 
-# Eliminar (soft-delete)
-curl -X DELETE http://192.168.0.178:7437/observations/ID_A_BORRAR
+# Soft-delete
+curl -X DELETE http://192.168.0.178:7437/observations/ID_TO_DELETE
 ```
 
 **Expected**: 200 + `{"status":"deleted"}`
 
-**Verificar**:
+**Verify**:
 ```bash
-curl http://192.168.0.178:7437/observations/ID_A_BORRAR | jq '.deleted_at'
-# → Fecha (no null)
+curl http://192.168.0.178:7437/observations/ID_TO_DELETE | jq '.deleted_at'
+# → Date (not null)
 ```
 
 ---
 
-## 🧪 CASO 6: `mem_context` — Contexto de sesión
+## 🧪 CASE 6: `mem_context` — Session context
 
 **Endpoint**: GET /context
 
@@ -135,40 +135,34 @@ curl http://192.168.0.178:7437/observations/ID_A_BORRAR | jq '.deleted_at'
 curl "http://192.168.0.178:7437/context?session_id=mcp-test-session&limit=5" | jq
 ```
 
-**Expected**: Observaciones de la sesión ordenadas por fecha
+**Expected**: Observations from the session ordered by date
 
 ---
 
-## 🧪 CASO 7: `mem_session_start` / `mem_session_end` — Sesiones
+## 🧪 CASE 7: Session lifecycle
 
 **Endpoint**: POST /sessions + POST /sessions/{id}/end
 
 ```bash
-# Iniciar sesión
+# Start session
 curl -X POST http://192.168.0.178:7437/sessions \
   -H "Content-Type: application/json" \
   -d '{"id":"mcp-flow-test","project":"team/mcp-test","directory":"/tmp"}'
 
-# Finalizar sesión
+# End session
 curl -X POST http://192.168.0.178:7437/sessions/mcp-flow-test/end \
   -H "Content-Type: application/json" \
-  -d '{"summary":"Sesión de prueba MCP completada exitosamente"}'
+  -d '{"summary":"MCP test session completed successfully"}'
 
-# Ver sesión finalizada
+# Verify ended session
 curl http://192.168.0.178:7437/sessions/mcp-flow-test | jq '{id, summary, started_at, ended_at}'
 ```
 
-**Expected**: Sesión con `ended_at` y `summary` seteados
+**Expected**: Session with `ended_at` and `summary` set
 
 ---
 
-## 🧪 CASO 8: `mem_session_summary` — Resumen de sesión
-
-Ver CASO 7 — el summary se setea al finalizar la sesión.
-
----
-
-## 🧪 CASO 9: `mem_stats` — Estadísticas
+## 🧪 CASE 8: `mem_stats` — Statistics
 
 **Endpoint**: GET /stats
 
@@ -176,23 +170,23 @@ Ver CASO 7 — el summary se setea al finalizar la sesión.
 curl http://192.168.0.178:7437/stats | jq
 ```
 
-**Expected**: JSON con `total_observations`, `total_sessions`, `total_prompts`, etc.
+**Expected**: JSON with `total_observations`, `total_sessions`, `total_prompts`, etc.
 
 ---
 
-## 🧪 CASO 10: `mem_timeline` — Timeline
+## 🧪 CASE 9: `mem_timeline` — Timeline
 
 **Endpoint**: GET /timeline
 
 ```bash
-curl "http://192.168.0.178:7437/timeline?observation_id=ID_DEL_CASO1&window=5" | jq
+curl "http://192.168.0.178:7437/timeline?observation_id=ID_FROM_CASE1&window=5" | jq
 ```
 
-**Expected**: Observaciones alrededor de la especificada
+**Expected**: Observations surrounding the specified one
 
 ---
 
-## 🧪 CASO 11: `mem_save_prompt` — Guardar prompt
+## 🧪 CASE 10: `mem_save_prompt` — Save a prompt
 
 **Endpoint**: POST /prompts
 
@@ -201,16 +195,16 @@ curl -X POST http://192.168.0.178:7437/prompts \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
-    "content":"¿Qué patrón de diseño usar para el módulo X?",
+    "content":"Which design pattern should I use for module X?",
     "project":"team/mcp-test"
   }'
 ```
 
-**Expected**: 200 + prompt creado
+**Expected**: 200 + prompt created
 
 ---
 
-## 🧪 CASO 12: `mem_doctor` — Diagnóstico
+## 🧪 CASE 11: `mem_doctor` — Diagnostics
 
 **Endpoint**: CLI `engram doctor`
 
@@ -229,32 +223,32 @@ Engram Diagnostic Report
 
 ---
 
-## 🧪 CASO 13: `mem_suggest_topic_key` — Sugerir topic key
+## 🧪 CASE 12: `mem_suggest_topic_key` — Upsert via topic_key
 
-**Endpoint**: POST /observations (con topic_key, ya probado en CASO 1)
+**Endpoint**: POST /observations (with topic_key, already tested in CASE 1)
 
-**Verificar upsert**:
+**Verify upsert**:
 ```bash
-# Guardar con mismo topic_key
+# Save with same topic_key
 curl -X POST http://192.168.0.178:7437/observations \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
-    "title":"Prueba upsert - V2",
-    "content":"Versión actualizada del topic",
+    "title":"Upsert test - V2",
+    "content":"Updated topic version",
     "type":"decision",
     "project":"team/mcp-test",
     "topic_key":"testing/mcp-save"
   }'
 
-# Verificar que se actualizó (mismo topic_key = upsert)
+# Verify it updated (same topic_key = upsert)
 curl "http://192.168.0.178:7437/search?q=testing/mcp-save&project=team/mcp-test" | jq '.[0].observation.title'
-# → "Prueba upsert - V2"
+# → "Upsert test - V2"
 ```
 
 ---
 
-## 🧪 CASO 14: `mem_capture_passive` — Captura pasiva
+## 🧪 CASE 13: `mem_capture_passive` — Passive capture
 
 **Endpoint**: POST /observations/passive
 
@@ -263,8 +257,8 @@ curl -X POST http://192.168.0.178:7437/observations/passive \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
-    "title":"Descubrimiento automático",
-    "content":"**What**: Hallazgo durante debugging\n**Learned**: El error era por X",
+    "title":"Automatic discovery",
+    "content":"**What**: Found during debugging\n**Learned**: The error was caused by X",
     "type":"discovery",
     "project":"team/mcp-test"
   }'
@@ -272,19 +266,15 @@ curl -X POST http://192.168.0.178:7437/observations/passive \
 
 ---
 
-## 🧪 CASO 15: `mem_retention_stats` — Stats de retención
+## 🧪 CASE 14: Retention tools
 
-**Endpoint**: GET /retention/stats
+### `mem_retention_stats`
 
 ```bash
 curl http://192.168.0.178:7437/retention/stats | jq
 ```
 
----
-
-## 🧪 CASO 16: `mem_retention_prune` — Podar por TTL
-
-**Endpoint**: POST /retention/prune
+### `mem_retention_prune`
 
 ```bash
 curl -X POST http://192.168.0.178:7437/retention/prune \
@@ -294,7 +284,7 @@ curl -X POST http://192.168.0.178:7437/retention/prune \
 
 ---
 
-## 🧪 CASO 17: `mem_merge_projects` — Mergear proyectos
+## 🧪 CASE 15: `mem_merge_projects` — Merge projects
 
 **Endpoint**: POST /projects/migrate
 
@@ -306,19 +296,19 @@ curl -X POST http://192.168.0.178:7437/projects/migrate \
 
 ---
 
-## 🧪 CASO 18: `mem_promote_to_md` — Promover a .md
+## 🧪 CASE 16: `mem_promote_to_md` — Promote to markdown
 
 **Endpoint**: POST /md/promote/{id}
 
 ```bash
-curl -X POST http://192.168.0.178:7437/md/promote/ID_DEL_CASO1 \
+curl -X POST http://192.168.0.178:7437/md/promote/ID_FROM_CASE1 \
   -H "Content-Type: application/json" \
   -d '{"md_dir":"docs/decisions"}'
 ```
 
 ---
 
-## 🧪 CASO 19: `mem_sync_md_to_repo` — Sync .md al repo
+## 🧪 CASE 17: `mem_sync_md_to_repo` — Sync markdown to repo
 
 **Endpoint**: POST /md/sync
 
@@ -330,48 +320,46 @@ curl -X POST http://192.168.0.178:7437/md/sync \
 
 ---
 
-## 🧪 CASO 20: `mem_traceability` — Matriz de trazabilidad
+## ✅ TEST CHECKLIST
 
-Requiere spec.md como input. Es una herramienta MCP que se llama desde el agente.
-
----
-
-## ✅ CHECKLIST DE VERIFICACIÓN
-
-- [ ] CASO 1: `mem_save` — memoria creada
-- [ ] CASO 2: `mem_search` — búsqueda funciona
-- [ ] CASO 3: `mem_get_observation` — detalle visible
-- [ ] CASO 4: `mem_update` — actualización funciona
-- [ ] CASO 5: `mem_delete` — soft-delete funciona
-- [ ] CASO 6: `mem_context` — contexto de sesión
-- [ ] CASO 7: `mem_session_start/end` — ciclo de sesión
-- [ ] CASO 9: `mem_stats` — estadísticas
-- [ ] CASO 11: `mem_save_prompt` — prompt guardado
-- [ ] CASO 12: `mem_doctor` — diagnóstico OK
-- [ ] CASO 13: `mem_suggest_topic_key` — upsert funciona
-- [ ] CASO 15: `mem_retention_stats` — stats de retención
-- [ ] CASO 16: `mem_retention_prune` — prune funciona
+- [ ] CASE 1: `mem_save` — memory created
+- [ ] CASE 2: `mem_search` — search works
+- [ ] CASE 3: `mem_get_observation` — detail visible
+- [ ] CASE 4: `mem_update` — update works
+- [ ] CASE 5: `mem_delete` — soft-delete works
+- [ ] CASE 6: `mem_context` — session context
+- [ ] CASE 7: Session lifecycle
+- [ ] CASE 8: `mem_stats` — statistics
+- [ ] CASE 9: `mem_timeline` — timeline
+- [ ] CASE 10: `mem_save_prompt` — prompt saved
+- [ ] CASE 11: `mem_doctor` — diagnostics OK
+- [ ] CASE 12: Upsert via topic_key
+- [ ] CASE 13: `mem_capture_passive` — passive capture
+- [ ] CASE 14: Retention tools
+- [ ] CASE 15: `mem_merge_projects`
+- [ ] CASE 16: `mem_promote_to_md`
+- [ ] CASE 17: `mem_sync_md_to_repo`
 
 ---
 
-## 🔍 VERIFICACIÓN EN POSTGRESQL
+## 🔍 PostgreSQL Verification
 
-Además de los tests via API, verificá directamente en PostgreSQL:
+In DBeaver, verify data directly:
 
 ```sql
--- Ver memorias creadas
+-- View created memories
 SELECT id, title, type, project, created_at 
 FROM observations 
 WHERE project = 'team/mcp-test'
 ORDER BY id DESC;
 
--- Ver sesiones
+-- View sessions
 SELECT id, project, started_at, ended_at, summary 
 FROM sessions 
 WHERE project = 'team/mcp-test'
 ORDER BY started_at DESC;
 
--- Ver prompts
+-- View prompts
 SELECT id, session_id, content, project, created_at 
 FROM user_prompts 
 WHERE project = 'team/mcp-test';
