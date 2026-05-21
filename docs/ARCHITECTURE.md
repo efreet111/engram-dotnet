@@ -59,6 +59,8 @@ Is ENGRAM_URL set?
               └─ NO  → SqliteStore (default)
 ```
 
+> **Polymorphism in action**: The client (MCP, REST handlers) only knows `IStore`. Dependency injection resolves the correct implementation at startup. Zero coupling — switching from SQLite to PostgreSQL requires only env vars, no code changes.
+
 ### Key Methods
 
 | Category | Methods | Description |
@@ -155,6 +157,12 @@ app.MapGet("/search", async (ctx, store) => await HandleSearch(ctx, store));
 2. **ReplayDeferred**: Retry FK-deferred mutations (up to 5 times)
 3. **Pull**: GET new mutations from server → apply to local SQLite
 
+### Consistency Model
+
+**Last-write-wins**: If two agents modify the same observation, the most recent `occurred_at` timestamp wins. There is no semantic merge — this is deliberate. For complex conflicts, `mem_doctor` can diagnose the current state.
+
+> **Why not CRDT or vector clocks?** Simplicity. Last-write-wins is predictable, requires no coordination, and works for 99% of agent memory use cases. If two agents overwrite the same memory, the newest one is correct by definition.
+
 ### Enrollment & Pause
 
 - `sync_enrolled_projects` table: only enrolled projects participate in sync
@@ -205,6 +213,8 @@ Every request is logged with:
 
 ### SyncManager Logging (8 events via LoggerMessage)
 
+> **Performance**: Uses `LoggerMessage.Define` (source-generated) instead of `ILogger.Log*`. This generates **statically-typed delegates** that avoid boxing of value types and repeated string formatting — critical for high-throughput sync cycles where logging occurs every 30 seconds per SyncManager instance.
+
 | Event | Level | EventId |
 |-------|-------|---------|
 | CycleStart | Debug | 2000 |
@@ -219,6 +229,8 @@ Every request is logged with:
 ---
 
 ## Multi-User Isolation
+
+> **Security**: The `X-Engram-User` header is validated on every request. Personal scope (`personal:{user}`) is strictly isolated — there is NO mechanism for a user to access another user's personal memories. Team scope (`team/{project}`) requires explicit enrollment via `/sync/enroll`. Context leaks between projects are prevented at the query level: search results are always filtered by the requesting user's identity and enrolled projects.
 
 ### Identity Flow
 

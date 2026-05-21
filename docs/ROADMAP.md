@@ -127,6 +127,24 @@ Move tools from eager to deferred loading to reduce session token usage by ~40%.
 
 ---
 
+### 🔐 Authentication & Access Control
+
+> **Effort**: 4-6h  
+> **Status**: Backlog — no proposal yet
+
+Add user/password authentication to protect the server from unauthorized access. Critical for teams that don't use VPN.
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | Basic auth or API key | Simple token-based auth for REST endpoints |
+| 2 | User registration | `POST /auth/register` with username + password |
+| 3 | Role-based access | Admin vs regular user (pause/resume requires admin) |
+| 4 | Session auth | JWT or cookie-based auth for web clients |
+
+**Why**: Currently any device on the network can access the server. A VPN is the recommended approach, but many teams don't use one. Auth would make the server safe to expose on the internet.
+
+---
+
 ## 🗺️ Suggested Work Order
 
 | Order | Feature | Effort | Why |
