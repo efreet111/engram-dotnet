@@ -145,6 +145,20 @@ Add user/password authentication to protect the server from unauthorized access.
 
 ---
 
+## 🧪 Manual Testing Backlog
+
+> Test cases that require a second developer or specific setup. Do not close until verified.
+
+| # | Test Case | How to verify | Requires |
+|---|-----------|---------------|----------|
+| 1 | **Pull entre 2 clientes** | Dev1 crea memoria local → SyncManager push → Dev2 hace pull → Dev2 ve la memoria | 2 developers |
+| 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart |
+| 3 | **MCP Tools** | Ejecutar `docs/MCP-TEST-CASES.md` (17 casos) | Tiempo dedicado |
+| 4 | **CLI commands** | `engram search`, `save`, `doctor`, `export`, `import` | Tiempo dedicado |
+| 5 | **REST API smoke test** | Probar los 41 endpoints (al menos GET/POST principales) | Checklist en API-REFERENCE |
+
+---
+
 ## 🗺️ Suggested Work Order
 
 | Order | Feature | Effort | Why |
