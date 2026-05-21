@@ -10,6 +10,18 @@ Compatible con Claude Code, OpenCode, Gemini CLI, Cursor, Codex.
 
 ---
 
+## 🛠️ Filosofía de Diseño: Pragmático y Simple
+
+Este proyecto rechaza intencionalmente el over-engineering corporativo.
+
+* **No MediatR.** Sin pipelines mágicos ocultos ni message buses basados en reflection.
+* **No CQRS.** Sin separación artificial de lecturas y escrituras cuando un estado simple con buenos índices es suficiente.
+* **No Clean Architecture.** Sin capas interminables de cebolla ni interfaces de mapeo repetitivas.
+
+**Solo C# 10 compilado, Minimal APIs, e Inyección de Dependencias.** Construido para rendimiento bruto, rutas de ejecución explícitas, y cero boilerplate.
+
+---
+
 ## 🏗️ Arquitectura
 
 ```

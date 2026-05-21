@@ -3,7 +3,13 @@
 > Technical architecture of **engram-dotnet**, a .NET 10 port of the original [engram](https://github.com/Gentleman-Programming/engram).  
 > The conceptual design (memory system, session cycle, MCP tools) originates from the upstream project.
 
-**Architecture note**: engram-dotnet uses a simple **Strategy Pattern** (`IStore` interface with 3 implementations). No MediatR, no CQRS, no Clean Architecture — just minimal APIs + dependency injection.
+**Design Philosophy**: engram-dotnet intentionally rejects corporate over-engineering.
+
+* **No MediatR.** No hidden magic pipelines or reflection-heavy message buses.
+* **No CQRS.** No artificial separation of reads and writes when simple, well-indexed state is what matters.
+* **No Clean Architecture abstractions.** No endless onion layers or boilerplate mapping interfaces.
+
+**Just compiled C# 10, Minimal APIs, and Dependency Injection.** Built for raw performance, explicit execution paths, and zero boilerplate.
 
 ---
 

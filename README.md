@@ -10,6 +10,18 @@ Compatible with Claude Code, OpenCode, Gemini CLI, Cursor, Codex.
 
 ---
 
+## 🛠️ Design Philosophy: Pragmatic & Lean
+
+This project intentionally rejects corporate over-engineering.
+
+* **No MediatR.** No hidden magic pipelines or reflection-heavy message buses.
+* **No CQRS.** No artificial separation of reads and writes when simple, well-indexed state is what matters.
+* **No Clean Architecture abstractions.** No endless onion layers or boilerplate mapping interfaces.
+
+**Just compiled C# 10, Minimal APIs, and Dependency Injection.** Built for raw performance, explicit execution paths, and zero boilerplate.
+
+---
+
 ## 🏗️ Architecture
 
 ```
