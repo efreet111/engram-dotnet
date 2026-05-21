@@ -882,6 +882,10 @@ static IStore OpenStore(StoreConfig? cfg = null)
 {
     cfg ??= StoreConfig.FromEnvironment();
 
+    // Remote mode: connect to server via HTTP
+    if (cfg.IsRemote)
+        return new HttpStore(cfg);
+
     // Validation: PostgreSQL requires connection string
     if (cfg.IsPostgres && string.IsNullOrWhiteSpace(cfg.PgConnectionString))
     {
