@@ -1,116 +1,108 @@
-# Verification Tools — Guía de Uso
+# Verification Tools — Usage Guide
 
-> **SDD**: [`sdd/verification-tools/`](../sdd/archive/2026-05-14-verification-tools/)
-
----
-
-## ¿Qué es?
-
-Las herramientas de verificación permiten validar que el código implementado cumple con los requisitos de un `spec.md`. Usan **LLM-as-Judge** (Anthropic API) para evaluar cada requisito y generar reportes estructurados.
+> **SDD**: [`sdd/archive/2026-05-14-verification-tools/`](../sdd/archive/2026-05-14-verification-tools/)
 
 ---
 
-## Componentes
+## What is it?
 
-### `mem_verify_artifact` — Verificación de compliance
+Verification tools allow validating that implemented code meets the requirements of a `spec.md`. They use **LLM-as-Judge** (Anthropic API) to evaluate each requirement and generate structured reports.
 
-**Propósito**: Verificar que un cambio de código satisface los requisitos de un spec.
+---
+
+## Components
+
+### `mem_verify_artifact` — Compliance verification
+
+**Purpose**: Verify that a code change satisfies the requirements of a spec.
 
 **Input**:
-- `spec_path` — Ruta al archivo `spec.md`
-- `code_diff` — Diff de cambios (unified diff o file listing)
-- `change_name` — Identificador del cambio (ej: "verification-tools")
+- `spec_path` — Path to `spec.md`
+- `code_diff` — Diff of changes (unified diff or file listing)
+- `change_name` — Change identifier (e.g. "verification-tools")
 
-**Output**: `VerificationReport` con:
-- `items[]` — Veredicto por requisito (Pass/Fail/Untested)
-- `coverage_pct` — Porcentaje de requisitos cubiertos
-- `pass_pct` — Porcentaje de requisitos que pasan
-- `cycle` — Número de ciclo actual
-- `escalate` — `true` si se alcanzó el máximo de ciclos
+**Output**: `VerificationReport` with:
+- `items[]` — Verdict per requirement (Pass/Fail/Untested)
+- `coverage_pct` — Percentage of requirements covered
+- `pass_pct` — Percentage of passing requirements
+- `cycle` — Current cycle number
+- `escalate` — `true` if max cycles reached
 
-### `mem_traceability` — Matriz de trazabilidad
+### `mem_traceability` — Traceability matrix
 
-**Propósito**: Generar matriz RF/RNF → código.
+**Purpose**: Generate RF/RNF → code traceability matrix.
 
 **Input**:
-- `spec_path` — Ruta al archivo `spec.md`
+- `spec_path` — Path to `spec.md`
 
-**Output**: `TraceabilityMatrix` con:
-- `entries[]` — Requisito + status + evidencia (file paths)
-- `covered` — Count de requisitos cubiertos
-- `missing` — Count de requisitos sin cobertura
-- `coverage_pct` — Porcentaje de cobertura
+**Output**: `TraceabilityMatrix` with:
+- `entries[]` — Requirement + status + evidence (file paths)
+- `covered` — Count of covered requirements
+- `missing` — Count of missing requirements
+- `coverage_pct` — Coverage percentage
 
-### `CycleTracker` — Trackeo de ciclos
+### `CycleTracker` — Cycle tracking
 
-**Propósito**: Trackear ciclos de rework por cambio.
+**Purpose**: Track rework cycles per change.
 
-**Persistencia**: Observación en Engram con `topic_key = "cycle-count/{change_name}"`.
+**Persistence**: Engram observation with `topic_key = "cycle-count/{change_name}"`.
 
-**Comportamiento**:
-- Ciclo 1: Primera verificación
-- Ciclo 2: Re-trabajo (si hubo fails)
-- Ciclo 3: Escalado a humano (si `ENGRAM_VERIFICATION_MAX_CYCLES=3`)
+**Behavior**:
+- Cycle 1: First verification
+- Cycle 2: Rework (if failures)
+- Cycle 3: Escalate to human (if `ENGRAM_VERIFICATION_MAX_CYCLES=3`)
 
 ---
 
-## Configuración
+## Configuration
 
-### Variables de entorno
+### Environment Variables
 
 ```bash
-# Modelo para LLM-as-Judge
+# Model for LLM-as-Judge
 ENGRAM_VERIFICATION_MODEL=claude-sonnet-4-20250514
 
-# Máximos ciclos antes de escalar
+# Max cycles before escalation
 ENGRAM_VERIFICATION_MAX_CYCLES=3
 
-# API key de Anthropic (requerida)
+# Anthropic API key (required)
 ANTHROPIC_API_KEY=sk-...
 ```
 
 ---
 
-## Flujo de trabajo
+## Workflow
 
-### 1. Crear spec.md canónico
-
-El spec debe seguir el formato canónico:
+### 1. Create canonical spec.md
 
 ```markdown
-# Título del Feature
+# Feature Title
 
-## Objetivo
-Descripción clara del feature.
+## Objective
+Clear description.
 
 ## Functional Requirements
-
-- RF-001: El sistema debe permitir login con email/password
-- RF-002: El sistema debe validar email antes de crear cuenta
-- RF-003: El sistema debe rate-limitar intentos de login
+- RF-001: System must allow login with email/password
+- RF-002: System must validate email before creating account
 
 ## Non-Functional Requirements
-
-- RNF-001: El login debe responder en < 200ms (p95)
-- RNF-002: Las contraseñas deben hashearse con bcrypt
-- RNF-003: No loggear contraseñas en plaintext
+- RNF-001: Login must respond in < 200ms (p95)
+- RNF-002: Passwords must be hashed with bcrypt
 ```
 
-### 2. Implementar cambios
+### 2. Implement changes
 
 ```bash
-# Trabajar normal en el código
 git diff > changes.diff
 ```
 
-### 3. Verificar compliance
+### 3. Verify compliance
 
 ```bash
-# Primera verificación (Ciclo 1)
 mem_verify_artifact \
-  spec_path="sdd/verification-tools/specs/artifact-verification/spec.md" \
+  spec_path="sdd/my-feature/spec.md" \
   code_diff="git diff main" \
-  change_name="verification-tools"
+  change_name="my-feature"
 ```
 
 **Output**:
@@ -118,136 +110,8 @@ mem_verify_artifact \
 {
   "items": [
     {
-      "requirement": {
-        "id": "RF-001",
-        "type": "RF",
-        "description": "El sistema debe permitir login..."
-      },
+      "requirement": {"id": "RF-001", "type": "RF", "description": "..."},
       "verdict": "Pass",
-      "reasoning": "El código implementa endpoint POST /login que acepta email/password...",
-      "confidence": 0.95,
-      "evidence": "src/Engram.Server/EngramServer.cs:65"
-    },
-    {
-      "requirement": {
-        "id": "RNF-003",
-        "type": "RNF",
-        "description": "No loggear contraseñas en plaintext"
-      },
-      "verdict": "Fail",
-      "reasoning": "Se encontró console.log(password) en la línea 42...",
-      "confidence": 0.98,
-      "evidence": "src/Engram.Server/EngramServer.cs:42"
-    }
-  ],
-  "coverage_pct": 100.0,
-  "pass_pct": 83.3,
-  "total": 6,
-  "passed": 5,
-  "failed": 1,
-  "cycle": 1,
-  "escalate": false,
-  "summary": "5/6 requisitos pasan. 1 fail: RNF-003 (password en logs)."
-}
-```
-
-### 4. Generar rework ticket (si hubo fails)
-
-El reporte incluye automáticamente un rework ticket:
-
-```markdown
-# Rework Ticket — Cycle 1/3
-
-## Failed Items
-- [ ] RNF-003: Se encontró `console.log(password)` en la línea 42
-
-## Instructions
-1. Remover console.log del handler de login
-2. Reemplazar con logger estructurado que omita campos sensibles
-3. Re-verificar con mem_verify_artifact
-```
-
-### 5. Iterar (si es necesario)
-
-```bash
-# Después de fixear
-git add -A && git commit -m "fix: remove password logging"
-
-# Re-verificar (Ciclo 2)
-mem_verify_artifact \
-  spec_path="..." \
-  code_diff="git diff HEAD~1" \
-  change_name="verification-tools"
-```
-
-### 6. Escalar a humano (si cycle >= max)
-
-Si después de 3 ciclos hay fails:
-
-```json
-{
-  "cycle": 3,
-  "escalate": true,
-  "summary": "3 ciclos sin resolver RNF-003. Escalar a humano."
-}
-```
-
----
-
-## Casos de uso
-
-### 1. Verificar PR antes de merge
-
-```bash
-# En CI/CD o pre-commit
-mem_verify_artifact \
-  spec_path="sdd/my-feature/spec.md" \
-  code_diff="git diff origin/main" \
-  change_name="my-feature"
-
-# Fail el build si pass_pct < 100
-if [ $pass_pct -lt 100 ]; then
-  echo "Verification failed: ${pass_pct}% pass rate"
-  exit 1
-fi
-```
-
-### 2. Generar matriz de trazabilidad
-
-```bash
-# Para auditoría o documentación
-mem_traceability \
-  spec_path="sdd/auth-module/spec.md"
-
-# Output: matriz RF/RNF → file paths
-```
-
-### 3. Trackear ciclos de rework
-
-```bash
-# Ver ciclo actual
-mem_search query="cycle-count verification-tools"
-
-# Output: observación con revision_count = ciclo actual
-```
-
----
-
-## Formato de reporte
-
-### `VerificationReport`
-
-```json
-{
-  "items": [
-    {
-      "requirement": {
-        "id": "RF-001",
-        "type": "RF",
-        "description": "...",
-        "section": "Functional Requirements"
-      },
-      "verdict": "Pass|Fail|Untested|Error|Escalate",
       "reasoning": "...",
       "confidence": 0.95,
       "evidence": "src/Engram.Server/EngramServer.cs:65"
@@ -255,108 +119,86 @@ mem_search query="cycle-count verification-tools"
   ],
   "coverage_pct": 100.0,
   "pass_pct": 83.3,
-  "total": 6,
-  "passed": 5,
-  "failed": 1,
   "cycle": 1,
-  "escalate": false,
-  "summary": "5/6 requisitos pasan..."
+  "escalate": false
 }
 ```
 
-### `TraceabilityMatrix`
+### 4. Iterate (if needed)
 
+```bash
+# After fixing
+git commit -m "fix: resolve issue"
+
+# Re-verify (Cycle 2)
+mem_verify_artifact \
+  spec_path="..." \
+  code_diff="git diff HEAD~1" \
+  change_name="my-feature"
+```
+
+### 5. Escalate to human
+
+If after 3 cycles there are failures:
 ```json
-{
-  "entries": [
-    {
-      "requirement": {
-        "id": "RF-001",
-        "type": "RF",
-        "description": "..."
-      },
-      "status": "covered|partial|missing|untraced",
-      "evidence": [
-        "src/Engram.Server/EngramServer.cs:65",
-        "tests/Engram.Server.Tests/AuthTests.cs:20"
-      ]
-    }
-  ],
-  "total": 6,
-  "covered": 5,
-  "missing": 1,
-  "coverage_pct": 83.3
-}
+{"cycle": 3, "escalate": true, "summary": "3 cycles without resolution. Escalate to human."}
 ```
 
 ---
 
-## Mejores prácticas
+## Use Cases
 
-### 1. Specs canónicos
+### 1. Verify PR before merge
 
-- Usar formato `- RF-NNN: descripción`
-- Separar claramente RF y RNF
-- Incluir sección `## Objetivo`
+```bash
+mem_verify_artifact \
+  spec_path="sdd/my-feature/spec.md" \
+  code_diff="git diff origin/main" \
+  change_name="my-feature"
 
-### 2. Code diffs pequeños
+# Fail the build if pass_pct < 100
+if [ $pass_pct -lt 100 ]; then
+  echo "Verification failed: ${pass_pct}% pass rate"
+  exit 1
+fi
+```
 
-- Verificar por cambio pequeño (no todo el PR junto)
-- Ideal: < 200 líneas por verificación
+### 2. Generate traceability matrix
 
-### 3. Confidence threshold
+```bash
+mem_traceability \
+  spec_path="sdd/auth-module/spec.md"
+```
 
-- `confidence >= 0.9`: Confiar en el veredicto
-- `confidence < 0.7`: Revisar manualmente
-- `confidence < 0.5`: Ignorar (falso positivo probable)
+### 3. Track rework cycles
 
-### 4. Cycle management
+```bash
+mem_search query="cycle-count verification-tools"
+# → observation with revision_count = current cycle
+```
 
-- Ciclo 1: Verificación inicial
-- Ciclo 2: Fixear fails obvios
-- Ciclo 3: Escalar a humano si persisten fails
+---
+
+## Best Practices
+
+1. **Canonical specs**: Use `- RF-NNN: description` format
+2. **Small diffs**: < 200 lines per verification
+3. **Confidence threshold**: `>= 0.9` trust, `< 0.7` manual review
+4. **Cycle management**: Cycle 1 = initial, Cycle 2 = fix, Cycle 3 = escalate
 
 ---
 
 ## Troubleshooting
 
-### Problema: `ANTHROPIC_API_KEY is not set`
-
-**Causa**: Variable de entorno no configurada.
-
-**Solución**:
-```bash
-export ANTHROPIC_API_KEY=sk-...
-```
-
-### Problema: Spec no parseable
-
-**Causa**: Formato no canónico.
-
-**Solución**:
-```markdown
-# Formato correcto
-## Functional Requirements
-- RF-001: descripción
-
-# Formato incorrecto
-### Requisitos
-1. El sistema debe...
-```
-
-### Problema: Falso positivo en veredicto
-
-**Causa**: LLM no entendió el contexto.
-
-**Solución**:
-- Agregar más contexto al diff (incluir files relacionados)
-- Revisar manualmente con `confidence < 0.7`
-- Ajustar prompt del verifier (advanced)
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| `ANTHROPIC_API_KEY is not set` | Missing env var | `export ANTHROPIC_API_KEY=sk-...` |
+| Spec not parseable | Non-canonical format | Use `- RF-NNN: description` format |
+| False positive in verdict | LLM didn't understand context | Add more context to diff, check `confidence < 0.7` |
 
 ---
 
-## Ver también
+## See Also
 
-- [SDD](../sdd/archive/2026-05-14-verification-tools/) — Documentación técnica completa
-- [ARCHITECTURE.md](ARCHITECTURE.md#engramverification--compliance-verification) — Arquitectura del módulo
-- [Promotion Tools](PROMOTION.md) — Promover observaciones a .md
+- [SDD](../sdd/archive/2026-05-14-verification-tools/) — Full technical documentation
+- [ARCHITECTURE.md](ARCHITECTURE.md#engramverification--compliance-verification) — Module architecture
