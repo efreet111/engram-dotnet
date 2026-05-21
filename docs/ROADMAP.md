@@ -55,15 +55,29 @@
 
 #### PostgreSQL Backend — Bug Fixes (backlog)
 
-> **Status**: 3 tests skipped — need investigation  
-> **Effort**: 2-3h  
+> **Status**: 3 tests skipped + 1 connection pooling issue  
+> **Effort**: 4-6h total  
 > **Engram**: `architecture/postgres-store-bugs`
 
-| Test | Problem | Likely Cause |
-|------|---------|-------------|
-| `Search_TopicKeyShortcut_RanksFirst` | FTS5 ranking differs (0.06 vs -1000) | PostgreSQL FTS ranking function differs from SQLite |
-| `DeleteSession_HasActiveObservations_Throws` | Session not found after failed delete | FK constraint rolls back in Postgres |
-| `MergeProjects_ReassignsObservations` | GetObservationAsync returns null post-merge | Transaction scope or isolation level issue |
+| # | Bug | Problem | Fix | Effort |
+|---|-----|---------|-----|--------|
+| 1 | Connection pooling | `NpgsqlOperationInProgressException` cuando SyncManager y HTTP compiten por la misma conexión | Usar `NpgsqlConnection` pool (crear conexión por operación) | 2-3h |
+| 2 | FTS5 ranking | `Search_TopicKeyShortcut_RanksFirst` espera -1000, Postgres devuelve 0.06 | Actualizar valor esperado del test | 30min |
+| 3 | FK rollback | `DeleteSession_HasActiveObservations_Throws` — Postgres hace rollback en FK violation, SQLite no | Ajustar test o usar SAVEPOINT | 1h |
+| 4 | Transaction visibility | `MergeProjects_ReassignsObservations` — GetObservationAsync devuelve null post-merge | Usar misma transacción o REFRESH | 1h |
+
+Specs: [`sdd/postgres-bug-fixes/`](../sdd/postgres-bug-fixes/)
+
+---
+
+#### Docker Deployment Fix
+
+> **Effort**: 5min  
+> **Spec**: [`sdd/docker-deployment-fix/`](../sdd/docker-deployment-fix/)
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `mem_sync_md_to_repo` falla con permission denied en `/app/docs` | Agregar `RUN mkdir -p /app/docs` en Dockerfile |
 
 #### Phase 3 — Breaking Changes
 
