@@ -1,7 +1,7 @@
 # Technical Debt Backlog
 
-> Hallazgos de revisión de código — 2026-04-24
-> Priorizados por severidad. Cada ítem es independiente y puede tacklearse en su propia rama.
+> Code review findings — 2026-04-24
+> Prioritized by severity. Each item is independent and can be tackled in its own branch.
 
 ---
 
