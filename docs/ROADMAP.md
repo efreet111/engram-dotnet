@@ -1,7 +1,7 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-05-20  
-> **Current version**: `main` (post Offline-First Sync Phase 4)
+> **Last updated**: 2026-05-21  
+> **Current version**: `main` (post Sync cursor fix + OpenStore fix)
 
 ---
 
@@ -9,6 +9,9 @@
 
 | Feature | Commit/PR | Description |
 |---------|-----------|-------------|
+| OpenStore() HttpStore fix | `57937d5` | CLI commands now use ENGRAM_URL when configured |
+| Sync cursor fix | `5a5b360` | last_acked_seq/last_pulled_seq now advance after push/pull |
+| Bug specs documented | `923b295` | SDD docs for connection pooling, tests, Docker permissions |
 | Offline-First Sync | `e24fe85` | Phases 1-4: mutation journal, autosync, enrollment, observability |
 | Doctor Diagnostic | `dc9e5d1` | `engram doctor` CLI + `mem_doctor` MCP tool |
 | Multi-User Isolation | `80aac44` | RFC-002: `personal:{user}` namespacing, `X-Engram-User` header |
@@ -167,9 +170,9 @@ Add user/password authentication to protect the server from unauthorized access.
 |---|-----------|---------------|----------|--------|
 | 1 | **Pull entre 2 clientes** | Dev1 crea memoria local → SyncManager push → Dev2 hace pull → Dev2 ve la memoria | 2 developers | 🔲 |
 | 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart | 🔲 |
-| 3 | **MCP Tools** | Ejecutar `docs/MCP-TEST-CASES.md` (17 casos) | — | ✅ 16/17 passing |
-| 4 | **CLI commands** | `engram search`, `save`, `doctor`, `export`, `import` | Tiempo dedicado | 🔲 |
-| 5 | **REST API smoke test** | Probar los 41 endpoints (al menos GET/POST principales) | Checklist en API-REFERENCE | 🔲 |
+| 3 | **MCP Tools** | 17 test cases via curl | — | ✅ 16/17 passing |
+| 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | ✅ All pass |
+| 5 | **REST API smoke test** | 15 core endpoints (GET/POST/PATCH/DELETE) | ✅ | ✅ All pass |
 
 ---
 
@@ -177,10 +180,12 @@ Add user/password authentication to protect the server from unauthorized access.
 
 | Order | Feature | Effort | Why |
 |-------|---------|--------|-----|
-| 1 | 🌲 **Logging Infrastructure** 🔥 | 2-3h | CRITICAL — without it, all errors are invisible |
-| 2 | **Upstream Phase 2 (resume)** | 4-6h | 5/10 tasks done |
-| 3 | **Backend Config File** | 4-6h | Proposal ready, improves DX |
-| 4 | 🐘 **Giant Class Refactoring** | 4-6h | Improves maintainability |
-| 5 | **PostgreSQL Bug Fixes** | 2-3h | 3 skipped tests |
-| 6 | **Phase 3 — Breaking** | 6-8h | Requires Phase 2 (structured errors) |
-| 7 | **Phase 4 — Memory Relations** | 8-10h | Complex — cloud + LLM judge |
+| 1 | 🔴 **Connection Pooling** | 2-3h | CRITICAL — blocks concurrent sync + HTTP, search fails under load |
+| 2 | 🌲 **Logging Infrastructure** | 2-3h | POST body debug + structured JSON logs |
+| 3 | **Upstream Phase 2** | 4-6h | 5/10 tasks done |
+| 4 | **Docker permissions** | 5min | Quick win — unblocks mem_sync_md_to_repo |
+| 5 | **PostgreSQL tests** | 2-3h | 3 tests skipped — low effort fix |
+| 6 | **Backend Config File** | 4-6h | Proposal ready, improves DX |
+| 7 | 🐘 **Giant Class Refactoring** | 4-6h | Improves maintainability |
+| 8 | **Phase 3 — Breaking** | 6-8h | Requires Phase 2 |
+| 9 | **Phase 4 — Memory Relations** | 8-10h | Complex — cloud + LLM judge |
