@@ -29,6 +29,11 @@ public interface ILocalSyncStore
     Task AckSyncMutationSeqsAsync(string targetKey, IReadOnlyList<long> seqs, CancellationToken ct = default);
 
     /// <summary>
+    /// Update the last_pulled_seq cursor after a successful pull cycle.
+    /// </summary>
+    Task UpdateSyncStateAsync(string targetKey, long lastPulledSeq, CancellationToken ct = default);
+
+    /// <summary>
     /// Acquire a sync lease to prevent concurrent sync operations.
     /// Returns true if lease was acquired.
     /// </summary>

@@ -1843,6 +1843,28 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         cmd.Parameters.AddWithValue("@target", targetKey);
         cmd.ExecuteNonQuery();
 
+        // Update cursor: advance last_acked_seq to the max of accepted seqs
+        var maxSeq = seqs.Max();
+        using var updateCmd = _db.CreateCommand();
+        updateCmd.CommandText = @"
+            UPDATE sync_state SET last_acked_seq = MAX(last_acked_seq, @maxSeq), updated_at = datetime('now')
+            WHERE target_key = @target";
+        updateCmd.Parameters.AddWithValue("@target", targetKey);
+        updateCmd.Parameters.AddWithValue("@maxSeq", maxSeq);
+        updateCmd.ExecuteNonQuery();
+
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateSyncStateAsync(string targetKey, long lastPulledSeq, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE sync_state SET last_pulled_seq = MAX(last_pulled_seq, @seq), updated_at = datetime('now')
+            WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@seq", lastPulledSeq);
+        cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }
 

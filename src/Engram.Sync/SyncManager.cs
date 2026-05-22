@@ -281,6 +281,7 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
         {
             _logger.LogInformation("SyncManager pulled {Total} mutations total", totalPulled);
             _metrics.IncrementPulled(totalPulled);
+            await _store.UpdateSyncStateAsync(_cfg.TargetKey, sinceSeq, ct);
         }
     }
 
