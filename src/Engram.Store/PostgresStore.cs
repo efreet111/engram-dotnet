@@ -13,8 +13,10 @@ namespace Engram.Store;
 /// </summary>
 public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStore
 {
-    private readonly NpgsqlConnection _db;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly StoreConfig _cfg;
+    public string BackendName => "postgres";
+    public int MaxObservationLength => _cfg.MaxObservationLength;
 
     // ─── Construction ──────────────────────────────────────────────────────────
 
@@ -26,16 +28,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             throw new ArgumentException(
                 "ENGRAM_PG_CONNECTION is required when ENGRAM_DB_TYPE=postgres");
 
-        _db = new NpgsqlConnection(cfg.PgConnectionString);
-        _db.Open();
-
+        _dataSource = NpgsqlDataSource.Create(cfg.PgConnectionString);
         Migrate();
     }
 
-    public int MaxObservationLength => _cfg.MaxObservationLength;
-    public string BackendName => "postgres";
-
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _dataSource.Dispose();
 
     // ─── Migrations ────────────────────────────────────────────────────────────
 
@@ -276,7 +273,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private bool ColumnExists(string table, string column)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT COUNT(*) FROM information_schema.columns
             WHERE table_name = @table AND column_name = @column";
@@ -287,7 +284,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private void Exec(string sql)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
     }
@@ -324,7 +321,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task CreateSessionAsync(string id, string project, string directory)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO sessions (id, project, directory, started_at)
             VALUES (@id, @project, @directory, NOW() AT TIME ZONE 'utc')
@@ -338,7 +335,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task EndSessionAsync(string id, string summary)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             UPDATE sessions SET ended_at = NOW() AT TIME ZONE 'utc', summary = @summary
             WHERE id = @id";
@@ -350,7 +347,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<Session?> GetSessionAsync(string id)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions WHERE id = @id";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
@@ -372,7 +369,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         sql.Append(" ORDER BY s.started_at DESC LIMIT @limit");
         parms.Add(new NpgsqlParameter("@limit", limit));
 
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql.ToString();
         foreach (var p in parms) cmd.Parameters.Add(p);
         using var r = cmd.ExecuteReader();
@@ -394,11 +391,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task DeleteSessionAsync(string id)
     {
-        using var tx = _db.BeginTransaction();
+        using var txConn = _dataSource.OpenConnection();
+        using var tx = txConn.BeginTransaction();
         try
         {
             // 1. Verify session exists
-            using (var cmd = _db.CreateCommand())
+            using (var cmd = txConn.CreateCommand())
             {
                 cmd.Transaction = tx;
                 cmd.CommandText = "SELECT project FROM sessions WHERE id = @id";
@@ -408,8 +406,8 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                     throw new SessionNotFoundException(id);
             }
 
-            // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
-            using (var cmd = _db.CreateCommand())
+            // 2. Count ALL observations (including soft-deleted)
+            using (var cmd = txConn.CreateCommand())
             {
                 cmd.Transaction = tx;
                 cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id";
@@ -420,7 +418,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             }
 
             // 3. Soft-delete associated prompts so RecentPrompts excludes them
-            using (var cmd = _db.CreateCommand())
+            using (var cmd = txConn.CreateCommand())
             {
                 cmd.Transaction = tx;
                 cmd.CommandText = "UPDATE user_prompts SET deleted_at = NOW() AT TIME ZONE 'utc' WHERE session_id = @id AND deleted_at IS NULL";
@@ -429,12 +427,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             }
 
             // 4. Hard-delete the session. Temporarily disable FK triggers so soft-deleted prompts can keep their session_id.
-            using var disable = _db.CreateCommand();
+            using var disable = txConn.CreateCommand();
             disable.CommandText = "SET session_replication_role = replica";
             disable.ExecuteNonQuery();
             try
             {
-                using var cmd = _db.CreateCommand();
+                using var cmd = txConn.CreateCommand();
                 cmd.Transaction = tx;
                 cmd.CommandText = "DELETE FROM sessions WHERE id = @id";
                 cmd.Parameters.AddWithValue("@id", id);
@@ -444,7 +442,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             }
             finally
             {
-                using var enable = _db.CreateCommand();
+                using var enable = _dataSource.CreateCommand();
                 enable.CommandText = "SET session_replication_role = origin";
                 enable.ExecuteNonQuery();
             }
@@ -481,7 +479,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             var existing = await GetObservationByTopicKeyAsync(p.TopicKey, p.Project, p.Scope);
             if (existing != null)
             {
-                using var cmd = _db.CreateCommand();
+                using var cmd = _dataSource.CreateCommand();
                 cmd.CommandText = @"
                     UPDATE observations
                     SET content = @content, title = @title, type = @type,
@@ -507,7 +505,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         // Path 2: hash dedup within window
         var hash = Normalizers.HashNormalized(p.Content);
         var dedupeWindow = DedupeWindowExpression;
-        using var dedupCmd = _db.CreateCommand();
+        using var dedupCmd = _dataSource.CreateCommand();
         dedupCmd.CommandText = $@"
             SELECT id, duplicate_count FROM observations
             WHERE normalized_hash = @hash AND project = @project AND scope = @scope
@@ -526,7 +524,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             var dupCount = dedupR.GetInt32(1);
             dedupR.Close();
 
-            using var upd = _db.CreateCommand();
+            using var upd = _dataSource.CreateCommand();
             upd.CommandText = @"
                 UPDATE observations SET duplicate_count = @dc, last_seen_at = @ls, updated_at = @up
                 WHERE id = @id";
@@ -540,7 +538,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         dedupR.Close();
 
         // Path 3: fresh insert
-        using var ins = _db.CreateCommand();
+        using var ins = _dataSource.CreateCommand();
         ins.CommandText = @"
             INSERT INTO observations
                 (sync_id, session_id, type, title, content, tool_name, project, scope,
@@ -568,7 +566,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private async Task<Observation?> GetObservationByTopicKeyAsync(string topicKey, string? project, string? scope)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
@@ -584,7 +582,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<Observation?> GetObservationAsync(long id)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
@@ -638,7 +636,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         sql.Append(" WHERE id = @id AND deleted_at IS NULL");
 
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql.ToString();
         foreach (var par in parms) cmd.Parameters.Add(par);
         var rows = cmd.ExecuteNonQuery();
@@ -648,7 +646,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<bool> DeleteObservationAsync(long id)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "UPDATE observations SET deleted_at = @now, updated_at = @now WHERE id = @id AND deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@now", now);
         cmd.Parameters.AddWithValue("@id", id);
@@ -785,7 +783,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<long> AddPromptAsync(AddPromptParams p)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO user_prompts (sync_id, session_id, content, project, created_at)
             VALUES (@sync_id, @session_id, @content, @project, NOW() AT TIME ZONE 'utc')
@@ -831,7 +829,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task DeletePromptAsync(long id)
     {
         // 1. Verify prompt exists
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT 1 FROM user_prompts WHERE id = @id";
             cmd.Parameters.AddWithValue("@id", id);
@@ -841,7 +839,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         // 2. Soft-delete
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "UPDATE user_prompts SET deleted_at = NOW() WHERE id = @id AND deleted_at IS NULL";
             cmd.Parameters.AddWithValue("@id", id);
@@ -955,17 +953,17 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         long totalSessions, totalObservations, totalPrompts;
 
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT COUNT(*) FROM sessions";
             totalSessions = Convert.ToInt64(cmd.ExecuteScalar());
         }
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
             totalObservations = Convert.ToInt64(cmd.ExecuteScalar());
         }
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
             totalPrompts = Convert.ToInt64(cmd.ExecuteScalar());
@@ -989,7 +987,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         var stats = new RetentionStats();
 
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
             stats.TotalObservations = Convert.ToInt32(cmd.ExecuteScalar());
@@ -1006,7 +1004,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         };
 
         // Count without topic_key in last 90d
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz >= NOW() - INTERVAL '90 days'";
             stats.WithoutTopicKey90d = Convert.ToInt32(cmd.ExecuteScalar());
@@ -1034,7 +1032,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             var cutoff = DateTime.UtcNow - ttl.Value;
             var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss");
 
-            using var countCmd = _db.CreateCommand();
+            using var countCmd = _dataSource.CreateCommand();
             countCmd.CommandText = "SELECT COUNT(*) FROM observations WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
             countCmd.Parameters.AddWithValue("@type", type);
             countCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
@@ -1043,7 +1041,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             if (!p.DryRun && count > 0)
             {
                 var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-                using var delCmd = _db.CreateCommand();
+                using var delCmd = _dataSource.CreateCommand();
                 delCmd.CommandText = "UPDATE observations SET deleted_at = @now, updated_at = @now WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
                 delCmd.Parameters.AddWithValue("@now", now);
                 delCmd.Parameters.AddWithValue("@type", type);
@@ -1064,7 +1062,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task AddProjectMigrationAsync(string fromProject, string toProject)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "INSERT INTO project_migrations (from_project, to_project, migrated_at) VALUES (@from, @to, NOW() AT TIME ZONE 'utc') ON CONFLICT (from_project) DO UPDATE SET to_project = @to2, migrated_at = NOW() AT TIME ZONE 'utc'";
         cmd.Parameters.AddWithValue("@from", fromProject);
         cmd.Parameters.AddWithValue("@to", toProject);
@@ -1076,7 +1074,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<IList<ProjectMigration>> GetProjectMigrationsAsync()
     {
         var list = new List<ProjectMigration>();
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT from_project, to_project, migrated_at FROM project_migrations ORDER BY migrated_at DESC";
         using var r = cmd.ExecuteReader();
         while (r.Read())
@@ -1093,7 +1091,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private int CountObs(string whereClause)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = $"SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL AND {whereClause}";
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
@@ -1105,7 +1103,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public async Task<ExportData> ExportAsync()
     {
         var sessions = new List<Session>();
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions ORDER BY started_at";
             using var r = cmd.ExecuteReader();
@@ -1146,7 +1144,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         long sessionsImported = 0, observationsImported = 0, promptsImported = 0;
 
         var existingSessions = new HashSet<string>();
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT id FROM sessions";
             using var r = cmd.ExecuteReader();
@@ -1156,7 +1154,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         foreach (var s in data.Sessions)
         {
             if (existingSessions.Contains(s.Id)) continue;
-            using var cmd = _db.CreateCommand();
+            using var cmd = _dataSource.CreateCommand();
             cmd.CommandText = "INSERT INTO sessions (id, project, directory, started_at, ended_at, summary) VALUES (@id, @proj, @dir, @started, @ended, @summary)";
             cmd.Parameters.AddWithValue("@id", s.Id);
             cmd.Parameters.AddWithValue("@proj", s.Project);
@@ -1169,7 +1167,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         var existingObs = new HashSet<string>();
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT sync_id FROM observations WHERE sync_id IS NOT NULL";
             using var r = cmd.ExecuteReader();
@@ -1179,7 +1177,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         foreach (var o in data.Observations)
         {
             if (!string.IsNullOrEmpty(o.SyncId) && existingObs.Contains(o.SyncId)) continue;
-            using var cmd = _db.CreateCommand();
+            using var cmd = _dataSource.CreateCommand();
             cmd.CommandText = @"
                 INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project, scope,
@@ -1209,7 +1207,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         var existingPrompts = new HashSet<string>();
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "SELECT sync_id FROM user_prompts WHERE sync_id IS NOT NULL";
             using var r = cmd.ExecuteReader();
@@ -1219,7 +1217,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         foreach (var p in data.Prompts)
         {
             if (!string.IsNullOrEmpty(p.SyncId) && existingPrompts.Contains(p.SyncId)) continue;
-            using var cmd = _db.CreateCommand();
+            using var cmd = _dataSource.CreateCommand();
             cmd.CommandText = "INSERT INTO user_prompts (sync_id, session_id, content, project, created_at) VALUES (@sync_id, @session_id, @content, @project, @created)";
             cmd.Parameters.AddWithValue("@sync_id", (object?)p.SyncId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@session_id", p.SessionId);
@@ -1257,7 +1255,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         Directory.CreateDirectory(mdDir);
         File.WriteAllText(fullPath, RenderMdContent(obs));
 
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "UPDATE observations SET md_path = @path, updated_at = @now WHERE id = @id";
         cmd.Parameters.AddWithValue("@path", filename);
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -1269,7 +1267,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT id FROM observations
             WHERE deleted_at IS NULL AND (md_path IS NULL OR md_path = '')
@@ -1293,7 +1291,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<string> GenerateIndexAsync(string mdDir)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content,
                    o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
@@ -1403,19 +1401,19 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         foreach (var src in sources)
         {
-            using var cmdObs = _db.CreateCommand();
+            using var cmdObs = _dataSource.CreateCommand();
             cmdObs.CommandText = "UPDATE observations SET project = @canonical WHERE project = @src AND deleted_at IS NULL";
             cmdObs.Parameters.AddWithValue("@canonical", canonical);
             cmdObs.Parameters.AddWithValue("@src", src);
             observationsUpdated += cmdObs.ExecuteNonQuery();
 
-            using var cmdSess = _db.CreateCommand();
+            using var cmdSess = _dataSource.CreateCommand();
             cmdSess.CommandText = "UPDATE sessions SET project = @canonical WHERE project = @src";
             cmdSess.Parameters.AddWithValue("@canonical", canonical);
             cmdSess.Parameters.AddWithValue("@src", src);
             sessionsUpdated += cmdSess.ExecuteNonQuery();
 
-            using var cmdPrompt = _db.CreateCommand();
+            using var cmdPrompt = _dataSource.CreateCommand();
             cmdPrompt.CommandText = "UPDATE user_prompts SET project = @canonical WHERE project = @src";
             cmdPrompt.Parameters.AddWithValue("@canonical", canonical);
             cmdPrompt.Parameters.AddWithValue("@src", src);
@@ -1435,7 +1433,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<IList<string>> ListProjectNamesAsync()
     {
         var results = new List<string>();
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT DISTINCT project FROM observations
             WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL
@@ -1450,7 +1448,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var statsMap = new Dictionary<string, ProjectStats>();
 
         // Observation counts
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = @"
                 SELECT project, COUNT(*) as cnt
@@ -1467,7 +1465,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         // Session counts + directories
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = @"
                 SELECT project, COUNT(*) as cnt
@@ -1487,7 +1485,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         // Directories per project
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = @"
                 SELECT project, directory
@@ -1515,7 +1513,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         // Prompt counts
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = @"
                 SELECT COALESCE(project,'') as project, COUNT(*) as cnt
@@ -1540,7 +1538,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<int> CountObservationsForProjectAsync(string project)
     {
         project = Normalizers.NormalizeProject(project);
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@proj", project);
         return Task.FromResult(Convert.ToInt32(cmd.ExecuteScalar()));
@@ -1550,7 +1548,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         project = Normalizers.NormalizeProject(project);
 
-        var obsCount = Convert.ToInt32(_db.CreateCommand().ExecuteScalarWithParams(
+        var obsCount = Convert.ToInt32(_dataSource.CreateCommand().ExecuteScalarWithParams(
             "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL",
             new NpgsqlParameter("@proj", project)));
         if (obsCount > 0)
@@ -1560,13 +1558,13 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         long sessionsDeleted = 0, promptsDeleted = 0;
 
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "DELETE FROM user_prompts WHERE project = @proj";
             cmd.Parameters.AddWithValue("@proj", project);
             promptsDeleted = cmd.ExecuteNonQuery();
         }
-        using (var cmd = _db.CreateCommand())
+        using (var cmd = _dataSource.CreateCommand())
         {
             cmd.CommandText = "DELETE FROM sessions WHERE project = @proj";
             cmd.Parameters.AddWithValue("@proj", project);
@@ -1588,7 +1586,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<ISet<string>> GetSyncedChunksAsync()
     {
         var chunks = new HashSet<string>();
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT chunk_id FROM sync_chunks";
         using var r = cmd.ExecuteReader();
         while (r.Read()) chunks.Add(r.GetString(0));
@@ -1597,7 +1595,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task RecordSyncedChunkAsync(string chunkId)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "INSERT INTO sync_chunks (chunk_id, imported_at) VALUES (@id, NOW() AT TIME ZONE 'utc') ON CONFLICT (chunk_id) DO NOTHING";
         cmd.Parameters.AddWithValue("@id", chunkId);
         cmd.ExecuteNonQuery();
@@ -1616,14 +1614,14 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         if (entries.Count == 0) return [];
 
         var seqs = new List<long>(entries.Count);
-        using var tx = _db.BeginTransaction();
+        using var txConn = _dataSource.OpenConnection();
+        using var tx = txConn.BeginTransaction();
 
         try
         {
             foreach (var entry in entries)
             {
-                await using var cmd = _db.CreateCommand();
-                cmd.Transaction = tx;
+                await using var cmd = txConn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO cloud_mutations (project, entity, entity_key, op, payload, created_by, occurred_at)
                     VALUES (@project, @entity, @entity_key, @op, @payload::jsonb, @created_by, NOW())
@@ -1657,7 +1655,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         CancellationToken ct = default)
     {
         var mutations = new List<StoredMutation>();
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
 
         var sql = @"
             SELECT seq, project, entity, entity_key, op, payload, occurred_at
@@ -1707,7 +1705,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<bool> IsProjectSyncEnabledAsync(string project, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT COALESCE(sync_enabled, true)
             FROM cloud_project_controls
@@ -1720,7 +1718,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task InsertAuditEntryAsync(AuditEntry entry, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO cloud_sync_audit_log (project, action, outcome, contributor, entry_count, reason_code, created_at)
             VALUES (@project, @action, @outcome, @contributor, @entry_count, @reason_code, NOW())";
@@ -1738,7 +1736,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public async Task<List<EnrolledProject>> GetEnrolledProjectsAsync(string user, CancellationToken ct = default)
     {
         var projects = new List<EnrolledProject>();
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT project, enrolled_at, enrolled_by FROM sync_enrolled_projects
             WHERE ""user"" = @user
@@ -1759,7 +1757,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<EnrollmentResult> EnrollProjectAsync(string project, string user, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO sync_enrolled_projects (project, ""user"", enrolled_by, enrolled_at)
             VALUES (@project, @user, @user, NOW() AT TIME ZONE 'utc')
@@ -1781,7 +1779,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<EnrollmentResult> UnenrollProjectAsync(string project, string user, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             DELETE FROM sync_enrolled_projects
             WHERE project = @project AND ""user"" = @user
@@ -1808,7 +1806,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<PauseResult> PauseProjectAsync(string project, string reason, string pausedBy, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO cloud_project_controls (project, sync_enabled, pause_reason, paused_at, paused_by)
             VALUES (@project, false, @reason, NOW() AT TIME ZONE 'utc', @paused_by)
@@ -1846,7 +1844,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<PauseResult> ResumeProjectAsync(string project, string resumedBy, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             UPDATE cloud_project_controls
             SET sync_enabled = true, pause_reason = NULL, paused_at = NULL, paused_by = NULL,
@@ -1889,7 +1887,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         byte[] payload,
         CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO cloud_chunks (chunk_id, project, payload, created_by, client_created_at)
             VALUES (@chunk_id, @project, @payload::jsonb, @created_by, @client_created_at)
@@ -1907,7 +1905,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<byte[]?> ReadChunkAsync(string project, string chunkId, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT payload FROM cloud_chunks WHERE chunk_id = @chunk_id AND project = @project";
         cmd.Parameters.AddWithValue("@chunk_id", chunkId);
         cmd.Parameters.AddWithValue("@project", project);
@@ -1918,7 +1916,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public async Task<bool> ChunkExistsAsync(string project, string chunkId, CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT 1 FROM cloud_chunks WHERE chunk_id = @chunk_id AND project = @project";
         cmd.Parameters.AddWithValue("@chunk_id", chunkId);
         cmd.Parameters.AddWithValue("@project", project);
@@ -2000,7 +1998,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private List<Observation> QueryObservations(string sql, IEnumerable<NpgsqlParameter> parms)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql;
         foreach (var p in parms) cmd.Parameters.Add(p);
         using var r = cmd.ExecuteReader();
@@ -2011,7 +2009,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private List<Prompt> QueryPrompts(string sql, IEnumerable<NpgsqlParameter> parms)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql;
         foreach (var p in parms) cmd.Parameters.Add(p);
         using var r = cmd.ExecuteReader();
@@ -2022,7 +2020,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private List<SearchResult> QuerySearchResults(string sql, IEnumerable<NpgsqlParameter> parms)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = sql;
         foreach (var p in parms) cmd.Parameters.Add(p);
 
@@ -2044,7 +2042,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private Observation? GetObservationDirect(long id)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
@@ -2057,7 +2055,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     private Session? GetSessionDirect(string id)
     {
-        using var cmd = _db.CreateCommand();
+        using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions WHERE id = @id";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
