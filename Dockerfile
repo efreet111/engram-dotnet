@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash engram
 RUN mkdir -p /data/engram && chown engram:engram /data/engram
+RUN mkdir -p /app/docs && chown engram:engram /app/docs
 
 COPY --from=build /app/publish .
 RUN chmod +x ./engram

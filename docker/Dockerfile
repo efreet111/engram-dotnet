@@ -20,6 +20,7 @@ RUN curl -L \
 
 # Directorio de datos (se monta como volumen)
 RUN mkdir -p /data/engram
+RUN mkdir -p /app/docs
 VOLUME ["/data/engram"]
 
 # Puerto HTTP
