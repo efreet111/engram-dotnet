@@ -43,3 +43,4 @@ coverage.cobertura.xml
 design.md
 design_output.md
 design_result.md
+dist-cli/
