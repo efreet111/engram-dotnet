@@ -9,6 +9,7 @@
 
 | Feature | Commit/PR | Description |
 |---------|-----------|-------------|
+| Connection pooling | `2806c30` | NpgsqlConnection → NpgsqlDataSource for thread-safe DB access |
 | OpenStore() HttpStore fix | `57937d5` | CLI commands now use ENGRAM_URL when configured |
 | Sync cursor fix | `5a5b360` | last_acked_seq/last_pulled_seq now advance after push/pull |
 | Bug specs documented | `923b295` | SDD docs for connection pooling, tests, Docker permissions |
@@ -180,8 +181,8 @@ Add user/password authentication to protect the server from unauthorized access.
 
 | Order | Feature | Effort | Why |
 |-------|---------|--------|-----|
-| 1 | 🔴 **Connection Pooling** | 2-3h | CRITICAL — blocks concurrent sync + HTTP, search fails under load |
-| 2 | 🌲 **Logging Infrastructure** | 2-3h | POST body debug + structured JSON logs |
+| 1 | ~~Connection Pooling~~ | 2-3h | ✅ **FIXED** — NpgsqlDataSource en `2806c30` |
+| 2 | 🌲 **Logging Infrastructure** 🔥 | 2-3h | POST body debug + structured JSON logs |
 | 3 | **Upstream Phase 2** | 4-6h | 5/10 tasks done |
 | 4 | **Docker permissions** | 5min | Quick win — unblocks mem_sync_md_to_repo |
 | 5 | **PostgreSQL tests** | 2-3h | 3 tests skipped — low effort fix |
