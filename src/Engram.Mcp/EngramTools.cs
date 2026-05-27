@@ -958,6 +958,27 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return sb.ToString();
     }
 
+    // ─── mem_current_project ─────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_current_project", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Returns the project that would be used for the current working directory — its name, detection source, and any ambiguity warnings. Call this before writing to verify the agent is targeting the right project.")]
+    public string MemCurrentProject(
+        [Description("Working directory to evaluate. Defaults to the process current directory.")]
+        string? workingDir = null)
+    {
+        var dir = workingDir ?? Directory.GetCurrentDirectory();
+        var result = ProjectDetector.DetectProjectFull(dir);
+        return JsonSerializer.Serialize(new
+        {
+            project        = result.Project,
+            project_source = result.Source,
+            project_path   = result.ProjectPath,
+            cwd            = dir,
+            available_projects = result.GetAvailableProjects(),
+            warning        = result.Warning
+        }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -105,7 +105,7 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 | Feature | Status | Docs |
 |---------|--------|------|
 | **REST API** (41 endpoints) | ✅ Complete | [API Reference](docs/API-REFERENCE.md) |
-| **MCP Server** (27 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
+| **MCP Server** (26 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
 | **Offline-First Sync** | ✅ Complete (4 phases) | [Sync Setup](docs/SYNC-SETUP.md) |
 | **Multi-User Isolation** | ✅ RFC-002 | [Multi-User](docs/MULTI-USER.md) |
 | **TTL Configurable** | ✅ Archived | — |

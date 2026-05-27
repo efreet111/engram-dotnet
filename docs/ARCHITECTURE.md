@@ -28,7 +28,7 @@ src/
 ├── Engram.Sync/         ← Offline-first sync engine
 │   ├── SyncManager.cs   ← BackgroundService
 │   └── Transport/       ← HTTP transport (IMutationTransport)
-├── Engram.Mcp/          ← MCP server (27 tools, stdio transport)
+├── Engram.Mcp/          ← MCP server (26 tools, stdio transport)
 ├── Engram.Cli/          ← CLI entry point (System.CommandLine)
 ├── Engram.Diagnostics/  ← Doctor diagnostic tools
 ├── Engram.Obsidian/     ← Obsidian vault export
@@ -173,7 +173,7 @@ app.MapGet("/search", async (ctx, store) => await HandleSearch(ctx, store));
 
 ## MCP Server
 
-27 tools registered via `McpServerTool` attribute:
+26 tools registered via `McpServerTool` attribute:
 
 ```
 Production (create/read):
@@ -188,7 +188,7 @@ Diagnostics:
   mem_doctor
 
 Promotion:
-  mem_promote_to_md, mem_sync_md_to_repo, mem_generate_index
+  mem_promote_to_md, mem_sync_md_to_repo
 
 Verification:
   mem_verify_artifact, mem_traceability, mem_trace_source, mem_lineage
@@ -197,7 +197,7 @@ Retention:
   mem_retention_prune, mem_retention_stats
 
 Projects:
-  mem_merge_projects, mem_project_redirects
+  mem_merge_projects, mem_project_redirects, mem_current_project
 ```
 
 ---

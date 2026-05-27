@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mem_current_project` MCP tool** — implementado en `EngramTools.cs` (había sido declarado en v0.3.0 pero omitido del código)
+- **Versión CLI** — `Program.cs` corregido de `1.1.0` a `0.3.0` para alinear con CHANGELOG y tags de release
+- **Conteo MCP tools en docs** — corregido de "27" a "26" en README.md, README.es.md, ARCHITECTURE.md, DEVELOPMENT.md y MCP-TEST-CASES.md; eliminada referencia a `mem_generate_index` que no existe en el código
+
 ## [0.3.0] — 2026-05-11 — Session Activity Tracker + Phase 2 API Parity
 
 ### Added

@@ -64,7 +64,7 @@ public static class HubGenerator
         foreach (var ref_ in observations)
             sb.AppendLine($"- [[{ref_.Slug}]]");
 
-        return sb.ToString();
+        return sb.ToString().Replace("\r\n", "\n");
     }
 
     /// <summary>
@@ -99,6 +99,6 @@ public static class HubGenerator
         foreach (var ref_ in observations)
             sb.AppendLine($"- [[{ref_.Slug}]] ({ref_.Type})");
 
-        return sb.ToString();
+        return sb.ToString().Replace("\r\n", "\n");
     }
 }

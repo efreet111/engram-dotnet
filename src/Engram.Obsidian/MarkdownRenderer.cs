@@ -67,7 +67,7 @@ public static class MarkdownRenderer
                 sb.AppendLine(link);
         }
 
-        return sb.ToString();
+        return sb.ToString().Replace("\r\n", "\n");
     }
 
     /// <summary>
