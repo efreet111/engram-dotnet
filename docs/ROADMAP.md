@@ -74,14 +74,14 @@ Specs: [`sdd/postgres-bug-fixes/`](../sdd/postgres-bug-fixes/)
 
 ---
 
-#### Docker Deployment Fix
+#### ~~Docker Deployment Fix~~ ✅ **COMPLETED**
 
 > **Effort**: 5min  
 > **Spec**: [`sdd/docker-deployment-fix/`](../sdd/docker-deployment-fix/)
 
-| # | Issue | Fix |
-|---|-------|-----|
-| 1 | `mem_sync_md_to_repo` falla con permission denied en `/app/docs` | Agregar `RUN mkdir -p /app/docs` en Dockerfile |
+| # | Issue | Fix | Status |
+|---|-------|-----|--------|
+| 1 | `mem_sync_md_to_repo` falla con permission denied en `/app/docs` | `RUN mkdir -p /app/docs && chown engram:engram /app/docs` en ambos Dockerfiles | ✅ Fixed |
 
 #### Phase 3 — Breaking Changes
 
@@ -184,7 +184,7 @@ Add user/password authentication to protect the server from unauthorized access.
 | 1 | ~~Connection Pooling~~ | 2-3h | ✅ **FIXED** — NpgsqlDataSource en `2806c30` |
 | 2 | 🌲 **Logging Infrastructure** 🔥 | 2-3h | POST body debug + structured JSON logs |
 | 3 | **Upstream Phase 2** | 4-6h | 5/10 tasks done |
-| 4 | **Docker permissions** | 5min | Quick win — unblocks mem_sync_md_to_repo |
+| 4 | ~~Docker permissions~~ | 5min | ✅ **FIXED** — Non-root user + /app/docs permissions |
 | 5 | **PostgreSQL tests** | 2-3h | 3 tests skipped — low effort fix |
 | 6 | **Backend Config File** | 4-6h | Proposal ready, improves DX |
 | 7 | 🐘 **Giant Class Refactoring** | 4-6h | Improves maintainability |

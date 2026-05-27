@@ -15,12 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Descargar el binario del release
 RUN curl -L \
     "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
-    -o /usr/local/bin/engram \
-    && chmod +x /usr/local/bin/engram
+    -o /app/engram \
+    && chmod +x /app/engram
+
+# Create non-root user and directories
+RUN useradd --create-home --shell /bin/bash engram
 
 # Directorio de datos (se monta como volumen)
-RUN mkdir -p /data/engram
-RUN mkdir -p /app/docs
+RUN mkdir -p /data/engram && chown engram:engram /data/engram
+RUN mkdir -p /app/docs && chown engram:engram /app/docs
+
 VOLUME ["/data/engram"]
 
 # Puerto HTTP
@@ -29,10 +33,13 @@ EXPOSE 7437
 # Variables de entorno con defaults seguros
 ENV ENGRAM_DATA_DIR=/data/engram
 ENV ENGRAM_PORT=7437
+ENV ASPNETCORE_URLS=http://+:7437
+
+USER engram
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7437/health || exit 1
 
-ENTRYPOINT ["/usr/local/bin/engram"]
+ENTRYPOINT ["/app/engram"]
 CMD ["serve"]
