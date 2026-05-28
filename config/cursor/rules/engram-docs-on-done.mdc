@@ -1,0 +1,26 @@
+---
+description: Al cerrar BACKLOG/ROADMAP/features — checklist obligatorio de documentación engram-dotnet
+alwaysApply: true
+---
+
+# Cierre de trabajo — documentación obligatoria
+
+Cuando completes un ítem del backlog, una feature, un bugfix relevante, o vayas a hacer commit/PR de cambios de producto en **engram-dotnet**:
+
+1. **Leé y seguí** el skill del proyecto: `.cursor/skills/engram-docs-on-done/SKILL.md` (checklist completo + búsquedas en el repo).
+
+2. **Mínimo sin excepción:**
+   - `CHANGELOG.md` → `[Unreleased]`
+   - `docs/BACKLOG.md` → marcar `ENG-xxx` Done
+   - `docs/ROADMAP.md` → ✅ Completed + limpiar backlog desactualizado
+   - `README.md` / `README.es.md` si cambió comportamiento visible
+
+3. **Según el cambio**, actualizar también (buscar antes de asumir):
+   - MCP → `MCP-CONFIG.md`, `config/mcp/`, conteo tools en `EngramTools.cs`
+   - REST → `API-REFERENCE.md`
+   - Sync → `SYNC-SETUP.md`, `OFFLINE-FIRST-SYNC.md`
+   - Versión → `Program.cs` alineado con CHANGELOG/tags
+
+4. **No cerrar** dejando docs que describan features inexistentes o variables equivocadas (`ENGRAM_URL` vs `ENGRAM_SERVER_URL` para sync).
+
+Si el usuario solo pidió una pregunta sin cambios de código, esta regla no aplica.

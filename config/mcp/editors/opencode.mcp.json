@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "engram": {
+      "type": "stdio",
+      "command": ["{{ENGRAM_COMMAND}}", "mcp"],
+      "environment": {
+        "ENGRAM_DATA_DIR": "{{ENGRAM_DATA_DIR}}",
+        "ENGRAM_USER": "{{ENGRAM_USER}}",
+        "ENGRAM_SYNC_ENABLED": "{{ENGRAM_SYNC_ENABLED}}",
+        "ENGRAM_SERVER_URL": "{{ENGRAM_SERVER_URL}}"
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@
 /*.swp
 /.vs/
 /dist/
+config/mcp/generated/
 /publish/
 *.user
 

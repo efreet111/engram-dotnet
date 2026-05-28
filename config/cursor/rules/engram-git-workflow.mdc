@@ -1,0 +1,40 @@
+---
+description: Git en engram-dotnet — ramas, commits, PRs y releases (OSS)
+alwaysApply: true
+---
+
+# Git — flujo obligatorio en engram-dotnet
+
+Cuando hagas cambios de código, prepares commit/PR, o el usuario pida publicar/release en **este repo**:
+
+1. **Leé** la guía canónica: [`docs/GIT-WORKFLOW.md`](../../../docs/GIT-WORKFLOW.md).
+
+2. **Ramas**
+   - Trabajo en `feat/`, `fix/`, `docs/` o `chore/` desde `main` actualizado.
+   - No commits de producto directo en `main` (salvo docs triviales acordados).
+   - No `force-push` a `main`. Opcional: `ENG-xxx` en cuerpo del commit/PR.
+
+3. **Commits**
+   - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`.
+   - Un tema lógico por commit; PR acotado (un backlog item o feature cohesiva).
+   - **Solo crear commit** cuando el usuario lo pida explícitamente.
+   - **Solo push/PR** cuando el usuario lo pida explícitamente.
+
+4. **No commitear**
+   - `bin/`, `obj/`, `dist/`, `config/mcp/generated/`, `.env`, credenciales, `mcp.json` personal con IPs privadas.
+   - Artefactos locales de prueba.
+
+5. **Antes de PR/push** (cambios de producto)
+   - `dotnet test` — matriz SQLite; Postgres si tocaste ese código.
+   - Misma PR: código + docs según regla [`engram-docs-on-done.mdc`](engram-docs-on-done.mdc).
+
+6. **Releases**
+   - Solo mantenedor, con tag `v*` (dispara CI de release).
+   - Alinear `CHANGELOG.md` y `Program.cs` `Version` antes del tag.
+   - No etiquetar en cada merge a `main`.
+
+7. **CI**
+   - `main`: push y PR ejecutan `.github/workflows/ci.yml`.
+   - No mergear con CI rojo.
+
+Si el usuario solo pregunta sobre Git sin tocar el repo, esta regla no obliga ramas ni commits.

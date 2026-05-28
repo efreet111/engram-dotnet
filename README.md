@@ -123,7 +123,10 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 | [🤖 Agent Protocol](docs/AGENT-PROTOCOL.md) | AI agents (tools, scope, sync) |
 | [📖 Sync Setup](docs/SYNC-SETUP.md) | SysAdmins (PostgreSQL, env vars) |
 | [📖 Multi-User](docs/MULTI-USER.md) | Team leads (identity, isolation) |
-| [📖 MCP Config](docs/MCP-CONFIG.md) | AI agent setup (Cursor, Claude, OpenCode) |
+| [📖 MCP Config](docs/MCP-CONFIG.md) | AI agent setup (any MCP client) |
+| [📖 Setup Wizard](docs/SETUP-WIZARD.md) | Clone repo → local or offline-first sync (`scripts/setup.ps1`) |
+| [📖 Backlog](docs/BACKLOG.md) | Cola de trabajo ordenada (ENG-xxx) — qué hacer ahora |
+| [📖 Git workflow](docs/GIT-WORKFLOW.md) | Ramas, PRs, commits y releases (`v*` tags) |
 
 ---
 

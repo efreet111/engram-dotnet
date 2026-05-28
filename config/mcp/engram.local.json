@@ -1,0 +1,9 @@
+{
+  "command": "{{ENGRAM_COMMAND}}",
+  "args": ["mcp"],
+  "env": {
+    "ENGRAM_DATA_DIR": "{{ENGRAM_DATA_DIR}}",
+    "ENGRAM_USER": "{{ENGRAM_USER}}",
+    "ENGRAM_SYNC_ENABLED": "false"
+  }
+}
