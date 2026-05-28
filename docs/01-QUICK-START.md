@@ -34,21 +34,19 @@ curl http://localhost:7437/health
 # → {"status":"ok","service":"engram","version":"1.1.0","backend":"sqlite"}
 ```
 
-### MCP Setup (OpenCode)
+### MCP Setup (any client)
 
-```json
-{
-  "mcpServers": {
-    "engram": {
-      "command": "engram",
-      "args": ["mcp"],
-      "env": {
-        "ENGRAM_DATA_DIR": "~/.engram"
-      }
-    }
-  }
-}
+Run the interactive wizard (recommended):
+
+```bash
+# Windows
+.\scripts\setup.ps1
+
+# Linux / macOS
+./scripts/setup.sh
 ```
+
+Or see [SETUP-WIZARD.md](SETUP-WIZARD.md) and [MCP-CONFIG.md](MCP-CONFIG.md).
 
 ### Ready 🎉
 

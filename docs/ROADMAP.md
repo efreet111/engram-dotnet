@@ -1,7 +1,11 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-05-21  
-> **Current version**: `main` (post Sync cursor fix + OpenStore fix)
+> **Last updated**: 2026-05-28  
+> **Current version**: `main` (post MCP sync fix + multi-editor setup)
+
+**Orden de trabajo (qué hacer ahora):** [BACKLOG.md](BACKLOG.md) — cola única con IDs `ENG-xxx`.  
+**Al cerrar un ítem:** checklist en [`.cursor/skills/engram-docs-on-done/SKILL.md`](../.cursor/skills/engram-docs-on-done/SKILL.md).  
+Este ROADMAP es visión y contexto; no sustituye la cola.
 
 ---
 
@@ -23,10 +27,16 @@
 | Upstream Parity Phase 1 | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | Project detection, CLI `projects list\|consolidate\|prune` |
 | PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore with FTS, GIN indexes, 32 IStore methods |
 | Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, 47 tests |
+| Doc/code sync + MCP tools | `69e83d7` | Version 0.3.0, 26 tools, `mem_current_project`, Obsidian CRLF |
+| Docker MCP permissions | `bf01f18` | `/app/docs` en ambos Dockerfiles |
+| MCP sync startup fix | `a7f45eb` | `engram mcp` + `ENGRAM_SYNC_ENABLED` sin crash DI |
+| MCP multi-editor setup | (pending commit) | `config/mcp/`, `scripts/setup.ps1`, `INSTALL.md` |
 
 ---
 
 ## 📋 Backlog
+
+> **Ejecutar en orden:** [BACKLOG.md](BACKLOG.md). Lo siguiente es resumen por tema (puede estar desactualizado vs la cola).
 
 ### 🌲 Logging Infrastructure (spec created ✅)
 
@@ -46,16 +56,16 @@
 
 #### Upstream Phase 2 — API Parity (backlog)
 
-> **Status**: ~5/10 tasks done. Missing: structured errors, mem_current_project, export project filter, watch/since modes.
+> **Status**: ~6/10 tasks done. Ver [ENG-208](BACKLOG.md#cola-de-ejecución).
 
 | Done | Missing |
 |------|---------|
 | `DeleteSessionAsync`, `DeletePromptAsync` (Store) | Structured error integration in tools |
-| `handleDeleteSession`, `handleDeletePrompt` (Server) | `mem_current_project` MCP tool |
-| `Obsidian --project` filter | `ExportProjectAsync` (store-level) |
-| | `?project=` integration in server `/export` |
+| `handleDeleteSession`, `handleDeletePrompt` (Server) | — |
+| `mem_current_project` MCP tool | — |
+| `Obsidian --since` filter | `ExportProjectAsync` (store-level) si falta |
+| `Obsidian --project` filter | `?project=` integration in server `/export` |
 | | Obsidian `--watch` mode |
-| | Obsidian `--since` filter |
 
 #### PostgreSQL Backend — Bug Fixes (backlog)
 
@@ -65,7 +75,7 @@
 
 | # | Bug | Problem | Fix | Effort |
 |---|-----|---------|-----|--------|
-| 1 | Connection pooling | `NpgsqlOperationInProgressException` cuando SyncManager y HTTP compiten por la misma conexión | Usar `NpgsqlConnection` pool (crear conexión por operación) | 2-3h |
+| 1 | ~~Connection pooling~~ | ~~SyncManager + HTTP misma conexión~~ | ✅ NpgsqlDataSource (`2806c30`) | — |
 | 2 | FTS5 ranking | `Search_TopicKeyShortcut_RanksFirst` espera -1000, Postgres devuelve 0.06 | Actualizar valor esperado del test | 30min |
 | 3 | FK rollback | `DeleteSession_HasActiveObservations_Throws` — Postgres hace rollback en FK violation, SQLite no | Ajustar test o usar SAVEPOINT | 1h |
 | 4 | Transaction visibility | `MergeProjects_ReassignsObservations` — GetObservationAsync devuelve null post-merge | Usar misma transacción o REFRESH | 1h |
@@ -179,14 +189,12 @@ Add user/password authentication to protect the server from unauthorized access.
 
 ## 🗺️ Suggested Work Order
 
-| Order | Feature | Effort | Why |
-|-------|---------|--------|-----|
-| 1 | ~~Connection Pooling~~ | 2-3h | ✅ **FIXED** — NpgsqlDataSource en `2806c30` |
-| 2 | 🌲 **Logging Infrastructure** 🔥 | 2-3h | POST body debug + structured JSON logs |
-| 3 | **Upstream Phase 2** | 4-6h | 5/10 tasks done |
-| 4 | ~~Docker permissions~~ | 5min | ✅ **FIXED** — Non-root user + /app/docs permissions |
-| 5 | **PostgreSQL tests** | 2-3h | 3 tests skipped — low effort fix |
-| 6 | **Backend Config File** | 4-6h | Proposal ready, improves DX |
-| 7 | 🐘 **Giant Class Refactoring** | 4-6h | Improves maintainability |
-| 8 | **Phase 3 — Breaking** | 6-8h | Requires Phase 2 |
-| 9 | **Phase 4 — Memory Relations** | 8-10h | Complex — cloud + LLM judge |
+**Reemplazado por la cola única:** [BACKLOG.md — Cola de ejecución](BACKLOG.md#cola-de-ejecución).
+
+Resumen P0/P1 (mayo–junio 2026):
+
+1. Cerrar commit pendiente MCP/setup (ENG-201)  
+2. OSS + templates GitHub (ENG-202–203)  
+3. Pinear MCP SDK + auditoría docs (ENG-204–205)  
+4. PostgreSQL tests + logging (ENG-206–207)  
+5. Instalador + wizard junio (ENG-301–303)

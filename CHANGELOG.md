@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Hub MCP multi-editor** — `config/mcp/` (plantillas local + offline-sync, guías por editor, `INSTALL.md`)
+- **Setup wizard** — `scripts/setup.ps1` y `scripts/setup.sh` generan configs en `config/mcp/generated/`
+- **Backlog y flujo Git** — `docs/BACKLOG.md`, `docs/GIT-WORKFLOW.md`, `docs/SETUP-WIZARD.md`
+- **Cursor (proyecto)** — reglas `engram-docs-on-done`, `engram-git-workflow`, skill docs-on-done, `scripts/sync-cursor-rules.*`
+
+### Changed
+
+- **MCP docs** — `docs/MCP-CONFIG.md`, quick start, README (enlaces backlog/git/MCP hub)
+- **ROADMAP** — apunta al backlog como cola de ejecución
+
 ### Fixed
 
 - **`mem_current_project` MCP tool** — implementado en `EngramTools.cs` (había sido declarado en v0.3.0 pero omitido del código)
