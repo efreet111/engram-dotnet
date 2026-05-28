@@ -122,18 +122,36 @@ mcpCmd.SetHandler(async (string? project) =>
         return new DiagnosticService(store, serverUrl: serverUrl);
     });
 
-    // Register offline-first-sync services (Phase 2.4)
+    // Register offline-first-sync services (Phase 2.4) — only when local store supports sync journal
     var syncConfig = SyncManagerConfig.FromEnvironment();
-    if (syncConfig.Enabled)
+    if (syncConfig.Enabled && store is ILocalSyncStore localSyncStore)
     {
-        mcpBuilder.Services.AddSingleton<SyncManagerConfig>(syncConfig);
+        var syncMetrics = new SyncMetrics();
+        mcpBuilder.Services.AddSingleton(syncConfig);
+        mcpBuilder.Services.AddSingleton(syncMetrics);
         mcpBuilder.Services.AddSingleton<IMutationTransport>(sp =>
         {
             var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
-            var remoteUrl = storeCfg.IsRemote ? storeCfg.RemoteUrl! : "http://localhost:7437";
-            return new MutationTransport(httpClient, remoteUrl, storeCfg.User);
+            var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+            var syncUrl = !string.IsNullOrEmpty(serverUrl)
+                ? serverUrl.TrimEnd('/')
+                : storeCfg.IsRemote
+                    ? storeCfg.RemoteUrl!.TrimEnd('/')
+                    : $"http://localhost:{storeCfg.Port}";
+            return new MutationTransport(httpClient, syncUrl, storeCfg.User);
         });
-        mcpBuilder.Services.AddHostedService<SyncManager>();
+        mcpBuilder.Services.AddSingleton<SyncManager>(sp => new SyncManager(
+            localSyncStore,
+            sp.GetRequiredService<IMutationTransport>(),
+            syncConfig,
+            sp.GetRequiredService<ILogger<SyncManager>>(),
+            syncMetrics));
+        mcpBuilder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
+        mcpBuilder.Services.AddHostedService(sp => sp.GetRequiredService<SyncManager>());
+    }
+    else if (syncConfig.Enabled && store is not ILocalSyncStore)
+    {
+        Console.Error.WriteLine("[engram] warning: ENGRAM_SYNC_ENABLED=true but store does not support offline sync (use local SQLite, not ENGRAM_URL remote mode)");
     }
 
     await mcpBuilder.Build().RunAsync();
