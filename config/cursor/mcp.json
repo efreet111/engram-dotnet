@@ -3,13 +3,7 @@
     "engram": {
       "type": "stdio",
       "command": "engram",
-      "args": ["mcp"],
-      "env": {
-        "ENGRAM_DATA_DIR": "~/.engram",
-        "ENGRAM_USER": "firstname.lastname",
-        "ENGRAM_SYNC_ENABLED": "true",
-        "ENGRAM_SERVER_URL": "http://YOUR_SERVER_IP:7437"
-      }
+      "args": ["mcp", "--tools=agent"]
     }
   }
 }

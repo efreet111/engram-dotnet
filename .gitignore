@@ -38,6 +38,7 @@ coverage.cobertura.xml
 .idea/
 *.suo
 *.sln.ide
+.cursor/
 
 # SDD / AI agent temporary artifacts (root-level only — sdd/ changes are tracked)
 /.atl/
