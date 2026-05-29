@@ -69,8 +69,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-106 | — | Feature | Hub MCP multi-editor (`config/mcp/`, `scripts/setup.*`) | Done | M | PR ENG-201 |
 | ✓ | ENG-201 | — | Chore | MCP/setup/docs + reglas Cursor + GIT-WORKFLOW + backlog | Done | S | PR ENG-201 |
 | — | **Siguiente (cerrar base pre-release)** |
-| 1 | ENG-202 | P0 | Doc | OSS essentials: `CONTRIBUTING.md` (enlaza `GIT-WORKFLOW.md`), `CODE_OF_CONDUCT`, `SECURITY` | Ready | S | [GIT-WORKFLOW.md](GIT-WORKFLOW.md) ya creado |
-| 2 | ENG-203 | P0 | Doc | Plantillas GitHub: issue + PR template | Ready | S | — |
+| 1 | ENG-202 | P0 | Doc | OSS essentials: `CONTRIBUTING.md` (enlaza `GIT-WORKFLOW.md`), `CODE_OF_CONDUCT`, `SECURITY` | In Progress | S | [GIT-WORKFLOW.md](GIT-WORKFLOW.md) ya creado |
+| 2 | ENG-203 | P0 | Doc | Plantillas GitHub: issue + PR template | In Progress | S | — |
 | 3 | ENG-204 | P0 | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Ready | S | Reproducible builds |
 | 4 | ENG-205 | P0 | Doc | Auditoría README vs código (tools, endpoints, versiones) | Ready | M | Post sesión pre-release |
 | 5 | ENG-206 | P0 | Test | PostgreSQL: arreglar 3 tests skipped | Ready | M | [sdd/postgres-bug-fixes/](../sdd/postgres-bug-fixes/) |
@@ -154,6 +154,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | Fecha | Cambio |
 |-------|--------|
-| 2026-05-28 | ENG-106/ENG-201 Done (hub MCP, backlog, GIT-WORKFLOW, reglas Cursor) |
+| 2026-05-28 | ENG-106/ENG-201 Done; ENG-202/ENG-203 In Progress (OSS essentials + templates) |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |

@@ -136,6 +136,17 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 
 ---
 
+## 🤝 Contributing
+
+| Document | Purpose |
+|----------|---------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, build, and submit PRs |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [SECURITY.md](SECURITY.md) | Reporting vulnerabilities |
+| [CONTRIBUTORS.md](CONTRIBUTORS.md) | Who builds this |
+
+---
+
 ## 🙏 Credits
 
 This is a .NET 10 C# port of the original [engram](https://github.com/Gentleman-Programming/engram) by [Alan Buscaglia](https://github.com/Gentleman-Programming). **All design credit belongs to the original project.** MIT License.

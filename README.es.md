@@ -136,6 +136,17 @@ Este proyecto es un port a .NET 10 C# del original [engram](https://github.com/G
 
 ---
 
+## 🤝 Contribuir
+
+| Documento | Propósito |
+|-----------|-----------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Cómo contribuir, compilar y enviar PRs |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Estándares de la comunidad |
+| [SECURITY.md](SECURITY.md) | Reportar vulnerabilidades |
+| [CONTRIBUTORS.md](CONTRIBUTORS.md) | Quiénes construyen esto |
+
+---
+
 ## 🚀 Siguiente
 
 ➜ **[docs/01-QUICK-START.md](docs/01-QUICK-START.md)** — Elegí tu perfil y empezá.
