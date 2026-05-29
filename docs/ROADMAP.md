@@ -175,15 +175,18 @@ Add user/password authentication to protect the server from unauthorized access.
 
 ## 🧪 Manual Testing Backlog
 
-> Test cases that require a second developer or specific setup. Do not close until verified.
+> Test cases that require a second developer or specific setup. Do not close until verified.  
+> **[Checklist detallado → MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md)** (41 endpoints individuales con trazabilidad)
 
 | # | Test Case | How to verify | Requires | Status |
 |---|-----------|---------------|----------|--------|
 | 1 | **Pull entre 2 clientes** | Dev1 crea memoria local → SyncManager push → Dev2 hace pull → Dev2 ve la memoria | 2 developers | 🔲 |
 | 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart | 🔲 |
-| 3 | **MCP Tools** | 17 test cases via curl | — | ✅ 16/17 passing |
-| 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | ✅ All pass |
-| 5 | **REST API smoke test** | 33 core + 8 sync endpoints (verificado contra código) | ✅ | ✅ Parcial — 15 core probados, faltan 18 core + 8 sync |
+| 3 | **MCP Tools (26 tools)** | Ver [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) | curl / MCP | 🔲 Sin trazabilidad |
+| 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | 🔲 Sin trazabilidad |
+| 5 | **REST API smoke test** | 33 core + 8 sync endpoints | ✅ | 🔲 Sin trazabilidad — ver checklist detallado |
+| 6 | **Sync endpoints** | enroll, status, push/pull, pause/resume | curl | 🔲 Sin probar |
+| 7 | ⭐ `/sync/status` (fix v2) | `phase: cloud`, `sync_enabled: true` en Postgres | curl | 🔲 Pendiente post-deploy |
 
 ---
 
