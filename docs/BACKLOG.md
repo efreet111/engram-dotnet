@@ -69,16 +69,16 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-106 | — | Feature | Hub MCP multi-editor (`config/mcp/`, `scripts/setup.*`) | Done | M | PR ENG-201 |
 | ✓ | ENG-201 | — | Chore | MCP/setup/docs + reglas Cursor + GIT-WORKFLOW + backlog | Done | S | PR ENG-201 |
 | ✓ | ENG-204 | — | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Done | S | `1.3.0` pineada |
+| ✓ | ENG-205 | — | Doc | Auditoría README vs código (tools, endpoints, versiones) | Done | M | Versiones corregidas + 7 endpoints agregados |
+| ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | 2 fixeados, 1 eliminado |
 | ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | — |
+| ✓ | ENG-202 | — | Doc | OSS essentials: `CONTRIBUTING.md`, `CODE_OF_CONDUCT`, `SECURITY` | Done | S | Creados |
+| ✓ | ENG-203 | — | Doc | Plantillas GitHub: issue + PR template | Done | S | Creados |
 | — | **Siguiente (cerrar base pre-release)** |
-| 1 | ENG-202 | P0 | Doc | OSS essentials: `CONTRIBUTING.md` (enlaza `GIT-WORKFLOW.md`), `CODE_OF_CONDUCT`, `SECURITY` | In Progress | S | [GIT-WORKFLOW.md](GIT-WORKFLOW.md) ya creado |
-| 2 | ENG-203 | P0 | Doc | Plantillas GitHub: issue + PR template | In Progress | S | — |
-| 3 | ENG-205 | P0 | Doc | Auditoría README vs código (tools, endpoints, versiones) | Ready | M | Post sesión pre-release |
-| 5 | ENG-206 | P0 | Test | PostgreSQL: arreglar 3 tests skipped | Ready | M | [sdd/postgres-bug-fixes/](../sdd/postgres-bug-fixes/) |
-| 6 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
-| 7 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | Ver [ROADMAP](ROADMAP.md); `mem_current_project` ya Done |
-| 8 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
-| 9 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | Idem |
+| 1 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
+| 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | Ver [ROADMAP](ROADMAP.md); `mem_current_project` ya Done |
+| 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
+| 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | Idem |
 | — | **Meta junio — instalador y DX** |
 | 10 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | Evolución de `scripts/setup.ps1` |
 | 11 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | Depende ENG-301 |
@@ -154,6 +154,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | Fecha | Cambio |
 |-------|--------|
-| 2026-05-28 | ENG-204/ENG-305 Done (MCP SDK pineado, badge CI); ENG-202/ENG-203 In Progress |
+| 2026-05-28 | ENG-202/203/204/205/206/305 Done — sesión completa pre-release |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |

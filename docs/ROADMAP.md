@@ -196,8 +196,9 @@ Add user/password authentication to protect the server from unauthorized access.
 
 Resumen P0/P1 (mayo–junio 2026):
 
-1. Cerrar commit pendiente MCP/setup (ENG-201)  
-2. OSS + templates GitHub (ENG-202–203)  
-3. Pinear MCP SDK + auditoría docs (ENG-204–205)  
-4. PostgreSQL tests + logging (ENG-206–207)  
-5. Instalador + wizard junio (ENG-301–303)
+1. ✅  ~~Cerrar commit pendiente MCP/setup (ENG-201)~~
+2. ✅  ~~OSS + templates GitHub (ENG-202–203)~~
+3. ✅  ~~Pinear MCP SDK + auditoría docs (ENG-204–205)~~
+4. ✅  ~~PostgreSQL tests (ENG-206)~~  
+5. 🔲 Logging infrastructure (ENG-207)
+6. 🔲 Instalador + wizard junio (ENG-301–303)

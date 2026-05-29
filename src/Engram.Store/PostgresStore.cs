@@ -668,7 +668,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
                    o.created_at, o.updated_at, o.deleted_at,
-                   -1000.0 as rank
+                   10000.0 as rank
             FROM observations o
             WHERE o.topic_key = @query AND o.deleted_at IS NULL");
         parms.Add(new NpgsqlParameter("@query", query));

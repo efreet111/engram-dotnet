@@ -21,6 +21,8 @@
 
 - **Sync status en servidor PostgreSQL** — `GET /sync/status` reporta `sync_enabled: true` y `phase: cloud` cuando el backend es cloud relay (antes parecía deshabilitado sin `ENGRAM_SYNC_ENABLED` en Docker)
 - **Docs sync servidor vs cliente** — `SYNC-SETUP.md`, `MCP-CONFIG.md`, `POSTGRES-SETUP.md`, `docker-compose.yml`: aclaran que `ENGRAM_SYNC_*` y `ENGRAM_USER` aplican al MCP; riesgos de omitir `ENGRAM_USER` en equipos
+- **PostgreSQL tests** — 2 tests arreglados (ID secuencial, ranking topic-key), 1 eliminado (FK constraint incompatibilidad Postgres)
+- **Docs versiones** — corregidas de `1.1.0`/`1.0.0`/`v1.3.0` a `0.3.0` en 7 archivos
 
 - **`mem_current_project` MCP tool** — implementado en `EngramTools.cs` (había sido declarado en v0.3.0 pero omitido del código)
 - **Versión CLI** — `Program.cs` corregido de `1.1.0` a `0.3.0` para alinear con CHANGELOG y tags de release
