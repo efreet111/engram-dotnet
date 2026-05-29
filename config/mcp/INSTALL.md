@@ -52,7 +52,7 @@ config/mcp/
 | Pregunta | Respuesta |
 |----------|-----------|
 | ¿Solo puedo elegir un editor? | **No.** Cada app tiene su propio archivo JSON. |
-| ¿Comparten memorias? | **Sí**, si usan el mismo `ENGRAM_DATA_DIR` y `ENGRAM_USER`. |
+| ¿Comparten memorias? | **Sí**, si usan el mismo `ENGRAM_DATA_DIR` y `ENGRAM_USER`. Sin `ENGRAM_USER` en equipos, el SO puede asignar la misma identidad a varias personas — ver [SYNC-SETUP.md](../../docs/SYNC-SETUP.md). |
 | ¿Debo reconfigurar Engram al cambiar de IDE? | **No.** Copiás el JSON generado al editor nuevo (o volvés a correr el wizard). |
 
 ---

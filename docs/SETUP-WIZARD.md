@@ -13,7 +13,9 @@ Guía para instalar engram-dotnet en una máquina de desarrollo y conectar cualq
 | .NET 10 SDK | Para compilar desde el repo | Igual |
 | Cliente MCP | Cursor, Claude, etc. | Igual |
 | Servidor engram | No | Sí (`http://host:7437/health` → OK) |
-| `ENGRAM_USER` | Recomendado | Obligatorio en equipos |
+| `ENGRAM_USER` | Recomendado | Obligatorio en equipos (ver nota abajo) |
+
+> **Equipos:** sin `ENGRAM_USER`, cada cliente usa el usuario del sistema operativo. Varias personas pueden colisionar o no verse el enroll del otro. Definí un id estable por desarrollador en el `env` del MCP.
 
 ---
 
@@ -83,6 +85,8 @@ ENGRAM_SERVER_URL=http://192.168.0.178:7437
 ```
 
 > No uses `ENGRAM_URL` en este modo: activa cliente HTTP puro y **no** el journal de sync local. Ver [MCP-CONFIG.md](MCP-CONFIG.md).
+
+El **servidor** Docker/TrueNAS solo necesita PostgreSQL (`ENGRAM_DB_TYPE`, `ENGRAM_PG_CONNECTION`). Las variables `ENGRAM_SYNC_*` van en **tu** MCP, no en el contenedor del servidor. Ver [SYNC-SETUP.md](SYNC-SETUP.md).
 
 ---
 

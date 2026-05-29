@@ -60,7 +60,7 @@ services:
     environment:
       ENGRAM_DB_TYPE: postgres
       ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=supersecret"
-      ENGRAM_SYNC_ENABLED: "true"
+      # Sync push/pull: API en este servicio; SyncManager en cada cliente MCP (ver SYNC-SETUP.md).
     depends_on:
       postgres:
         condition: service_healthy

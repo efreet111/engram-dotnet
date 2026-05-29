@@ -43,6 +43,13 @@ services:
       ENGRAM_DATA_DIR: /data/engram
       ENGRAM_PORT: "7437"
 
+      # ── Sync (offline-first) ─────────────────────────────────────────────
+      # Con PostgreSQL este contenedor expone la API /sync/* (push, pull, enroll).
+      # El SyncManager (ENGRAM_SYNC_*) corre en cada PC de desarrollo con `engram mcp`
+      # + SQLite local — NO hace falta ENGRAM_SYNC_ENABLED aquí.
+      # En el MCP de cada dev: ENGRAM_SERVER_URL, ENGRAM_SYNC_ENABLED=true,
+      # ENGRAM_USER (obligatorio en equipos; ver docs/SYNC-SETUP.md).
+
       # PostgreSQL connection string — apunta al PostgreSQL de TrueNAS Apps
       # host.docker.internal se resuelve a la IP del host via extra_hosts
       ENGRAM_PG_CONNECTION: "Host=${ENGRAM_PG_HOST:-host.docker.internal};Port=${ENGRAM_PG_PORT:-5432};Database=${ENGRAM_PG_DATABASE:-engram};Username=${ENGRAM_PG_USER:-engram};Password=${ENGRAM_PG_PASSWORD}"

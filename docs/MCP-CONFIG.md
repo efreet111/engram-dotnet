@@ -127,7 +127,18 @@ O ruta absoluta al `.exe` / binario publicado en `dist/`.
 | `ENGRAM_SERVER_URL` | No* | Servidor para **sync** (push/pull) |
 | `ENGRAM_SYNC_ENABLED` | No | `false` desactiva SyncManager; default efectivo `true` en SQLite |
 | `ENGRAM_USER` | Sí (equipos) | Identidad para aislamiento multi-usuario |
+| `ENGRAM_SYNC_TARGET` | No | Default `cloud`; solo si usás varios targets |
 | `ENGRAM_PROJECT` | No | Override de proyecto (normalmente se auto-detecta) |
+
+### Sin `ENGRAM_USER` trabajando en equipo
+
+Si varios desarrolladores comparten servidor (`ENGRAM_SERVER_URL`) y **no** definen `ENGRAM_USER`, el código usa el nombre de usuario del SO (`StoreConfig.User`). Riesgos:
+
+- Dos personas con la misma cuenta OS → **comparten** namespace y enroll en el servidor.
+- Cambio de máquina → otra identidad OS → **no ven** el enroll ni las memorias del otro perfil.
+- Push/pull de sync asocian mutaciones al usuario equivocado.
+
+**Solución:** acordar un identificador por persona (email o `nombre.apellido`) y ponerlo en el `env` del MCP. El wizard `scripts/setup.sh` / `setup.ps1` ya lo pide en modo sync.
 
 ---
 
@@ -153,7 +164,8 @@ $env:ENGRAM_SERVER_URL = "http://192.168.0.178:7437"
 ## Troubleshooting
 
 1. **Check rojo en Cursor** — Probá el comando manual arriba. Si crashea, revisá que no mezcles `ENGRAM_URL` con modo sync.
-2. **Sync sin push** — Proyecto no enrollado: [SYNC-SETUP.md](SYNC-SETUP.md).
+2. **Sync sin push** — Proyecto no enrollado o falta `ENGRAM_USER`: [SYNC-SETUP.md](SYNC-SETUP.md).
+3. **Servidor “sin sync”** — En Postgres, `GET /sync/status` en el servidor debe mostrar `phase: cloud`. El sync activo se verifica en el cliente (`engram mcp`), no con `ENGRAM_SYNC_*` en el contenedor del servidor.
 3. **`.exe` bloqueado al publicar** — Cerrá el editor (MCP puede tener el archivo abierto) y publicá a otra carpeta (`dist/win-x64-fixed`).
 
 ---

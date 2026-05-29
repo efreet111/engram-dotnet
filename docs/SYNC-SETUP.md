@@ -41,6 +41,29 @@
 
 ---
 
+## Server vs client — variables de entorno
+
+| Dónde | Backend | Qué hace el sync | Variables clave |
+|-------|---------|------------------|-----------------|
+| **Servidor** (Docker / `engram serve`) | PostgreSQL | API REST `/sync/*` (recibe push, sirve pull) | `ENGRAM_DB_TYPE=postgres`, `ENGRAM_PG_CONNECTION` |
+| **Cliente** (cada dev, `engram mcp`) | SQLite local | `SyncManager` en background | `ENGRAM_DATA_DIR`, `ENGRAM_SERVER_URL`, `ENGRAM_SYNC_ENABLED=true`, **`ENGRAM_USER`** |
+
+> **No confundir:** `ENGRAM_SYNC_ENABLED` y `ENGRAM_SYNC_TARGET` en el **servidor PostgreSQL** no activan un `SyncManager` en el contenedor (no hay SQLite local ahí). El push/pull lo ejecuta el MCP de cada desarrollador.
+
+### `ENGRAM_USER` en equipos (obligatorio en el cliente)
+
+Cada desarrollador debe definir **`ENGRAM_USER`** en el MCP (o `X-Engram-User` en curl) con un valor **estable y único** (p. ej. `nombre.apellido` o email corporativo).
+
+Si falta, el cliente usa el usuario del sistema operativo (`whoami`). Con varias personas puede pasar:
+
+- Dos devs con el mismo nombre de cuenta OS → **mismas memorias / mismo enroll** en el servidor.
+- Un dev cambia de máquina → identidad distinta → **no ve** proyectos enrollados del otro usuario.
+- Auditoría y `GET /sync/enroll` muestran datos del usuario equivocado.
+
+Ver también [MCP-CONFIG.md](MCP-CONFIG.md) y [MULTI-USER.md](MULTI-USER.md).
+
+---
+
 ## Server Setup (TrueNAS / Debian)
 
 ### Prerequisites
@@ -51,6 +74,10 @@
 - Docker (optional, for containerized deployment)
 
 ### Option A: Docker Compose (Recommended)
+
+Usá el compose del repo: [`docker/docker-compose.yml`](../docker/docker-compose.yml) (TrueNAS + Postgres externo).
+
+Ejemplo mínimo con Postgres en el mismo compose:
 
 ```yaml
 # docker-compose.yml
@@ -71,8 +98,7 @@ services:
     environment:
       ENGRAM_DB_TYPE: postgres
       ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=secret"
-      ENGRAM_SYNC_ENABLED: "true"
-      ENGRAM_SYNC_TARGET: "cloud"
+      # No hace falta ENGRAM_SYNC_* en el servicio engram con Postgres.
     depends_on:
       - postgres
 
@@ -105,8 +131,6 @@ Restart=always
 User=engram
 Environment="ENGRAM_DB_TYPE=postgres"
 Environment="ENGRAM_PG_CONNECTION=Host=localhost;Database=engram;Username=engram;Password=secret"
-Environment="ENGRAM_SYNC_ENABLED=true"
-Environment="ENGRAM_SYNC_TARGET=cloud"
 
 [Install]
 WantedBy=multi-user.target
@@ -118,12 +142,12 @@ systemctl enable --now engram
 
 ---
 
-## Environment Variables
+## Environment Variables (cliente — `engram mcp` / SQLite local)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ENGRAM_SYNC_ENABLED` | `true` | Enable the background SyncManager |
-| `ENGRAM_SYNC_TARGET` | `cloud` | Sync target key |
+| `ENGRAM_SYNC_ENABLED` | `true` | Enable the background SyncManager on the **client** |
+| `ENGRAM_SYNC_TARGET` | `cloud` | Sync target key (opcional; default `cloud`) |
 | `ENGRAM_SYNC_POLL_SECONDS` | `30` | Interval between sync cycles (seconds) |
 | `ENGRAM_SYNC_DEBOUNCE_MS` | `500` | Debounce before starting a cycle (ms) |
 | `ENGRAM_SYNC_PUSH_BATCH` | `100` | Max mutations per push batch |
@@ -203,14 +227,19 @@ curl -H "X-Engram-User: victor" http://localhost:7442/sync/enroll
 # Server health
 curl http://server:7437/health
 
-# Sync status
+# Sync status (servidor Postgres: phase "cloud", sync_enabled true)
 curl http://server:7437/sync/status
+
+# Sync status en tu máquina (MCP / SQLite local)
+curl http://localhost:7442/sync/status
 
 # Server logs
 docker logs -f engram
 ```
 
 ### Log Output
+
+En el **servidor** verás sobre todo tráfico HTTP de sync; los ciclos `SyncManager` aparecen en los logs del **cliente** (`engram mcp`):
 
 ```
 info: HTTP[0] POST /sync/mutations/push → 200 (142ms)
@@ -225,7 +254,9 @@ crit: SyncManager[2006] Panic exit: ...
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| Sync disabled in `/sync/status` | `ENGRAM_SYNC_ENABLED` not set | Set to `true` |
+| `/sync/status` en **servidor** Postgres muestra `phase: cloud`, `sync_enabled: true` | Normal — el servidor solo relay API | Revisar sync en el **cliente** (MCP + `ENGRAM_USER`) |
+| `/sync/status` en **tu PC** con `sync_enabled: false` | MCP sin SQLite sync o `ENGRAM_SYNC_ENABLED=false` | Modo local+sync: `ENGRAM_DATA_DIR` + `ENGRAM_SYNC_ENABLED=true`, sin `ENGRAM_URL` |
+| Memorias mezcladas entre devs | Falta `ENGRAM_USER` o valores duplicados | Cada dev: `ENGRAM_USER` único y estable en `mcp.json` |
 | Push fails with 500 | Old binary on server | `docker compose up -d --build` |
 | Pull returns no data | Project not enrolled | `POST /sync/enroll` |
 | SyncManager in backoff | Too many consecutive failures | Check server logs |

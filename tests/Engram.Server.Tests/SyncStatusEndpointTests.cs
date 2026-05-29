@@ -136,6 +136,33 @@ public sealed class SyncStatusEndpointTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task GET_sync_status_CloudBackendWithoutSyncManager_ReturnsCloudRelayState()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.ClearProviders();
+        builder.Services.AddSingleton<IStore>(_storeMock.Object);
+
+        var port = GetFreePort();
+        var baseUrl = $"http://localhost:{port}";
+        await using var app = builder.Build();
+        app.Urls.Clear();
+        app.Urls.Add(baseUrl);
+        app.MapCloudSyncRoutes();
+        await app.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        var resp = await client.GetAsync("/sync/status");
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+
+        Assert.True((bool)json["sync_enabled"]!);
+        Assert.Equal("cloud", (string)json["phase"]!);
+        Assert.Equal("healthy", (string)json["health"]!["status"]!);
+    }
+
+    [Fact]
     public async Task GET_sync_status_WithEnrolledProjects_ReturnsProjectList()
     {
         var metrics = new SyncMetrics();

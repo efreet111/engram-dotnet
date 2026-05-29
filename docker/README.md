@@ -54,6 +54,20 @@ ENGRAM_HOST_PORT=7437
    docker compose -f docker/docker-compose.yml up -d
    ```
 
+## Sync offline-first (PostgreSQL en el servidor)
+
+Este contenedor con `ENGRAM_DB_TYPE=postgres` expone la API `/sync/*` para que los clientes hagan push/pull. **No** necesita `ENGRAM_SYNC_ENABLED` en el compose: el `SyncManager` corre en cada PC con `engram mcp` + SQLite local.
+
+Cada desarrollador debe configurar en su MCP:
+
+- `ENGRAM_SERVER_URL` — URL de este servidor (ej. `http://192.168.0.178:7437`)
+- `ENGRAM_SYNC_ENABLED=true`
+- **`ENGRAM_USER`** — identidad única (si falta, se usa el usuario del SO y varias personas pueden pisarse)
+
+Detalle: [docs/SYNC-SETUP.md](../docs/SYNC-SETUP.md).
+
+Tras desplegar, `curl http://localhost:7437/sync/status` debe responder con `"phase":"cloud"` y `"sync_enabled":true`.
+
 ## Verificar que funciona
 
 Después de iniciar los servicios, verifica que todo esté funcionando correctamente:

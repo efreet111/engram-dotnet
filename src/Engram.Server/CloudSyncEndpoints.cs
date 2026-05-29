@@ -427,10 +427,12 @@ public static class CloudSyncEndpoints
 
         var metrics = provider?.Metrics;
         var phase = provider?.Phase ?? SyncPhase.Idle;
+        // PostgreSQL cloud server: no local SyncManager — push/pull API is always available.
+        var isCloudRelay = store is ICloudMutationStore && provider is null;
 
         var response = new SyncStatusResponse(
-            SyncEnabled: provider?.IsEnabled ?? false,
-            Phase: phase.ToString().ToLowerInvariant(),
+            SyncEnabled: provider?.IsEnabled ?? isCloudRelay,
+            Phase: isCloudRelay ? "cloud" : phase.ToString().ToLowerInvariant(),
             Target: "cloud",
             Cursor: new StatusCursorBody(
                 LastPushedSeq: state?.LastAckedSeq ?? metrics?.TotalPushed ?? 0,
@@ -438,7 +440,9 @@ public static class CloudSyncEndpoints
                 LastEnqueuedSeq: state?.LastEnqueuedSeq ?? 0
             ),
             Health: new StatusHealthBody(
-                Status: phase switch
+                Status: isCloudRelay
+                    ? "healthy"
+                    : phase switch
                 {
                     SyncPhase.Disabled => "disabled",
                     SyncPhase.Backoff or SyncPhase.PushFailed or SyncPhase.PullFailed => "degraded",
