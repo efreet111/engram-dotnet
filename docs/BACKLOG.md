@@ -13,10 +13,11 @@
 | Regla | Descripción |
 |-------|-------------|
 | **Una cola** | La tabla [Cola de ejecución](#cola-de-ejecución) es el orden. Se trabaja de arriba hacia abajo salvo bloqueo explícito. |
-| **Feature = entregable** | Cada fila es una **Feature** (épica pequeña) con criterio de “hecho” claro. Las tareas grandes se descomponen en **Stories** dentro de la feature. |
+| **Feature = entregable** | Cada fila es una **Feature** (épica pequeña) con criterio de "hecho" claro. Las tareas grandes se descomponen en **Stories** dentro de la feature. |
 | **Estados** | `Done` · `Ready` (sin spec o spec listo) · `In Progress` · `Blocked` · `Icebox` |
 | **Tipos** | `Feature` · `Bug` · `Doc` · `Chore` · `Test` |
 | **Specs** | Features `Ready` con spec en `sdd/` o `docs/rfcs/` — enlazado en la columna Spec. |
+| **Trazabilidad** | `Origen` indica de dónde nace (HU, ENG padre, bug report). `←` = nace de, `→` = depende de. |
 | **No duplicar** | Deuda técnica detallada vive en [TECHNICAL-DEBT.md](TECHNICAL-DEBT.md); aquí solo el **orden** y el **por qué**. |
 | **Docs al cerrar** | Al marcar `Done`, seguir [`.cursor/skills/engram-docs-on-done/SKILL.md`](../.cursor/skills/engram-docs-on-done/SKILL.md) y regla `config/cursor/rules/engram-docs-on-done.mdc`. |
 | **Git** | [GIT-WORKFLOW.md](GIT-WORKFLOW.md) + regla proyecto `engram-git-workflow` (`config/cursor/rules/` → sync a `.cursor/rules/`). |
@@ -37,6 +38,8 @@ Un ítem **no está Done** hasta que:
 **Tipo:** Feature | Bug | Doc  
 **Prioridad:** P0 | P1 | P2  
 **Esfuerzo:** S (<2h) | M (2-6h) | L (1-2d) | XL (>2d)
+**Origen:** ← HU-XXX / ← ENG-XXX / bug report / —  
+**Depende de:** → ENG-XXX / —
 
 ### Problema / valor
 Un párrafo.
@@ -58,32 +61,33 @@ Un párrafo.
 
 Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = después de release.
 
-| # | ID | P | Tipo | Feature | Estado | Effort | Spec / notas |
-|---|-----|---|------|---------|--------|--------|--------------|
+| # | ID | P | Tipo | Feature | Estado | Effort | Origen | Spec / notas |
+|---|-----|---|------|---------|--------|--------|--------|--------------|
 | — | **Hecho recientemente (2026-05-27/28)** |
-| ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | `69e83d7` |
-| ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | `69e83d7` |
-| ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | `69e83d7` |
-| ✓ | ENG-104 | — | Bug | Docker `/app/docs` permisos MCP sync | Done | S | `bf01f18` |
-| ✓ | ENG-105 | — | Bug | MCP crash con `ENGRAM_SYNC_ENABLED` (`ILocalSyncStore`) | Done | S | `a7f45eb` |
-| ✓ | ENG-106 | — | Feature | Hub MCP multi-editor (`config/mcp/`, `scripts/setup.*`) | Done | M | PR ENG-201 |
-| ✓ | ENG-201 | — | Chore | MCP/setup/docs + reglas Cursor + GIT-WORKFLOW + backlog | Done | S | PR ENG-201 |
-| ✓ | ENG-204 | — | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Done | S | `1.3.0` pineada |
-| ✓ | ENG-205 | — | Doc | Auditoría README vs código (tools, endpoints, versiones) | Done | M | Versiones corregidas + 7 endpoints agregados |
-| ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | 2 fixeados, 1 eliminado |
-| ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | — |
-| ✓ | ENG-202 | — | Doc | OSS essentials: `CONTRIBUTING.md`, `CODE_OF_CONDUCT`, `SECURITY` | Done | S | Creados |
-| ✓ | ENG-203 | — | Doc | Plantillas GitHub: issue + PR template | Done | S | Creados |
+| ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | testing | `69e83d7` |
+| ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | testing | `69e83d7` |
+| ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | testing | `69e83d7` |
+| ✓ | ENG-104 | — | Bug | Docker `/app/docs` permisos MCP sync | Done | S | testing | `bf01f18` |
+| ✓ | ENG-105 | — | Bug | MCP crash con `ENGRAM_SYNC_ENABLED` (`ILocalSyncStore`) | Done | S | testing | `a7f45eb` |
+| ✓ | ENG-106 | — | Feature | Hub MCP multi-editor (`config/mcp/`, `scripts/setup.*`) | Done | M | ← ENG-201 | PR ENG-201 |
+| ✓ | ENG-201 | — | Chore | MCP/setup/docs + reglas Cursor + GIT-WORKFLOW + backlog | Done | S | — | PR ENG-201 |
+| ✓ | ENG-202 | — | Doc | OSS essentials: `CONTRIBUTING.md`, `CODE_OF_CONDUCT`, `SECURITY` | Done | S | backlog | Creados |
+| ✓ | ENG-203 | — | Doc | Plantillas GitHub: issue + PR template | Done | S | backlog | Creados |
+| ✓ | ENG-204 | — | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Done | S | backlog | `1.3.0` pineada |
+| ✓ | ENG-205 | — | Doc | Auditoría README vs código (tools, endpoints, versiones) | Done | M | sesión pre-release | Versiones corregidas + 7 endpoints |
+| ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | testing | 2 fixeados, 1 eliminado |
+| ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | sesión pre-release | — |
 | — | **Siguiente (cerrar base pre-release)** |
-| 1 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
-| 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | Ver [ROADMAP](ROADMAP.md); `mem_current_project` ya Done |
-| 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
-| 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | Idem |
+| 1 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
+| 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | ← upstream engram | `mem_current_project` ya Done |
+| 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
+| 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
+| 5 | ENG-306 | P1 | Chore | Mejorar trazabilidad en backlog (columna Origen + template HU) | Ready | S | ← ENG-205 | Columna Origen agregada |
 | — | **Meta junio — instalador y DX** |
-| 10 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | Evolución de `scripts/setup.ps1` |
-| 11 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | Depende ENG-301 |
-| 12 | ENG-303 | P1 | Doc | Guía “instalación desde git” unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | — |
-| 13 | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Ready | S | — |
+| 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
+| 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
+| 7 | ENG-303 | P1 | Doc | Guía “instalación desde git” unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
+| 8 | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Ready | S | backlog | — |
 | — | **Icebox (no sacar hasta vaciar P0/P1)** |
 | — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
@@ -154,6 +158,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | Fecha | Cambio |
 |-------|--------|
-| 2026-05-28 | ENG-202/203/204/205/206/305 Done — sesión completa pre-release |
+| 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |
