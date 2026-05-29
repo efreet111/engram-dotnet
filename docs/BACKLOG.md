@@ -68,11 +68,12 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-105 | — | Bug | MCP crash con `ENGRAM_SYNC_ENABLED` (`ILocalSyncStore`) | Done | S | `a7f45eb` |
 | ✓ | ENG-106 | — | Feature | Hub MCP multi-editor (`config/mcp/`, `scripts/setup.*`) | Done | M | PR ENG-201 |
 | ✓ | ENG-201 | — | Chore | MCP/setup/docs + reglas Cursor + GIT-WORKFLOW + backlog | Done | S | PR ENG-201 |
+| ✓ | ENG-204 | — | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Done | S | `1.3.0` pineada |
+| ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | — |
 | — | **Siguiente (cerrar base pre-release)** |
 | 1 | ENG-202 | P0 | Doc | OSS essentials: `CONTRIBUTING.md` (enlaza `GIT-WORKFLOW.md`), `CODE_OF_CONDUCT`, `SECURITY` | In Progress | S | [GIT-WORKFLOW.md](GIT-WORKFLOW.md) ya creado |
 | 2 | ENG-203 | P0 | Doc | Plantillas GitHub: issue + PR template | In Progress | S | — |
-| 3 | ENG-204 | P0 | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Ready | S | Reproducible builds |
-| 4 | ENG-205 | P0 | Doc | Auditoría README vs código (tools, endpoints, versiones) | Ready | M | Post sesión pre-release |
+| 3 | ENG-205 | P0 | Doc | Auditoría README vs código (tools, endpoints, versiones) | Ready | M | Post sesión pre-release |
 | 5 | ENG-206 | P0 | Test | PostgreSQL: arreglar 3 tests skipped | Ready | M | [sdd/postgres-bug-fixes/](../sdd/postgres-bug-fixes/) |
 | 6 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
 | 7 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | Ver [ROADMAP](ROADMAP.md); `mem_current_project` ya Done |
@@ -83,7 +84,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 11 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | Depende ENG-301 |
 | 12 | ENG-303 | P1 | Doc | Guía “instalación desde git” unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | — |
 | 13 | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Ready | S | — |
-| 14 | ✓ ENG-305 | P1 | Chore | Badge CI en README | Done | S | — |
 | — | **Icebox (no sacar hasta vaciar P0/P1)** |
 | — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
@@ -154,6 +154,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | Fecha | Cambio |
 |-------|--------|
-| 2026-05-28 | ENG-305 Done (badge CI en README); ENG-202/ENG-203 In Progress |
+| 2026-05-28 | ENG-204/ENG-305 Done (MCP SDK pineado, badge CI); ENG-202/ENG-203 In Progress |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |
