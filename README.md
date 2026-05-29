@@ -1,5 +1,7 @@
 # engram-dotnet
 
+[![CI](https://github.com/efreet111/engram-dotnet/actions/workflows/ci.yml/badge.svg)](https://github.com/efreet111/engram-dotnet/actions/workflows/ci.yml)
+
 > **engram** `/ˈen.ɡræm/` — *neuroscience*: the physical trace of a memory in the brain.
 
 Persistent memory for AI coding agents. A **.NET 10 C#** port of the original [engram](https://github.com/Gentleman-Programming/engram) by [Alan Buscaglia](https://github.com/Gentleman-Programming).
