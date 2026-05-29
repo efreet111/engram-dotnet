@@ -183,7 +183,7 @@ Add user/password authentication to protect the server from unauthorized access.
 | 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart | 🔲 |
 | 3 | **MCP Tools** | 17 test cases via curl | — | ✅ 16/17 passing |
 | 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | ✅ All pass |
-| 5 | **REST API smoke test** | 15 core endpoints (GET/POST/PATCH/DELETE) | ✅ | ✅ All pass |
+| 5 | **REST API smoke test** | 33 core + 8 sync endpoints (verificado contra código) | ✅ | ✅ Parcial — 15 core probados, faltan 18 core + 8 sync |
 
 ---
 
