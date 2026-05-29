@@ -140,7 +140,7 @@ Host=server;Database=engram;Username=user;Password=pass;SSLMode=Require  # SSL
 ```bash
 # Check backend
 curl http://localhost:7437/health
-# → {"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
+# → {"status":"ok","service":"engram","version":"0.3.0","backend":"postgres"}
 
 # Check tables (via psql)
 sudo -u postgres psql -d engram -c "\dt"

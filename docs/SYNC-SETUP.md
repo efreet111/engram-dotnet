@@ -1,7 +1,7 @@
 # Offline-First Sync — Setup Guide
 
 > **Version**: 1.0  
-> **Requires**: engram-dotnet v1.1.0+ with PostgreSQL backend
+> **Requires**: engram-dotnet v0.3.0+ with PostgreSQL backend
 
 ---
 

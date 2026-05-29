@@ -21,7 +21,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        ENGRAM_VERSION: v1.3.0
+        ENGRAM_VERSION: v0.3.0
     container_name: engram
     restart: unless-stopped
 

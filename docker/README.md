@@ -88,7 +88,7 @@ Después de iniciar los servicios, verifica que todo esté funcionando correctam
    ```
    Respuesta esperada:
    ```json
-   {"status":"ok","service":"engram","version":"1.0.0"}
+   {"status":"ok","service":"engram","version":"0.3.0"}
    ```
 
 4. **Obtener estadísticas del contenedor:**

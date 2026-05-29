@@ -18,7 +18,7 @@ curl http://192.168.0.178:7437/health
 ```
 
 ```json
-{"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
+{"status":"ok","service":"engram","version":"0.3.0","backend":"postgres"}
 ```
 
 ### `GET /stats`
@@ -61,6 +61,7 @@ curl -X POST http://192.168.0.178:7437/sessions \
 |--------|----------|-------------|
 | POST | `/observations` | Create an observation |
 | GET | `/observations/{id}` | Get observation details |
+| GET | `/observations/recent` | List recent observations |
 | PATCH | `/observations/{id}` | Update an observation |
 | DELETE | `/observations/{id}` | Soft-delete an observation |
 | POST | `/observations/passive` | Automatic passive capture |
@@ -109,6 +110,50 @@ curl "http://192.168.0.178:7437/search?q=architecture+sync&project=team/mi-api&l
 
 ---
 
+## 📋 Context & Timeline
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/context` | Get session context (observations in a session) |
+| GET | `/timeline` | Get timeline around an observation |
+
+### `GET /context`
+
+```bash
+curl "http://192.168.0.178:7437/context?session_id=session-1&limit=5"
+```
+
+### `GET /timeline`
+
+```bash
+curl "http://192.168.0.178:7437/timeline?observation_id=123&window=5"
+```
+
+---
+
+## 📋 Export / Import
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/export` | Export all data (optionally filter by project) |
+| POST | `/import` | Import previously exported data |
+
+### `GET /export`
+
+```bash
+curl "http://192.168.0.178:7437/export?project=team/mi-api"
+```
+
+### `POST /import`
+
+```bash
+curl -X POST http://192.168.0.178:7437/import \
+  -H "Content-Type: application/json" \
+  -d '{"observations":[],"sessions":[],"prompts":[]}'
+```
+
+---
+
 ## 📋 Prompts
 
 | Method | Endpoint | Description |
@@ -126,6 +171,7 @@ curl "http://192.168.0.178:7437/search?q=architecture+sync&project=team/mi-api&l
 |--------|----------|-------------|
 | GET | `/projects/list` | List all projects |
 | GET | `/projects/stats` | Project statistics |
+| GET | `/projects/migrations` | List pending migrations |
 | POST | `/projects/migrate` | Merge projects |
 | POST | `/projects/prune` | Delete a project and its data |
 
@@ -298,6 +344,14 @@ engram doctor --server http://192.168.0.178:7437
 |--------|----------|-------------|
 | GET | `/retention/stats` | Get retention statistics by age bucket |
 | POST | `/retention/prune` | Delete observations past their TTL |
+
+---
+
+## 🧪 Debug
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/debug-test` | Debug endpoint (returns request details) |
 
 ---
 

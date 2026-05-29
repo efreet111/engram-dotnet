@@ -1,12 +1,13 @@
 # Migration — engram-dotnet
 
-## v1.0.0 → v1.1.0
+## v0.3.0
 
 ### What changed
 
-- Added offline-first sync (mutations, enrollment, pause/resume)
-- Added structured logging middleware
-- Added PostgreSQL backend improvements
+- Initial public release
+- Offline-first sync (mutations, enrollment, pause/resume)
+- PostgreSQL backend
+- 41 REST endpoints + 26 MCP tools
 
 ### Migration steps
 
@@ -32,7 +33,7 @@
 4. **Verify**
    ```bash
    curl http://localhost:7437/health
-   # → Should show version "1.1.0"
+   # → Should show version "0.3.0"
    ```
 
 ### Rollback
