@@ -186,7 +186,7 @@ Add user/password authentication to protect the server from unauthorized access.
 | 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | 🔲 Sin trazabilidad |
 | 5 | **REST API smoke test** | 33 core + 8 sync endpoints | ✅ | 🔲 Sin trazabilidad — ver checklist detallado |
 | 6 | **Sync endpoints** | enroll, status, push/pull, pause/resume | curl | 🔲 Sin probar |
-| 7 | ⭐ `/sync/status` (fix v2) | `phase: cloud`, `sync_enabled: true` en Postgres | curl | 🔲 Pendiente post-deploy |
+| 7 | ⭐ `/sync/status` (fix v2) | `phase: cloud`, `sync_enabled: true` en Postgres | curl | ✅ Verificado 2026-05-28 |
 
 ---
 

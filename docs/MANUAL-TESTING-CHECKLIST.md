@@ -110,7 +110,7 @@
 | 36 | `/sync/enroll` | DELETE | 🔲 | — | |
 | 37 | `/sync/pause` | POST | 🔲 | — | |
 | 38 | `/sync/pause` | DELETE | 🔲 | — | |
-| 39 | ⭐ `/sync/status` | GET | 🔲 | — | **Fix del último push** — debe devolver `phase: cloud`, `sync_enabled: true` |
+| 39 | ⭐ `/sync/status` | GET | ✅ | 2026-05-28 | `sync_enabled: true`, `phase: cloud`, `health: healthy` ✅ |
 | 40 | `/sync/mutations/push` | POST | 🔲 | — | |
 | 41 | `/sync/mutations/pull` | GET | 🔲 | — | |
 
