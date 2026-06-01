@@ -95,7 +95,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
             CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
             CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
-            CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by);
+            -- idx_prompts_created_by created in MigrateAsync after created_by column exists
             CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id) WHERE sync_id IS NOT NULL;
 
