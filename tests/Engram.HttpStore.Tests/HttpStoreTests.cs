@@ -285,7 +285,7 @@ public class HttpStoreTests : IAsyncDisposable
             Project   = "proj-p",
         });
 
-        var prompts = await _sut.RecentPromptsAsync("proj-p", 10);
+        var prompts = await _sut.RecentPromptsAsync("proj-p", null, 10);
 
         Assert.NotEmpty(prompts);
         Assert.Contains(prompts, p => p.Content.Contains("JWT"));

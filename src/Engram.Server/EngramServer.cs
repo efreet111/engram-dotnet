@@ -399,6 +399,10 @@ public static class EngramServer
         if (body is null || string.IsNullOrEmpty(body.SessionId) || string.IsNullOrEmpty(body.Content))
             return Error("session_id and content are required");
 
+        // Inject created_by from header if not provided in body
+        var userId = GetUserId(ctx);
+        body = body with { CreatedBy = body.CreatedBy ?? userId };
+
         var id = await store.AddPromptAsync(body);
         return Results.Created("", new { id, status = "saved" });
     }
@@ -407,7 +411,8 @@ public static class EngramServer
     {
         var project = ctx.Request.Query["project"].FirstOrDefault();
         var limit   = QueryInt(ctx, "limit", 20);
-        var result  = await store.RecentPromptsAsync(project, limit);
+        var userId  = GetUserId(ctx);
+        var result  = await store.RecentPromptsAsync(project, userId, limit);
         return Json(result);
     }
 

@@ -204,9 +204,9 @@ public sealed class HttpStore : IStore
         return result?.Id ?? 0;
     }
 
-    public async Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit)
+    public async Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit)
     {
-        var qs   = BuildQuery(("project", project), ("limit", limit.ToString()));
+        var qs = BuildQuery(("project", project), ("limit", limit.ToString()));
         var resp = await Get($"prompts/recent{qs}");
         await EnsureSuccess(resp, "RecentPrompts");
         return await Deserialize<List<Prompt>>(resp) ?? [];

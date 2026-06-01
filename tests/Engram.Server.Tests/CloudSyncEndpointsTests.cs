@@ -85,6 +85,38 @@ public sealed class CloudSyncEndpointsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Push_NullEntries_Returns400()
+    {
+        // Arrange — entries field omitted entirely
+        var body = new { created_by = "test" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/mutations/push", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("empty-batch", (string?)json["error_code"]);
+    }
+
+    [Fact]
+    public async Task Push_EntriesFieldNull_Returns400()
+    {
+        // Arrange — entries is explicitly null
+        var body = new { entries = (object?)null, created_by = "test" };
+
+        // Act
+        var resp = await _client.PostAsJsonAsync("/sync/mutations/push", body, JsonOpts);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("empty-batch", (string?)json["error_code"]);
+    }
+
+    [Fact]
     public async Task Push_BatchTooLarge_Returns400_BatchTooLarge()
     {
         // Arrange — 101 entries (max is 100)

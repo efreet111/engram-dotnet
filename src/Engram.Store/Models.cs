@@ -100,6 +100,7 @@ public class Prompt
     [JsonPropertyName("session_id")]  public string SessionId { get; set; } = "";
     [JsonPropertyName("content")]     public string Content   { get; set; } = "";
     [JsonPropertyName("project")]     public string Project   { get; set; } = "";
+    [JsonPropertyName("created_by")]  public string CreatedBy { get; set; } = "";
     [JsonPropertyName("created_at")]  public string CreatedAt { get; set; } = "";
 }
 
@@ -198,6 +199,7 @@ public record AddPromptParams
     [JsonPropertyName("session_id")] public string  SessionId { get; init; } = "";
     [JsonPropertyName("content")]    public string  Content   { get; init; } = "";
     [JsonPropertyName("project")]    public string? Project   { get; init; }
+    [JsonPropertyName("created_by")] public string? CreatedBy { get; init; }
 }
 
 public sealed record RetentionPruneParams

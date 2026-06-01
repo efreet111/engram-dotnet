@@ -138,7 +138,7 @@ public static class CloudSyncEndpoints
         ICloudMutationStore store)
     {
         var body = await ReadJsonAsync<PushRequestBody>(ctx, 8 * 1024 * 1024);
-        if (body is null || body.Entries.Count == 0)
+        if (body is null || body.Entries is null || body.Entries.Count == 0)
             return ErrorJson(ctx, "empty batch", "empty-batch", 400);
 
         if (body.Entries.Count > 100)

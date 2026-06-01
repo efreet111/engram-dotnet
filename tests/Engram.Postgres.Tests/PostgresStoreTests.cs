@@ -285,7 +285,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
             Project = "test-project",
         });
 
-        var prompts = await _fixture.Store.RecentPromptsAsync("test-project", 10);
+        var prompts = await _fixture.Store.RecentPromptsAsync("test-project", null, 10);
 
         Assert.NotEmpty(prompts);
         Assert.Contains(prompts, p => p.Content.Contains("JWT"));
@@ -366,7 +366,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var session = await _fixture.Store.GetSessionAsync(sessionId);
         Assert.Null(session);
 
-        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", null, 100);
         Assert.Empty(promptsAfter);
         var deletedCount = await CountSoftDeletedPromptsAsync(sessionId);
         Assert.Equal(2, deletedCount);
@@ -375,6 +375,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     [Fact]
     public async Task DeleteSession_BlockedBySoftDeletedObservations()
     {
+        // This test verifies the fix: soft-deleted observations should NOT block session delete
         var sessionId = $"sess-soft-del-{Guid.NewGuid():N}";
         await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
         var obsId = await _fixture.Store.AddObservationAsync(new AddObservationParams
@@ -388,6 +389,26 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
 
         await _fixture.Store.DeleteObservationAsync(obsId);
 
+        // After fix: delete should succeed (only active observations block delete)
+        await _fixture.Store.DeleteSessionAsync(sessionId);
+    }
+
+    [Fact]
+    public async Task DeleteSession_ActiveObservations_StillBlocked()
+    {
+        // Verify active observations still block delete
+        var sessionId = $"sess-active-{Guid.NewGuid():N}";
+        await _fixture.Store.CreateSessionAsync(sessionId, "test-project", "/tmp");
+        await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = sessionId,
+            Title = "Active obs",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        // Active observations should still block delete
         await Assert.ThrowsAsync<SessionDeleteBlockedException>(
             () => _fixture.Store.DeleteSessionAsync(sessionId));
     }
@@ -404,12 +425,12 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
             Project = "test-project",
         });
 
-        var promptsBefore = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        var promptsBefore = await _fixture.Store.RecentPromptsAsync("test-project", null, 100);
         Assert.Contains(promptsBefore, p => p.Id == promptId);
 
         await _fixture.Store.DeletePromptAsync(promptId);
 
-        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", 100);
+        var promptsAfter = await _fixture.Store.RecentPromptsAsync("test-project", null, 100);
         Assert.DoesNotContain(promptsAfter, p => p.Id == promptId);
     }
 

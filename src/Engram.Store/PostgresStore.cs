@@ -89,11 +89,13 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 session_id TEXT    NOT NULL REFERENCES sessions(id),
                 content    TEXT    NOT NULL,
                 project    TEXT,
+                created_by TEXT,
                 created_at TEXT    NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
             );
 
             CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
             CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
+            CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by);
             CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id) WHERE sync_id IS NOT NULL;
 
@@ -251,6 +253,8 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             Exec("ALTER TABLE observations ADD COLUMN md_path TEXT");
         if (!ColumnExists("user_prompts", "deleted_at"))
             Exec("ALTER TABLE user_prompts ADD COLUMN deleted_at TIMESTAMPTZ");
+        if (!ColumnExists("user_prompts", "created_by"))
+            Exec("ALTER TABLE user_prompts ADD COLUMN created_by TEXT");
 
         // ─── Phase 3.1 migration: enrollment UNIQUE constraint ─────────────────
         // sync_enrolled_projects needs UNIQUE(project, user) for ON CONFLICT
@@ -406,11 +410,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                     throw new SessionNotFoundException(id);
             }
 
-            // 2. Count ALL observations (including soft-deleted)
+            // 2. Count only active (non-soft-deleted) observations
             using (var cmd = txConn.CreateCommand())
             {
                 cmd.Transaction = tx;
-                cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id";
+                cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE session_id = @id AND deleted_at IS NULL";
                 cmd.Parameters.AddWithValue("@id", id);
                 var totalObs = Convert.ToInt64(cmd.ExecuteScalar());
                 if (totalObs > 0)
@@ -785,20 +789,26 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO user_prompts (sync_id, session_id, content, project, created_at)
-            VALUES (@sync_id, @session_id, @content, @project, NOW() AT TIME ZONE 'utc')
+            INSERT INTO user_prompts (sync_id, session_id, content, project, created_by, created_at)
+            VALUES (@sync_id, @session_id, @content, @project, @created_by, NOW() AT TIME ZONE 'utc')
             RETURNING id";
         cmd.Parameters.AddWithValue("@sync_id", (object?)NewSyncId("prompt") ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@session_id", p.SessionId);
         cmd.Parameters.AddWithValue("@content", p.Content);
         cmd.Parameters.AddWithValue("@project", (object?)p.Project ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@created_by", (object?)p.CreatedBy ?? DBNull.Value);
         return Task.FromResult((long)cmd.ExecuteScalar()!);
     }
 
-    public Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit)
+    public Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit)
     {
-        var sql = new StringBuilder("SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts WHERE deleted_at IS NULL");
+        var sql = new StringBuilder("SELECT id, sync_id, session_id, content, project, COALESCE(created_by,'') as created_by, created_at FROM user_prompts WHERE deleted_at IS NULL");
         var parms = new List<NpgsqlParameter>();
+        if (!string.IsNullOrEmpty(userId))
+        {
+            sql.Append(" AND created_by = @userId");
+            parms.Add(new NpgsqlParameter("@userId", userId));
+        }
         if (!string.IsNullOrEmpty(project))
         {
             sql.Append(" AND project = @proj");
@@ -857,7 +867,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         var sessions     = await RecentSessionsAsync(project, 5);
         var observations = await RecentObservationsAsync(project, scope, 20);
-        var prompts      = await RecentPromptsAsync(project, 10);
+        var prompts      = await RecentPromptsAsync(project, null, 10);
 
         if (sessions.Count == 0 && observations.Count == 0 && prompts.Count == 0)
             return string.Empty;
@@ -912,7 +922,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             .Take(20)
             .ToList();
 
-        var prompts = await RecentPromptsAsync(projects[0], 10);
+        var prompts = await RecentPromptsAsync(projects[0], null, 10);
 
         if (sessions.Count == 0 && merged.Count == 0 && prompts.Count == 0)
             return string.Empty;

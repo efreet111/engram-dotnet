@@ -126,12 +126,14 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
                 session_id TEXT    NOT NULL,
                 content    TEXT    NOT NULL,
                 project    TEXT,
+                created_by TEXT,
                 created_at TEXT    NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
 
             CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
             CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
+            CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by);
             CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS prompts_fts USING fts5(
@@ -193,6 +195,7 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         AddColumnIfNotExists("observations", "md_path",               "TEXT");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
         AddColumnIfNotExists("user_prompts", "deleted_at",      "TEXT");
+        AddColumnIfNotExists("user_prompts", "created_by",      "TEXT");
 
         Exec(@"
             CREATE INDEX IF NOT EXISTS idx_obs_scope         ON observations(scope);
@@ -497,9 +500,9 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
                 if (!sessionExists.HasValue)
                     throw new SessionNotFoundException(id);
 
-                // 2. Count ALL observations (including soft-deleted) — FK constraint has no ON DELETE CASCADE
+                // 2. Count only active (non-soft-deleted) observations
                 var totalObs = QueryScalar<long>(tx,
-                    "SELECT COUNT(*) FROM observations WHERE session_id = @id",
+                    "SELECT COUNT(*) FROM observations WHERE session_id = @id AND deleted_at IS NULL",
                     Param("@id", id));
                 if (totalObs > 0)
                     throw new SessionDeleteBlockedException(id, (int)totalObs);
@@ -937,11 +940,12 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         {
             var syncId = NewSyncId("prompt");
             Exec(tx,
-                "INSERT INTO user_prompts (sync_id, session_id, content, project) VALUES (@sid, @sess, @content, @proj)",
+                "INSERT INTO user_prompts (sync_id, session_id, content, project, created_by) VALUES (@sid, @sess, @content, @proj, @createdBy)",
                 Param("@sid",     syncId),
                 Param("@sess",    p.SessionId),
                 Param("@content", content),
-                Param("@proj",    NullableString(p.Project)));
+                Param("@proj",   NullableString(p.Project)),
+                Param("@createdBy", NullableString(p.CreatedBy)));
 
             promptId = LastInsertRowId(tx);
 
@@ -957,13 +961,19 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         return Task.FromResult(promptId);
     }
 
-    public Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit)
+    public Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit)
     {
         project = Normalizers.NormalizeProject(project);
         if (limit <= 0) limit = 20;
 
-        var sql   = new StringBuilder("SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts WHERE deleted_at IS NULL");
+        var sql   = new StringBuilder("SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, ifnull(created_by,'') as created_by, created_at FROM user_prompts WHERE deleted_at IS NULL");
         var parms = new List<SqliteParameter>();
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            sql.Append(" AND created_by = @userId");
+            parms.Add(Param("@userId", userId));
+        }
 
         if (!string.IsNullOrEmpty(project))
         {
@@ -1026,7 +1036,7 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
     {
         var sessions     = await RecentSessionsAsync(project, 5);
         var observations = await RecentObservationsAsync(project, scope, 20);
-        var prompts      = await RecentPromptsAsync(project, 10);
+        var prompts      = await RecentPromptsAsync(project, null, 10);
 
         if (sessions.Count == 0 && observations.Count == 0 && prompts.Count == 0)
             return string.Empty;
@@ -1093,7 +1103,7 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         var allPrompts = new List<Prompt>();
         foreach (var proj in projects)
         {
-            var p = await RecentPromptsAsync(proj, 10);
+            var p = await RecentPromptsAsync(proj, null, 10);
             allPrompts.AddRange(p);
         }
         var mergedPrompts = allPrompts

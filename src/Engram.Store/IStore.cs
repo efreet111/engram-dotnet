@@ -21,7 +21,7 @@ public interface IStore : IDisposable
 
     // Prompts
     Task<long> AddPromptAsync(AddPromptParams p);
-    Task<IList<Prompt>> RecentPromptsAsync(string? project, int limit);
+    Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit);
     Task<IList<Prompt>> SearchPromptsAsync(string query, string? project, int limit);
     Task DeletePromptAsync(long id);
 

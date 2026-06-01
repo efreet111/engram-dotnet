@@ -369,7 +369,7 @@ public class SqliteStoreTests : IDisposable
 
         Assert.True(id > 0);
 
-        var prompts = await _store.RecentPromptsAsync("test-project", 10);
+        var prompts = await _store.RecentPromptsAsync("test-project", null, 10);
         Assert.Single(prompts);
         Assert.Equal("User asked: what is the meaning of life?", prompts[0].Content);
     }
@@ -848,7 +848,7 @@ public class SqliteStoreTests : IDisposable
         Assert.Null(session);
 
         // Prompts should be soft-deleted: they vanish from RecentPrompts but still have deleted_at set
-        var promptsAfter = await _store.RecentPromptsAsync("test-project", 100);
+        var promptsAfter = await _store.RecentPromptsAsync("test-project", null, 100);
         Assert.Empty(promptsAfter);
         var deletedCount = CountSoftDeletedPrompts("sess-with-prompts");
         Assert.Equal(2, deletedCount);
@@ -857,6 +857,7 @@ public class SqliteStoreTests : IDisposable
     [Fact]
     public async Task DeleteSession_BlockedBySoftDeletedObservations()
     {
+        // This test verifies the fix: soft-deleted observations should NOT block session delete
         await _store.CreateSessionAsync("sess-soft-del", "test-project", "/tmp");
         var obsId = await _store.AddObservationAsync(new AddObservationParams
         {
@@ -870,9 +871,27 @@ public class SqliteStoreTests : IDisposable
         // Soft-delete the observation
         await _store.DeleteObservationAsync(obsId);
 
-        // Delete should STILL fail because Go counts ALL observations (including soft-deleted)
+        // After fix: delete should succeed (only active observations block delete)
+        await _store.DeleteSessionAsync("sess-soft-del");
+    }
+
+    [Fact]
+    public async Task DeleteSession_ActiveObservations_StillBlocked()
+    {
+        // Verify active observations still block delete
+        await _store.CreateSessionAsync("sess-active", "test-project", "/tmp");
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "sess-active",
+            Title = "Active obs",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-project",
+        });
+
+        // Active observations should still block delete
         await Assert.ThrowsAsync<SessionDeleteBlockedException>(
-            () => _store.DeleteSessionAsync("sess-soft-del"));
+            () => _store.DeleteSessionAsync("sess-active"));
     }
 
     // ─── Delete Prompt ─────────────────────────────────────────────────────────
@@ -889,13 +908,13 @@ public class SqliteStoreTests : IDisposable
         });
 
         // Verify prompt exists
-        var promptsBefore = await _store.RecentPromptsAsync("test-project", 100);
+        var promptsBefore = await _store.RecentPromptsAsync("test-project", null, 100);
         Assert.Contains(promptsBefore, p => p.Id == promptId);
 
         await _store.DeletePromptAsync(promptId);
 
         // Prompt should be soft-deleted
-        var promptsAfter = await _store.RecentPromptsAsync("test-project", 100);
+        var promptsAfter = await _store.RecentPromptsAsync("test-project", null, 100);
         Assert.DoesNotContain(promptsAfter, p => p.Id == promptId);
     }
 
