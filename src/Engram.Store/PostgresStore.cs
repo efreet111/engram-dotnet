@@ -256,6 +256,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         if (!ColumnExists("user_prompts", "created_by"))
             Exec("ALTER TABLE user_prompts ADD COLUMN created_by TEXT");
 
+        // ─── Index for created_by column (created AFTER column migration) ───────
+        if (ColumnExists("user_prompts", "created_by"))
+            Exec("CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by)");
+
         // ─── Phase 3.1 migration: enrollment UNIQUE constraint ─────────────────
         // sync_enrolled_projects needs UNIQUE(project, user) for ON CONFLICT
         EnsureEnrollmentConstraint();
