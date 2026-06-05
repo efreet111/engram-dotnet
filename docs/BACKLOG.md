@@ -82,6 +82,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | ← upstream engram | `mem_current_project` ya Done |
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
+| 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Ready | S | descubierto en sesión logging 2026-06-05 | Ver contexto abajo |
 | 5 | ENG-306 | P1 | Chore | Mejorar trazabilidad en backlog (columna Origen + template HU) | Ready | S | ← ENG-205 | Columna Origen agregada |
 | — | **Meta junio — instalador y DX** |
 | 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
@@ -197,6 +198,32 @@ curl http://server:7437/search?q=Offline
 **Requisitos:** Servidor PostgreSQL, capacidad de cortar/restaurar red.
 
 **Hecho cuando:** 3 memorias offline → reconexión → aparecen en servidor.
+
+---
+
+### ENG-211 — SyncManager: ReplayDeferredAsync falla en SQLite con schema viejo (P1, bug)
+
+**Descubierto durante:** Sesión logging 2026-06-05 — logs JSON mostraron errores en `SyncManager.CycleAsync` que antes eran invisibles.
+
+**Problema:** `ReplayDeferredAsync` en `SqliteStore.cs:1938` falla con `SQLite Error 1: 'no such column: id'` al hacer SELECT/UPDATE/DELETE sobre `sync_apply_deferred`. También puede fallar al INSERTAR `project` en `sync_mutations` si la columna no existe.
+
+**Causa:** La DB SQLite local fue creada por una versión anterior del código donde la tabla `sync_apply_deferred` tenía un schema diferente o la columna `project` en `sync_mutations` no existía. `CREATE TABLE IF NOT EXISTS` no reconstruye la tabla si ya existe.
+
+**Síntoma visible:**
+```json
+{"LogLevel":"Error","Message":"Sync cycle failed (failure 1/10)",
+ "Exception":"SqliteException: SQLite Error 1: 'no such column: id'"}
+```
+
+**¿A quién afecta?** Cualquier usuario con una DB SQLite creada en una versión anterior que ejecute `engram mcp` o `engram serve` con sync habilitado. El sync se bloquea hasta el conteo de reintentos (10), causando errores cíclicos.
+
+**Stories:**
+- [ ] Diagnosticar qué columnas faltan (`id` en `sync_apply_deferred`, `project` en `sync_mutations`, posiblemente otras)
+- [ ] Agregar `AddColumnIfNotExists` para columnas faltantes en ambas tablas de sync
+- [ ] Verificar que el fix no rompe el sync con DBs nuevas (limpias)
+- [ ] Documentar: `rm -rf ~/.engram/data/` como workaround
+
+**Hecho cuando:** un usuario existente con schema viejo y uno nuevo con schema limpio pueden hacer sync sin errores.
 
 ---
 
@@ -332,12 +359,66 @@ dotnet build -c Release
 
 ---
 
+## Icebox (P2 — post v1.0.0)
+
+Items en P2 / Icebox con descripción breve. No para release de junio; referencia rápida si alguien los toma en el futuro.
+
+### ENG-401 — Backend config file (P2)
+
+**Problema:** Hoy el backend (SQLite vs Postgres vs HttpStore) se elige por env vars. Para un usuario no técnico, eso es barrera.
+**Para qué sirve:** Que `~/.engram/config.json` sea el switch entre backends, con detección automática + override.
+**Spec:** [sdd/backend-config-switch/proposal.md](../sdd/backend-config-switch/proposal.md)
+
+---
+
+### ENG-402 — Giant class refactor (P2, chore)
+
+**Problema:** `SqliteStore.cs` y `PostgresStore.cs` son enormes (1.5k–2k líneas cada uno). Mantenibilidad sufre.
+**Para qué sirve:** Partir en partials por dominio (sessions, observations, prompts, sync, retention, projects). Sin cambiar API pública.
+**Ref:** [TECHNICAL-DEBT.md TD-001/002](TECHNICAL-DEBT.md)
+
+---
+
+### ENG-403 — Phase 3 API breaking (P2)
+
+**Problema:** Hoy `project` se puede pasar en cada write. Diseño actual permite inconsistencia (mismo obs con project diferente en cada write).
+**Para qué sirve:** Quitar `project` de writes — usar siempre el proyecto detectado por contexto (env, git, manual). Más simple, menos ambigüedad.
+**Riesgo:** Breaking change. Requiere guía de migración + deprecation period.
+
+---
+
+### ENG-404 — Memory relations (P2)
+
+**Problema:** Las memorias son nodos aislados. No hay forma de decir "esta memoria corrige esta otra" o "depende de".
+**Para qué sirve:** Phase 4 del upstream: grafo de memorias con relaciones tipadas (corrects, depends-on, supersedes). Permite queries estructurales.
+**Bloqueo:** No hay spec todavía. XL de effort.
+
+---
+
+### ENG-405 — Authentication & access control (P2)
+
+**Problema:** Hoy cualquiera con acceso a la API puede leer/escribir todo (excepto user scoping en `/prompts/recent` que se agregó en ENG-204).
+**Para qué sirve:** JWT o API keys + roles (admin, read-write, read-only). Necesario para deployments públicos.
+**Bloqueo:** No hay proposal aún. Spec primero.
+
+---
+
+### ENG-406 — Tool deferral MCP (P2)
+
+**Problema:** El SDK .NET de MCP no soporta aún "tool deferral" (cargar tools bajo demanda en vez de upfront).
+**Para qué sirve:** Reducir TTFB del MCP en proyectos con 26+ tools. Carga solo las relevantes al contexto.
+**Bloqueo:** Esperar feature del SDK. Track upstream.
+
+---
+
 ## Changelog del backlog
 
 | Fecha | Cambio |
 |-------|--------|
 | 2026-06-05 | ENG-207 cerrado: Logging infrastructure (5 FRs, PM-*, ~3-4h, código no desplegado) |
 | 2026-06-05 | Logging infrastructure implementado: JSON logging, client_ip, body preview, ENGRAM_LOG_LEVEL env var. |
+| 2026-06-05 | ENG-306 cerrado: secciones detalladas para ENG-4xx (Icebox). |
+| 2026-06-05 | ENG-211 fileado: SyncManager SQLite schema mismatch (bug descubierto gracias a logs JSON). |
 | 2026-06-04 | Verificación manual post-deploy: smoke test + 5 regression tests (R1-R5) contra `192.168.0.178:7437`, todos OK. Checklist actualizado. |
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |

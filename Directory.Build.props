@@ -1,0 +1,49 @@
+<Project>
+
+  <!--
+    Directory.Build.props — centralized package versions and project defaults.
+    Applied to ALL projects in this solution (src/ and tests/).
+
+    Usage in *.csproj:
+      <PackageReference Include="Npgsql" Version="$(NpgsqlVersion)" />
+
+    Adding a new version here: use <PackageVersion Include="..." Version="..." />.
+    Do NOT duplicate versions in csproj files; reference these instead.
+
+    Why this file exists:
+    - Reproducible builds (one place to change versions)
+    - Easy auditing (no hunting across 19 csproj files)
+    - One PR for "bump Npgsql to 9.0.3" instead of 19 PRs
+
+    Hecho cuando ENG-304 está cerrado: future PRs reference these via $(...).
+  -->
+
+  <PropertyGroup>
+    <!-- Common project defaults. csproj files override if needed. -->
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS1591</NoWarn> <!-- missing XML doc comment -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.* family (rolling 10.0.x) -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.*" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.*" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.*" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.*" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.*" />
+
+    <!-- Microsoft.AspNetCore.* family (rolling 10.0.x) -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
+
+    <!-- Data layer (rolling 9.0.x — last LTS at time of writing) -->
+    <PackageVersion Include="Npgsql" Version="9.0.*" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.*" />
+
+    <!-- Pinned (compatibility/beta reasons) -->
+    <PackageVersion Include="ModelContextProtocol" Version="1.3.0" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+
+</Project>
