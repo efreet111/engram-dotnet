@@ -336,6 +336,7 @@ dotnet build -c Release
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-04 | Verificación manual post-deploy: smoke test + 5 regression tests (R1-R5) contra `192.168.0.178:7437`, todos OK. Checklist actualizado. |
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |

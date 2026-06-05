@@ -2,7 +2,9 @@
 
 > **Propósito**: Trazabilidad real de pruebas manuales sobre el servidor en producción.
 > **Servidor**: `http://192.168.0.178:7437` (PostgreSQL)
-> **Última verificación**: 2026-06-01
+> **Última verificación**: 2026-06-04 (smoke test + 5 regression tests, todos OK)
+> **Verificación anterior**: 2026-06-01 (post-deploy `e1a9cf9`, regression bugs #1–#3)
+> **Deploy commit**: `e1a9cf9` — ver [SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md](SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md)
 > **Conteo verificado desde código**: 33 REST core + 8 REST sync + 26 MCP tools = **41 REST endpoints**
 
 ---
@@ -25,29 +27,29 @@
 
 | # | Endpoint | Método | Status | Última prueba | Notas |
 |---|----------|--------|--------|---------------|-------|
-| 1 | `/health` | GET | ✅ | 2026-06-01 | Backend postgres, servicio ok |
-| 2 | `/stats` | GET | ✅ | 2026-06-01 | 221 sessions, 568 observations, 19 proyectos |
+| 1 | `/health` | GET | ✅ | 2026-06-04 | Backend postgres, servicio ok |
+| 2 | `/stats` | GET | ✅ | 2026-06-04 | 226 sessions, 522 observations, 528 prompts, 18 proyectos |
 
 ### Sesiones (5)
 
 | # | Endpoint | Método | Status | Última prueba | Notas |
 |---|----------|--------|--------|---------------|-------|
-| 3 | `/sessions` | POST | ✅ | 2026-06-01 | Crea session, devuelve `{id, status:"created"}` |
+| 3 | `/sessions` | POST | ✅ | 2026-06-04 | Crea session, devuelve `{id, status:"created"}` |
 | 4 | `/sessions/{id}` | GET | ⚠️ | 2026-06-01 | Error "session not found" post-end — la session está ended |
 | 5 | `/sessions/{id}/end` | POST | ✅ | 2026-06-01 | Finaliza session con summary |
 | 6 | `/sessions/recent` | GET | ✅ | 2026-06-01 | Lista sessions recientes con filtros |
-| 7 | `/sessions/{id}` | DELETE | ✅ | 2026-06-01 | Elimina session soft-delete |
+| 7 | `/sessions/{id}` | DELETE | ✅ | 2026-06-04 | Soft-deleted obs **no** bloquean delete (200); obs activas → 409 |
 
 ### Observaciones (7)
 
 | # | Endpoint | Método | Status | Última prueba | Notas |
 |---|----------|--------|--------|---------------|-------|
-| 8 | `/observations` | POST | ✅ | 2026-06-01 | Requiere `session_id` + `title` + `content` |
+| 8 | `/observations` | POST | ✅ | 2026-06-04 | Requiere `session_id` + `title` + `content` |
 | 9 | `/observations/passive` | POST | ✅ | 2026-06-01 | Devuelve `{extracted:0, saved:0, duplicates:0}` — sin efecto directo |
 | 10 | `/observations/recent` | GET | ✅ | 2026-06-01 | Lista observaciones recientes |
 | 11 | `/observations/{id}` | GET | ✅ | 2026-06-01 | GET by ID funciona |
 | 12 | `/observations/{id}` | PATCH | ✅ | 2026-06-01 | Actualiza título correctamente |
-| 13 | `/observations/{id}` | DELETE | ✅ | 2026-06-01 | Soft-delete, devuelve `{id, status:"deleted"}` |
+| 13 | `/observations/{id}` | DELETE | ✅ | 2026-06-04 | Soft-delete, devuelve `{id, status:"deleted"}` |
 | 14 | `/search` | GET | ✅ | 2026-06-01 | Búsqueda con ranking y FTS |
 
 ### Contexto y timeline (2)
@@ -61,8 +63,8 @@
 
 | # | Endpoint | Método | Status | Última prueba | Notas |
 |---|----------|--------|--------|---------------|-------|
-| 17 | `/prompts` | POST | ✅ | 2026-06-01 | Crea prompt, devuelve `{id, status:"saved"}` |
-| 18 | `/prompts/recent` | GET | ✅ | 2026-06-01 | Filtra por project |
+| 17 | `/prompts` | POST | ✅ | 2026-06-04 | Crea prompt, devuelve `{id, status:"saved"}` |
+| 18 | `/prompts/recent` | GET | ✅ | 2026-06-04 | Filtra por `project` + **`X-Engram-User`** (user scoping verificado: userA solo ve userA) |
 | 19 | `/prompts/search` | GET | ✅ | 2026-06-01 | Búsqueda por query |
 | 20 | `/prompts/{id}` | DELETE | ✅ | 2026-06-01 | Soft-delete prompt |
 | 21 | `/export` | GET | ⚠️ | 2026-06-01 | POST, no GET — requiere `{"project":"..."}` |
@@ -71,7 +73,7 @@
 
 | # | Endpoint | Método | Status | Última prueba | Notas |
 |---|----------|--------|--------|---------------|-------|
-| 22 | `/projects/list` | GET | ✅ | 2026-06-01 | Lista 19 proyectos |
+| 22 | `/projects/list` | GET | ✅ | 2026-06-04 | Lista 18 proyectos |
 | 23 | `/projects/stats` | GET | ✅ | 2026-06-01 | Stats por proyecto con directorios |
 | 24 | `/projects/migrate` | POST | ✅ | 2026-06-01 | Params: `old_project` + `new_project` (no `projects[]`) |
 | 25 | `/projects/prune` | POST | ✅ | 2026-06-01 | Solo elimina si no hay observaciones |
@@ -110,8 +112,8 @@
 | 36 | `/sync/enroll` | DELETE | ✅ | 2026-06-01 | Query param `?project=...` requerido |
 | 37 | `/sync/pause` | POST | ✅ | 2026-06-01 | Query param `?project=...` + body `{"reason":"..."}` |
 | 38 | `/sync/pause` | DELETE | ✅ | 2026-06-01 | Resume — query param `?project=...` |
-| 39 | ⭐ `/sync/status` | GET | ✅ | 2026-06-01 | `sync_enabled: true`, `phase: cloud` |
-| 40 | `/sync/mutations/push` | POST | ❌ | 2026-06-01 | NullReferenceException en CloudSyncEndpoints line 141 |
+| 39 | ⭐ `/sync/status` | GET | ✅ | 2026-06-04 | `sync_enabled: true`, `phase: cloud` |
+| 40 | `/sync/mutations/push` | POST | ✅ | 2026-06-04 | `entries` null/ausente → **400** `empty-batch` (fix `a0ff6ee`) |
 | 41 | `/sync/mutations/pull` | GET | ✅ | 2026-06-01 | Params `project` + `since` — devuelve `{mutations:[], has_more:false}` |
 
 ---
@@ -182,8 +184,8 @@
 ### Sync REST API
 | Grupo | Total | ✅ | ⚠️ | ❌ | 🔲 |
 |-------|-------|---|---|---|---|
-| Sync | 8 | 5 | 1 | 1 | 1 |
-| **Subtotal** | **8** | **5** | **1** | **1** | **1** |
+| Sync | 8 | 6 | 1 | 0 | 1 |
+| **Subtotal** | **8** | **6** | **1** | **0** | **1** |
 
 ### MCP Tools
 | Grupo | Total | ✅ | ⚠️ | ❌ | 🔲 |
@@ -195,19 +197,95 @@
 |-------|-------|---|---|---|---|
 | Multi-usuario | 3 | 0 | 0 | 0 | 3 |
 
-**Total general: 70 endpoints — 33 probados, 37 pendientes**
+**Total general: 70 endpoints — 34 probados, 36 pendientes**
 
 ---
 
-## 🐛 Bugs encontrados
+## 🔄 Regression tests — bugfixes críticos (2026-06-01)
 
-1. **`/sync/mutations/push`**: NullReferenceException en `CloudSyncEndpoints.cs:141` — el `ICloudMutationStore` es null cuando no hay enrollment activo.
+> Ejecutar **después de cada deploy** en TrueNAS. Requiere commit **`e1a9cf9`** o posterior.
+> Servidor: `http://192.168.0.178:7437`
 
-2. **`/sessions/{id}` GET**: Devuelve "session not found" para sessions que fueron ended via `/end`. Debería devolver la session con `ended_at` en lugar de 404.
+```bash
+BASE="http://192.168.0.178:7437"
+TS=$(date +%s)
+PROJECT="team/manual-verify-$TS"
+SESSION="sess-verify-$TS"
 
-3. **`/sync/enroll` GET**: No muestra los proyectos enrollados — siempre devuelve `{"projects":[],"count":0}`.
+# ── Bug #1: push sin entries → 400 (no 500) ─────────────────────────────
+curl -s -w "\nHTTP %{http_code}\n" -X POST "$BASE/sync/mutations/push" \
+  -H "Content-Type: application/json" -d '{"created_by":"test"}'
+# Esperado: HTTP 400, error_code "empty-batch"
 
-4. **`/prompts/recent` y `/prompts/search`**: Devuelven array vacío para el proyecto `team/smoke-test` aunque hay prompts creados.
+curl -s -w "\nHTTP %{http_code}\n" -X POST "$BASE/sync/mutations/push" \
+  -H "Content-Type: application/json" -d '{"entries":null,"created_by":"test"}'
+# Esperado: HTTP 400, error_code "empty-batch"
+
+# ── Bug #2: delete session con obs soft-deleted → 200 ───────────────────
+curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
+  -d "{\"id\":\"$SESSION\",\"project\":\"$PROJECT\",\"directory\":\"/tmp\"}"
+
+OBS=$(curl -s -X POST "$BASE/observations" -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION\",\"title\":\"test\",\"content\":\"x\",\"type\":\"manual\",\"project\":\"$PROJECT\"}")
+OBS_ID=$(echo "$OBS" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+
+curl -s -X DELETE "$BASE/observations/$OBS_ID"   # soft-delete
+curl -s -w "\nHTTP %{http_code}\n" -X DELETE "$BASE/sessions/$SESSION"
+# Esperado: HTTP 200, {"status":"deleted"}
+
+# Control: obs activa → 409
+SESSION2="sess-active-$TS"
+curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
+  -d "{\"id\":\"$SESSION2\",\"project\":\"$PROJECT\",\"directory\":\"/tmp\"}"
+curl -s -X POST "$BASE/observations" -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION2\",\"title\":\"active\",\"content\":\"x\",\"type\":\"manual\",\"project\":\"$PROJECT\"}"
+curl -s -w "\nHTTP %{http_code}\n" -X DELETE "$BASE/sessions/$SESSION2"
+# Esperado: HTTP 409
+
+# ── Bug #3: prompts/recent respeta X-Engram-User ─────────────────────────
+PSESS="sess-prompts-$TS"
+curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
+  -d "{\"id\":\"$PSESS\",\"project\":\"$PROJECT\",\"directory\":\"/tmp\"}"
+curl -s -X POST "$BASE/prompts" -H "Content-Type: application/json" -H "X-Engram-User: userA" \
+  -d "{\"session_id\":\"$PSESS\",\"content\":\"Prompt userA $TS\",\"project\":\"$PROJECT\"}"
+curl -s -X POST "$BASE/prompts" -H "Content-Type: application/json" -H "X-Engram-User: userB" \
+  -d "{\"session_id\":\"$PSESS\",\"content\":\"Prompt userB $TS\",\"project\":\"$PROJECT\"}"
+
+curl -s "$BASE/prompts/recent?project=$PROJECT&limit=50" -H "X-Engram-User: userA" | jq .
+# Esperado: solo prompt de userA
+
+curl -s "$BASE/prompts/recent?project=$PROJECT&limit=50" -H "X-Engram-User: userB" | jq .
+# Esperado: solo prompt de userB
+```
+
+| # | Bug | Esperado | Verificado 2026-06-01 | Verificado 2026-06-04 |
+|---|-----|----------|------------------------|------------------------|
+| R1 | Push sin `entries` | HTTP 400 | ✅ | ✅ |
+| R2 | Push `entries: null` | HTTP 400 | ✅ | ✅ |
+| R3 | Delete session (solo soft-deleted) | HTTP 200 | ✅ | ✅ |
+| R4 | Delete session (obs activa) | HTTP 409 | ✅ | ✅ |
+| R5 | `/prompts/recent` + `X-Engram-User` | Solo prompts del usuario | ✅ | ✅ |
+
+---
+
+## 🐛 Bugs abiertos
+
+1. **`/sessions/{id}` GET**: Devuelve "session not found" para sessions ended vía `/end`. Debería devolver la session con `ended_at` en lugar de 404.
+
+2. **`/sync/enroll` GET**: No muestra proyectos enrollados — devuelve `{"projects":[],"count":0}`.
+
+3. **`/prompts/recent` — campo `created_by` en JSON**: El filtrado por `X-Engram-User` funciona, pero la respuesta puede mostrar `"created_by": ""`. Revisar serialización del modelo `Prompt`.
+
+---
+
+## ✅ Bugs resueltos (2026-06-01)
+
+| Bug | Endpoint | Fix | Commit |
+|-----|----------|-----|--------|
+| NRE en push null entries | `POST /sync/mutations/push` | Null-check en `body.Entries` | `a0ff6ee` |
+| Soft-deleted obs bloquean delete | `DELETE /sessions/{id}` | `AND deleted_at IS NULL` en COUNT | `a0ff6ee` |
+| User scoping en prompts | `GET /prompts/recent` | `GetUserId` + columna `created_by` | `a0ff6ee` + migración `e1a9cf9` |
+| Migración PG `created_by` | Startup PostgresStore | Índice solo tras `ALTER TABLE` | `e1a9cf9` |
 
 ---
 
@@ -216,6 +294,9 @@
 - Los endpoints de Markdown (`/md/promote`, `/md/sync`, `/md/index`) requieren datos específicos (observation ID válido, repo configurado) — no probados.
 - MCP tools requieren cliente MCP real — no accesible vía REST. Necesitan test con editor configurado.
 - Tests multi-usuario requieren segunda persona o segundo user token.
+- **Deploy TrueNAS**: confirmar `git log -1` en el servidor antes de debuggear Docker; el clone en `/mnt/Pool_8TB/engram_data` estuvo atrasado en `5ae578d` mientras `main` ya tenía `e1a9cf9`.
+- **Build**: `docker/docker-compose.yml` usa `Dockerfile` de la raíz (compila fuente). No usar `docker/Dockerfile` (binario de Releases) para probar fixes locales.
+- **PostgreSQL producción**: database `engram_cloud` (ver `.env` en TrueNAS).
 
 ---
 
@@ -230,28 +311,28 @@
 ### Smoke test rápido post-deploy
 
 ```bash
-# 1. Health
-curl http://192.168.0.178:7437/health
+BASE="http://192.168.0.178:7437"
 
-# 2. Sync status (⭐ fix recién pusheado)
-curl http://192.168.0.178:7437/sync/status | jq '{sync_enabled, phase, health}'
+# 1. Health + backend
+curl -s "$BASE/health" | jq .
 
-# 3. Stats
-curl http://192.168.0.178:7437/stats
+# 2. Proyectos
+curl -s "$BASE/projects/list" | jq 'length'
+curl -s "$BASE/projects/stats" | jq '.[0]'
 
-# 4. Enroll (si no hay proyectos)
-curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "X-Engram-User: test" \
-  -d '{"project":"team/smoke-test"}'
+# 3. Sync status
+curl -s "$BASE/sync/status" | jq '{sync_enabled, phase, health}'
 
-# 5. Ver enroll
-curl http://192.168.0.178:7437/sync/enroll
+# 4. Stats globales
+curl -s "$BASE/stats" | jq .
 
-# 6. Crear observación
-curl -X POST http://192.168.0.178:7437/observations \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Smoke test","content":"Test","type":"manual","project":"team/smoke-test"}'
+# 5. Regression mínima — push inválido debe dar 400, no 500
+curl -s -w "\nHTTP %{http_code}\n" -X POST "$BASE/sync/mutations/push" \
+  -H "Content-Type: application/json" -d '{"created_by":"smoke"}'
 
-# 7. Buscar
-curl "http://192.168.0.178:7437/search?q=Smoke+test"
+# 6. (Opcional) Enroll + observación
+curl -X POST "$BASE/sync/enroll" -H "X-Engram-User: test" \
+  -H "Content-Type: application/json" -d '{"project":"team/smoke-test"}'
 ```
+
+Después del smoke, correr la sección [Regression tests — bugfixes críticos](#-regression-tests--bugfixes-críticos-2026-06-01).

@@ -60,6 +60,18 @@
 - Tests para `ExportProjectAsync` en SqliteStore y PostgresStore
 - Tests para `ParseSinceArgument` (ISO8601, relative, invalid)
 
+### Verified (manual, 2026-06-04)
+
+Smoke test + 5 regression tests ejecutados contra `http://192.168.0.178:7437` (PostgreSQL, commit `e1a9cf9`):
+
+- **Smoke**: `/health` (v1.1.0, postgres), `/stats` (226 sessions, 522 obs, 528 prompts, 18 proyectos), `/sync/status` (sync_enabled, phase cloud), push inválido → HTTP 400
+- **R1-R2** — push sin `entries` / `entries: null` → HTTP 400 `empty-batch` (fix `a0ff6ee`)
+- **R3** — delete session con obs soft-deleted → HTTP 200, session borrada
+- **R4** — delete session con obs activa → HTTP 409 con mensaje correcto
+- **R5** — `prompts/recent` con `X-Engram-User` filtra correctamente (userA ve solo suyo, userB ve solo suyo)
+
+Detalles en `docs/MANUAL-TESTING-CHECKLIST.md`.
+
 ## [0.2.0] — 2026-04-30 — PostgreSQL Backend + Upstream Phase 1
 
 ### Added
