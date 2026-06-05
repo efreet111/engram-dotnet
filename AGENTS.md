@@ -122,10 +122,40 @@ Un HU por tema. Si dos HUs cubren el mismo origen (`sdd/...`), consolidar en una
 ### El agente SÍ debe
 
 - Leer `docs/BACKLOG.md` y specs/HU relevantes antes de implementar
+- **Pasar el workflow T1-T5 antes de proponer commit/push** (ver [§ Workflow T1-T5](#workflow-de-desarrollo-capas-t1-t5))
 - Mantener cambios mínimos y alineados con el estilo existente
 - Ejecutar tests localmente antes de proponer merge
 - Documentar decisiones no obvias en el PR o en `docs/` cuando el humano lo pida
 - Responder en español al usuario salvo que pida otro idioma
+
+---
+
+## Workflow de desarrollo (capas T1-T5)
+
+> **Regla**: Antes de proponer `commit` o `push`, el código DEBE haber pasado **T3 (Docker + Postgres integration)**. SQLite no es prod — bugs SQLite-specific se escapan (ej: el bug pre-existente del SyncManager, encontrado el 2026-06-05 en `SqliteStore.cs:1938`).
+
+| Capa | Qué | Backend | Por qué importa |
+|------|-----|---------|-----------------|
+| **T1** | Iterar código | SQLite (en memoria) | Loop rápido <5s |
+| **T2** | Tests unitarios | SQLite (in-memory) | Verifica lógica pura |
+| **T3** | **Pre-commit (Docker + host Postgres)** | **Postgres** | **Atrapa bugs SQLite-specific** |
+| T4 | CI (GitHub Actions) | SQLite + Postgres (Testcontainers) | Automático, paralelo a T3 |
+| T5 | Deploy (TrueNAS) | Postgres | Manual, humano |
+
+**Comandos rápidos:**
+
+```bash
+# T1: Loop rápido
+dotnet run --project src/Engram.Cli -c Release -- serve --port 7438
+
+# T2: Tests
+dotnet test -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests&Category!=RequiresDocker"
+
+# T3: Pre-commit (integración con Postgres real)
+PG_PASS=tu_password bash scripts/dev-test.sh
+```
+
+**Detalle completo** en [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md#workflow-de-desarrollo-t1-t5).
 
 ---
 
@@ -157,4 +187,4 @@ Cada cambio de código debe incluir o actualizar tests cuando el comportamiento 
 
 ---
 
-**Última actualización:** 2026-06-01
+**Última actualización:** 2026-06-05
