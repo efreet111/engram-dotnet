@@ -46,3 +46,6 @@ design.md
 design_output.md
 design_result.md
 dist-cli/
+
+# Engram MCP local memory (per-user runtime state, not project source)
+/.engram/
