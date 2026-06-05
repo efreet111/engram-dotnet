@@ -169,6 +169,7 @@ sudo -u postgres psql -d engram -c "\dt"
 | `57P03` (cannot connect to server) | PostgreSQL not running | `systemctl start postgresql` |
 | `08001` (connection refused) | Wrong host/port | Check PostgreSQL port (default 5432) |
 | Column type mismatch | Schema vs code mismatch | `docker compose up -d --build` |
+| `42703` column "created_by" does not exist | Index created before `ALTER TABLE` on legacy DB | Deploy `e1a9cf9+`; ensure `git pull` on server; optional: `ALTER TABLE user_prompts ADD COLUMN IF NOT EXISTS created_by TEXT` |
 
 ---
 

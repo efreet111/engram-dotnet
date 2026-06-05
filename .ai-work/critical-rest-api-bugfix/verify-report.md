@@ -3,20 +3,25 @@ cycle_count: 3
 max_cycles: 3
 verdict: PASS
 date: 2026-06-01
-server: http://192.168.0.178:7437 (not redeployed yet)
+deploy_commit: e1a9cf9
+server: http://192.168.0.178:7437
+production_verified: 2026-06-01
 ---
 
 # Verify Report: Critical REST API Bugfixes
 
-## Summary
+## Summary (actualizado post-deploy)
 
 | Bug | Severity | Source Fix | Unit Tests | Manual (Prod) | Verdict |
 |-----|----------|------------|------------|---------------|---------|
-| #1 — NullRef in /sync/mutations/push | P0 | ✅ Correct | ✅ 9/10 pass (1 Docker-unrelated skip) | ❌ HTTP 500 (not deployed) | **PASS** (code) / **FAIL** (deploy) |
-| #2 — Soft-deleted obs block delete | P2 | ✅ Correct | ❓ Can't run (blocked by #3) | ❌ HTTP 409 (not deployed) | **PASS** (code) / **FAIL** (deploy) |
-| #3 — /prompts/recent ignores user header | P1 | ✅ Correct | ❌ **Compilation error** | ❌ No filtering (not deployed) | **FAIL** |
+| #1 — NullRef in /sync/mutations/push | P0 | ✅ | ✅ | ✅ HTTP 400 | **PASS** |
+| #2 — Soft-deleted obs block delete | P2 | ✅ | ✅ | ✅ HTTP 200 / 409 control | **PASS** |
+| #3 — /prompts/recent ignores user header | P1 | ✅ | ✅ | ✅ user scoping OK | **PASS** |
+| Migration PG `created_by` | — | ✅ `e1a9cf9` | ✅ CI | ✅ server starts | **PASS** |
 
-**Overall Verdict: FAIL** — Bug #3 tests don't compile. Production server is running unpatched code (all 3 bugs still reproduce).
+**Overall Verdict: PASS** — Desplegado en TrueNAS (`e1a9cf9`). Regression manual documentada en `docs/MANUAL-TESTING-CHECKLIST.md`.
+
+> Nota histórica: el bloque siguiente refleja el estado **pre-deploy** (2026-05-31).
 
 ---
 

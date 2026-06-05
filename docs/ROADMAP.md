@@ -1,6 +1,6 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-05-28  
+> **Last updated**: 2026-06-01  
 > **Current version**: `main` (post MCP sync fix + multi-editor setup)
 
 **Orden de trabajo (qué hacer ahora):** [BACKLOG.md](BACKLOG.md) — cola única con IDs `ENG-xxx`.  
@@ -134,6 +134,54 @@ Config file `~/.engram/config.json` to switch between backends:
 ```json
 {"backend": "sqlite", "sqlite_path": "~/.engram/engram.db"}
 ```
+
+---
+
+---
+
+### 🔄 Offline-First — Revisar flujo real vs documentado
+
+> **Origen**: sesión `critical-rest-api-bugfix` (2026-06-01) — [SESSION-REPORT](SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md)  
+> **Status**: 🔲 **Investigar** — solo roadmap; no implementar aún  
+> **Relacionado**: [ENG-210](BACKLOG.md) (test manual offline), [SYNC-SETUP.md](SYNC-SETUP.md), [MCP-CONFIG.md](MCP-CONFIG.md)
+
+**Problema observado:** en la práctica muchas operaciones van **directo al servidor** (`http://192.168.0.178:7437` — curl, health, regression REST), pero el diseño offline-first dice **local primero**, sync al server en background.
+
+| Capa | Comportamiento esperado (docs) | Lo que pasó en la sesión |
+|------|-------------------------------|---------------------------|
+| **MCP / `mem_save`** | SQLite local (`~/.engram`) → SyncManager → push | `engram save` → local #2444 ✅; push al server **no verificado** |
+| **Testing manual REST** | Smoke al server (OK para API cloud) | Todo contra TrueNAS — correcto para *servidor*, no prueba el camino *cliente* |
+| **Variables** | `ENGRAM_SERVER_URL` = sync; `ENGRAM_URL` = remoto directo (HttpStore) | MCP de Gantz bien configurado (local+sync); agente Cursor a veces sin tools Engram expuestas |
+| **TrueNAS** | Solo PostgreSQL + API `/sync/*`; **no** SQLite local | Deploy + migración PG — rol correcto como *cloud* |
+
+**Flujo canónico (recordatorio):**
+
+```
+Dev: mem_save / engram save  →  SQLite local (instantáneo, offline OK)
+         ↓
+     sync_mutations (journal)
+         ↓
+     SyncManager (en engram mcp o engram serve + ENGRAM_SYNC_ENABLED)
+         ↓
+     POST /sync/mutations/push  →  TrueNAS PostgreSQL
+         ↓
+     Otros devs: GET pull  →  su SQLite local
+```
+
+**Alcance de la revisión (futuro):**
+
+| # | Pregunta | Por qué importa |
+|---|----------|-----------------|
+| 1 | ¿`engram save` (CLI) encola mutaciones sin `engram serve`/`mcp` corriendo? | `/flow-close` guardó local pero search en server = `[]` |
+| 2 | ¿Cuándo arranca SyncManager — solo `serve`, también `mcp`, también CLI? | Documentación vs código |
+| 3 | Matriz "quién habla con quién" (dev MCP, CLI, CI, TrueNAS, curl manual) | Evitar confundir *test de API cloud* con *test de sync* |
+| 4 | Checklist: separar pruebas **REST server** vs **offline-first client** | [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) hoy mezcla ambos |
+| 5 | E2E: offline → 3 saves → reconectar → aparecen en server | [ENG-210](BACKLOG.md), roadmap manual test #2 |
+
+**No confundir:**
+
+- **Servidor arriba** (TrueNAS `:7437`) ≠ **sync completado** (obs local puede no estar en PG aún).
+- **Docs en Git** (session report, checklist) ≠ **memoria Engram** (SQLite + sync).
 
 ---
 

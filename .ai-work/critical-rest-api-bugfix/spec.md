@@ -247,13 +247,16 @@ Steps:
 
 | ID | Case | Steps | Expected Result | Done |
 |----|------|-------|------------------|------|
-| PM-1 | Null entries (missing field) | Push `{"created_by":"test"}` | 400, no stack trace | [ ] |
-| PM-2 | Null entries (explicit null) | Push `{"entries":null,"created_by":"test"}` | 400, no stack trace | [ ] |
-| PM-3 | Prune with project filter | Prune type=tool_use for project A | Only A's old obs pruned | [ ] |
-| PM-4 | Prune dry-run mode | Prune with `?dry_run=true` | Count returned, no deletes | [ ] |
-| PM-5 | Session delete (soft-del only) | Soft-del all obs, delete session | 200 OK | [ ] |
-| PM-6 | Prompts with user scoping | Create 2 user prompts, query each | Only matching user returned | [ ] |
-| PM-7 | Prompts without project filter | Query `/prompts/recent` without project | 400 or all (documented) | [ ] |
+| PM-1 | Null entries (missing field) | Push `{"created_by":"test"}` | 400, no stack trace | [x] |
+| PM-2 | Null entries (explicit null) | Push `{"entries":null,"created_by":"test"}` | 400, no stack trace | [x] |
+| PM-3 | Prune with project filter | Prune type=tool_use for project A | Only A's old obs pruned | [N/A] |
+| PM-4 | Prune dry-run mode | Prune with `?dry_run=true` | Count returned, no deletes | [N/A] |
+| PM-5 | Session delete (soft-del only) | Soft-del all obs, delete session | 200 OK | [x] |
+| PM-6 | Prompts with user scoping | Create 2 user prompts, query each | Only matching user returned | [x] |
+| PM-7 | Prompts without project filter | Query `/prompts/recent` without project | 400 or all (documented) | [x] |
+
+> **PM-3 / PM-4**: Fuera de alcance de este cierre (`critical-rest-api-bugfix` = bugs push/sessions/prompts). Retention prune queda para feature aparte.
+> **PM-7**: Comportamiento actual — HTTP 200 + `[]` sin `?project=` (con `X-Engram-User`); documentado en `summary.md`.
 
 ---
 
