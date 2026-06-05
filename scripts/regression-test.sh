@@ -33,29 +33,33 @@ pass()  { PASS=$((PASS+1)); echo "  ✅ $1"; }
 fail()  { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
 skip()  { SKIP=$((SKIP+1)); echo "  ⚪ $1 (saltado)"; }
 
-check_status() {
-    local desc="$1"; shift
-    local expected="$1"; shift
-    local code=$(curl -s -o /dev/null -w "%{http_code}" "$@" 2>/dev/null || echo "000")
-    if [ "$code" = "$expected" ]; then
-        pass "$desc"
-    else
-        fail "$desc — esperado $expected, obtuvo $code"
-    fi
-}
-
 check_json() {
     local desc="$1"; shift
     local expected_code="$1"; shift
     local jq_filter="$1"; shift
-    local result=$(curl -s "$@" 2>/dev/null)
-    local code=$(curl -s -o /dev/null -w "%{http_code}" "$@" 2>/dev/null || echo "000")
+    # Single curl: body + HTTP status (capture both in one call)
+    local raw=$(curl -s -w "\n%{http_code}" "$@" 2>/dev/null)
+    local code=$(echo "$raw" | tail -1)
+    local body=$(echo "$raw" | sed '$d')
     if [ "$code" != "$expected_code" ]; then
         fail "$desc — esperado $expected_code, obtuvo $code"
-    elif echo "$result" | jq -e "$jq_filter" > /dev/null 2>&1; then
+    elif echo "$body" | jq -e "$jq_filter" > /dev/null 2>&1; then
         pass "$desc"
     else
-        fail "$desc — filtro jq falló en: $(echo "$result" | jq -c . 2>/dev/null || echo "$result")"
+        fail "$desc — filtro jq falló en: $(echo "$body" | jq -c . 2>/dev/null)"
+    fi
+}
+
+check_status() {
+    local desc="$1"; shift
+    local expected="$1"; shift
+    # Single curl for read-only or idempotent operations
+    local raw=$(curl -s -w "\n%{http_code}" "$@" 2>/dev/null)
+    local code=$(echo "$raw" | tail -1)
+    if [ "$code" = "$expected" ]; then
+        pass "$desc"
+    else
+        fail "$desc — esperado $expected, obtuvo $code"
     fi
 }
 
@@ -97,11 +101,15 @@ check_json  "[R3] create session"     201 '.status == "created"' \
 OBS_R3=$(curl -s -X POST "$BASE/observations" \
     -H "Content-Type: application/json" \
     -d "{\"session_id\":\"$SESS_R3\",\"title\":\"r3-test\",\"content\":\"x\",\"type\":\"manual\",\"project\":\"$PROJ\"}")
-OBS_R3_ID=$(echo "$OBS_R3" | jq -r '.id')
-check_json  "[R3] soft-delete obs"    200 '.status == "deleted"' \
-    -X DELETE "$BASE/observations/$OBS_R3_ID"
-check_json  "[R3] delete session"     200 '.status == "deleted"' \
-    -X DELETE "$BASE/sessions/$SESS_R3"
+OBS_R3_ID=$(echo "$OBS_R3" | jq -r '.id // empty')
+if [ -z "$OBS_R3_ID" ]; then
+    fail "[R3] soft-delete obs — no se pudo extraer ID de obs: $(echo "$OBS_R3" | jq -c .)"
+else
+    check_json  "[R3] soft-delete obs"    200 '.status == "deleted"' \
+        -X DELETE "$BASE/observations/$OBS_R3_ID"
+    check_json  "[R3] delete session"     200 '.status == "deleted"' \
+        -X DELETE "$BASE/sessions/$SESS_R3"
+fi
 
 # R4: create session + obs activa, delete should 409
 SESS_R4="sess-r4-$TS"
@@ -109,7 +117,7 @@ check_json  "[R4] create session"     201 '.status == "created"' \
     -X POST "$BASE/sessions" \
     -H "Content-Type: application/json" \
     -d "{\"id\":\"$SESS_R4\",\"project\":\"$PROJ\",\"directory\":\"/tmp\"}"
-check_json  "[R4] create active obs"  200 '.id > 0' \
+check_json  "[R4] create active obs"  201 '.id > 0' \
     -X POST "$BASE/observations" \
     -H "Content-Type: application/json" \
     -d "{\"session_id\":\"$SESS_R4\",\"title\":\"r4-active\",\"content\":\"x\",\"type\":\"manual\",\"project\":\"$PROJ\"}"
@@ -128,12 +136,12 @@ check_json  "[R5] session userB"      201 '.status == "created"' \
     -H "Content-Type: application/json" \
     -d "{\"id\":\"$SESS_B\",\"project\":\"$PROJ\",\"directory\":\"/tmp\"}"
 
-check_json  "[R5] prompt userA"       200 '.status == "saved"' \
+check_json  "[R5] prompt userA"       201 '.status == "saved"' \
     -X POST "$BASE/prompts" \
     -H "Content-Type: application/json" \
     -H "X-Engram-User: userA" \
     -d "{\"content\":\"userA prompt $TS\",\"project\":\"$PROJ\",\"session_id\":\"$SESS_A\"}"
-check_json  "[R5] prompt userB"       200 '.status == "saved"' \
+check_json  "[R5] prompt userB"       201 '.status == "saved"' \
     -X POST "$BASE/prompts" \
     -H "Content-Type: application/json" \
     -H "X-Engram-User: userB" \
