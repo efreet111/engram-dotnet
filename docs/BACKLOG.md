@@ -78,7 +78,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | testing | 2 fixeados, 1 eliminado |
 | ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | sesión pre-release | — |
 | — | **Siguiente (cerrar base pre-release)** |
-| 1 | ENG-207 | P0 | Feature | Logging infrastructure | Ready | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
+| ✓ | ENG-207 | P0 | Feature | Logging infrastructure | Done | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
 | 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | ← upstream engram | `mem_current_project` ya Done |
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
@@ -336,6 +336,8 @@ dotnet build -c Release
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-05 | ENG-207 cerrado: Logging infrastructure (5 FRs, PM-*, ~3-4h, código no desplegado) |
+| 2026-06-05 | Logging infrastructure implementado: JSON logging, client_ip, body preview, ENGRAM_LOG_LEVEL env var. |
 | 2026-06-04 | Verificación manual post-deploy: smoke test + 5 regression tests (R1-R5) contra `192.168.0.178:7437`, todos OK. Checklist actualizado. |
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |

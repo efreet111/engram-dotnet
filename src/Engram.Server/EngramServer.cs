@@ -34,7 +34,22 @@ public static class EngramServer
         var builder = WebApplication.CreateBuilder();
 
         builder.Logging.ClearProviders();
-        builder.Logging.AddConsole();
+
+        // JSON console formatter with structured logging
+        builder.Logging.AddJsonConsole(opts =>
+        {
+            opts.IncludeScopes = true;
+            opts.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+            opts.UseUtcTimestamp = true;
+        });
+
+        // ENGRAM_LOG_LEVEL env var binding (defaults to Information)
+        // Accepts: trace, debug, info, warn, error, critical, none (case-insensitive)
+        var logLevelRaw = Environment.GetEnvironmentVariable("ENGRAM_LOG_LEVEL") ?? "Information";
+        var logLevel = ParseLogLevel(logLevelRaw);
+        builder.Logging.SetMinimumLevel(logLevel);
+        // Suppress noisy ASP.NET core logs
+        builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 
         builder.Services.AddSingleton(store);
         builder.Services.AddSingleton(cfg);
@@ -74,12 +89,16 @@ public static class EngramServer
 
         var app = builder.Build();
 
+        // Body debug logging middleware (must run before the request logger to capture body on 400 errors)
+        app.UseMiddleware<BodyDebugLoggingMiddleware>();
+
         // Global request logging + error handling middleware
         app.Use(async (ctx, next) =>
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger("HTTP");
+            var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             try
             {
                 await next(ctx);
@@ -87,10 +106,10 @@ public static class EngramServer
             catch (Exception ex)
             {
                 sw.Stop();
-                logger.LogError(ex, "HTTP {Method} {Path} → 500 ({Duration}ms) — {ErrorType}: {ErrorMsg}",
-                    ctx.Request.Method, ctx.Request.Path, sw.ElapsedMilliseconds,
+                logger.LogError(ex, "HTTP {Method} {Path} → 500 ({Duration}ms) from {ClientIp} — {ErrorType}: {ErrorMsg}",
+                    ctx.Request.Method, ctx.Request.Path, sw.ElapsedMilliseconds, clientIp,
                     ex.GetType().Name, ex.Message);
-                
+
                 // Try to read request body for debugging
                 string bodyPreview = "";
                 try
@@ -105,7 +124,7 @@ public static class EngramServer
                     }
                 }
                 catch { /* best-effort */ }
-                
+
                 if (!ctx.Response.HasStarted)
                 {
                     ctx.Response.StatusCode = 500;
@@ -124,13 +143,13 @@ public static class EngramServer
                 sw.Stop();
                 if (ctx.Response.StatusCode >= 400)
                 {
-                    logger.LogWarning("HTTP {Method} {Path} → {Status} ({Duration}ms)",
-                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+                    logger.LogWarning("HTTP {Method} {Path} → {Status} ({Duration}ms) from {ClientIp}",
+                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds, clientIp);
                 }
                 else
                 {
-                    logger.LogInformation("HTTP {Method} {Path} → {Status} ({Duration}ms)",
-                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+                    logger.LogInformation("HTTP {Method} {Path} → {Status} ({Duration}ms) from {ClientIp}",
+                        ctx.Request.Method, ctx.Request.Path, ctx.Response.StatusCode, sw.ElapsedMilliseconds, clientIp);
                 }
             }
         });
@@ -595,6 +614,22 @@ public static class EngramServer
 
     private static IResult Error(string message, int status = 400) =>
         Results.Json(new { error = message }, JsonOpts, statusCode: status);
+
+    // Maps short and full names to LogLevel: trace, debug, info, warn, error, critical, none
+    private static LogLevel ParseLogLevel(string raw)
+    {
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "trace"    => LogLevel.Trace,
+            "debug"    => LogLevel.Debug,
+            "info" or "information" => LogLevel.Information,
+            "warn" or "warning"     => LogLevel.Warning,
+            "error"                 => LogLevel.Error,
+            "critical" or "fatal"   => LogLevel.Critical,
+            "none" or "off"         => LogLevel.None,
+            _ => LogLevel.Information
+        };
+    }
 
     private static async Task<T?> ReadJson<T>(HttpContext ctx)
     {

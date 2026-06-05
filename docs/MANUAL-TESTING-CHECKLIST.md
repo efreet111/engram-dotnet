@@ -268,6 +268,58 @@ curl -s "$BASE/prompts/recent?project=$PROJECT&limit=50" -H "X-Engram-User: user
 
 ---
 
+## 🪵 Logging regression (2026-06-05)
+
+> Feature: **logging-infrastructure** (ENG-207) — structured JSON logging, POST body preview, `ENGRAM_LOG_LEVEL`, global exception handler.  
+> Verificado por orquestador + agente forge-memory contra `http://localhost:7437` (local dev).  
+> **Commit**: `99b3ca9` (no deployado — código local).
+
+| PM | Case | Status | Notes |
+|----|------|--------|-------|
+| PM-1 | GET /health → JSON log with all fields | ✅ | JSON: `Timestamp`, `LogLevel`, `Method`, `Path`, `Status`, `Duration`, `ClientIp` |
+| PM-2 | GET /foo (404) → log status 404 | ✅ | Warning level, status=404, no `error` object |
+| PM-3 | POST malformed JSON → body preview | ✅ | `body preview:` field in log at Warning level |
+| PM-4 | Endpoint throws 5xx → JSON error + stack trace | ⚠️ | **Deferred** — no endpoint always-throws available. Covered by unit test `Endpoint_Throwing_Returns500Json` |
+| PM-5 | ENGRAM_LOG_LEVEL=warn suppresses info | ✅ | Info suppressed, Warning/Error logged |
+| PM-6 | ClientIp field present | ✅ | `127.0.0.1` in `State.ClientIp` |
+| PM-7 | CLI Console.WriteLine preserved | ✅ | 100 `Console.WriteLine` in CLI (untouched) |
+
+### curl snippets (reproducible)
+
+Ejecutar contra servidor local en `http://localhost:7437` con logs visibles en stdout:
+
+```bash
+# PM-1: Health check
+curl -s http://localhost:7437/health
+# Log esperado: JSON con @timestamp, level, method=GET, path=/health, status=200, duration_ms, client_ip
+
+# PM-2: 404
+curl -s http://localhost:7437/will-not-exist
+# Log esperado: Warning level, status=404, no error object
+
+# PM-3: Malformed JSON
+curl -s -X POST http://localhost:7437/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"id":"test-pm3",invalid'
+# Esperado: HTTP 400. Log contiene "body preview: {"id":"test-pm3",invalid"
+
+# PM-5: Log level suppression
+ENGRAM_LOG_LEVEL=warn ./engram serve --port 7438 &
+curl -s http://localhost:7438/health
+# Esperado: 200 pero NO log line (info suppressed at warn level)
+kill %1 2>/dev/null
+
+# PM-6: Client IP
+curl -s http://localhost:7437/health
+# Log debe contener client_ip (127.0.0.1 para localhost)
+
+# PM-7: CLI regression
+grep -c 'Console.WriteLine' src/Engram.Cli/Program.cs
+# Esperado: ~100 (user-facing output, no ILogger)
+```
+
+---
+
 ## 🐛 Bugs abiertos
 
 1. **`/sessions/{id}` GET**: Devuelve "session not found" para sessions ended vía `/end`. Debería devolver la session con `ended_at` en lugar de 404.

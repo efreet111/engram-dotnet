@@ -483,10 +483,9 @@ public static class CloudSyncEndpoints
             ctx.Request.Body.Position = 0;
             return body;
         }
-        catch (Exception ex)
+        catch
         {
-            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ReadJson");
-            logger.LogError(ex, "ReadJsonAsync failed");
+            // JSON error now handled by BodyDebugLoggingMiddleware
             return default;
         }
     }

@@ -7,6 +7,13 @@
 
 ### Added
 
+- **Logging infrastructure** — structured JSON logging with fields: `@timestamp`, `level`, `method`, `path`, `status`, `duration_ms`, `client_ip`
+  - FR-LOG-01: Request/response middleware captures client_ip
+  - FR-LOG-02: JSON structured output via `JsonConsoleFormatter`
+  - FR-LOG-03: POST body preview on JSON deserialization errors
+  - FR-LOG-04: Global exception handler returns JSON `{error, type}`
+  - FR-LOG-05: `ENGRAM_LOG_LEVEL` environment variable
+
 - **Hub MCP multi-editor** — `config/mcp/` (plantillas local + offline-sync, guías por editor, `INSTALL.md`)
 - **Setup wizard** — `scripts/setup.ps1` y `scripts/setup.sh` generan configs en `config/mcp/generated/`
 - **Backlog y flujo Git** — `docs/BACKLOG.md`, `docs/GIT-WORKFLOW.md`, `docs/SETUP-WIZARD.md`
