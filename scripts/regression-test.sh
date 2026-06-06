@@ -179,7 +179,24 @@ check_json  "[PM-4] POST /sessions"   201 '.status == "created"' \
 # cleanup PM-4
 curl -s -X DELETE "$BASE/sessions/sess-pm4-$TS" > /dev/null 2>&1 || true
 
-# ── 4. Logger checks (opt-in, requires docker) ───────────────────────────────
+# ── 4. Extended coverage (read paths + sync + project APIs) ────────────────
+
+header "Extended coverage (new — 2026-06-05)"
+
+# Core read paths
+check_json   "GET /search?q=test"           200 'true' "$BASE/search?q=test"
+check_json   "GET /observations/recent"      200 'length >= 0' "$BASE/observations/recent"
+check_json   "GET /sessions/recent"          200 'length >= 0' "$BASE/sessions/recent"
+check_json   "GET /projects/stats"           200 'length >= 0' "$BASE/projects/stats"
+check_json   "GET /projects/migrations"      200 'true' "$BASE/projects/migrations"
+check_json   "GET /prompts/search?q="        200 'length >= 0' "$BASE/prompts/search?q="
+
+# Sync read paths
+check_json   "GET /sync/mutations/pull"      200 'has("mutations")' \
+    "$BASE/sync/mutations/pull?project=$PROJ&since=2000-01-01"
+check_json   "GET /sync/enroll"              200 'has("projects")' "$BASE/sync/enroll"
+
+# ── 5. Logger checks (opt-in, requires docker) ───────────────────────────────
 
 header "Logging PM-* (log format)"
 
