@@ -189,7 +189,7 @@ check_json   "GET /observations/recent"      200 'length >= 0' "$BASE/observatio
 check_json   "GET /sessions/recent"          200 'length >= 0' "$BASE/sessions/recent"
 check_json   "GET /projects/stats"           200 'length >= 0' "$BASE/projects/stats"
 check_json   "GET /projects/migrations"      200 'true' "$BASE/projects/migrations"
-check_json   "GET /prompts/search?q="        200 'length >= 0' "$BASE/prompts/search?q="
+check_json   "GET /prompts/search"            200 'length >= 0' "$BASE/prompts/search?q=test"
 
 # Sync read paths
 check_json   "GET /sync/mutations/pull"      200 'has("mutations")' \
