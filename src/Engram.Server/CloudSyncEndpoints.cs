@@ -63,26 +63,19 @@ public static class CloudSyncEndpoints
         // Phase 3.1: Enrollment endpoints
         app.MapPost("/sync/enroll", async (HttpContext ctx, IStore store) =>
         {
-            Console.Error.WriteLine(">>> DEBUG: POST /sync/enroll reached");
-            System.Diagnostics.Debug.WriteLine(">>> DEBUG: POST /sync/enroll reached");
-
             if (store is not ICloudMutationStore cloudStore)
                 return Results.StatusCode(501);
 
-            Console.Error.WriteLine(">>> DEBUG: store is ICloudMutationStore");
             try
             {
                 var body = await ReadJsonAsync<EnrollmentRequest>(ctx, 1024 * 1024);
-                Console.Error.WriteLine($">>> DEBUG: body parsed: {body?.Project}");
 
                 if (body is null || string.IsNullOrEmpty(body.Project))
                     return ErrorJson(ctx, "project is required", "invalid-request", 400);
 
                 var user = ctx.Request.Headers[EngramServer.UserHeader].FirstOrDefault() ?? "anonymous";
-                Console.Error.WriteLine($">>> DEBUG: user={user}, project={body.Project}");
 
                 var result = await cloudStore.EnrollProjectAsync(body.Project, user, ctx.RequestAborted);
-                Console.Error.WriteLine($">>> DEBUG: enroll result: {result?.Status}");
 
                 if (result.Status == "already_enrolled")
                 {
@@ -101,8 +94,8 @@ public static class CloudSyncEndpoints
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($">>> DEBUG ERROR: {ex.GetType().Name}: {ex.Message}");
-                Console.Error.WriteLine(ex.ToString());
+                var logger = ctx.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("CloudSync");
+                logger?.LogError(ex, "POST /sync/enroll failed");
                 return Results.Json(new { error = ex.Message, type = ex.GetType().Name }, JsonOpts, statusCode: 500);
             }
         });

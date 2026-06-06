@@ -1,15 +1,15 @@
 # Technical Debt Backlog
 
-> Code review findings — 2026-04-24
+> Code review findings — 2026-04-24 (updated audit 2026-06-05)  
 > Prioritized by severity. Each item is independent and can be tackled in its own branch.
 
 ---
 
 ## 🔴 Alta Prioridad
 
-### TD-001 — PostgresStore: God Class (1221 líneas)
+### TD-001 — PostgresStore: God Class (2136 líneas)
 
-**Problema**: `PostgresStore.cs` tiene 1221 líneas con 22+ métodos, migrations, helpers, queries, todo mezclado. SRP violado.
+**Problema**: `PostgresStore.cs` tiene **2136 líneas** (audit 2026-06; era 1221 en review 2026-04) con migrations, helpers, queries mezclados. SRP violado.
 
 **Propuesta**: Separar con `partial classes`:
 ```
@@ -28,9 +28,9 @@ PostgresStore.Helpers.cs  → Read*, Query*, mappers
 
 ---
 
-### TD-002 — SqliteStore: God Class (1703 líneas)
+### TD-002 — SqliteStore: God Class (2397 líneas)
 
-**Problema**: Misma situación que PostgresStore pero peor — 1703 líneas. Es la clase más grande del proyecto.
+**Problema**: Misma situación que PostgresStore pero peor — **2397 líneas** (audit 2026-06; era 1703 en review 2026-04). Es la clase más grande del proyecto.
 
 **Propuesta**: Misma estrategia de partial classes que TD-001.
 
@@ -42,7 +42,7 @@ PostgresStore.Helpers.cs  → Read*, Query*, mappers
 
 ### TD-003 — PostgresStore: Métodos "Async" son sincrónicos
 
-**Problema**: ~15 métodos tienen nombre `*Async()` pero usan `ExecuteNonQuery()`, `ExecuteReader()`, `ExecuteScalar()` sincrónicos. Solo envuelven el resultado en `Task.CompletedTask` o `Task.FromResult()`.
+**Problema**: ~15 métodos tienen nombre `*Async()` pero usan APIs sincrónicas. Audit 2026-06: **6 ocurrencias** actuales de `Task.CompletedTask` en PostgresStore (L341, 353, 473, 863, 1085, 1616); SqliteStore tiene 14 adicionales (ver TD-014).
 
 **Archivos**: `PostgresStore.cs` (líneas 205, 219, 231, etc.)
 
@@ -116,9 +116,9 @@ cmd.Parameters.Add(new NpgsqlParameter("@param", NpgsqlDbType.Text) { Value = (o
 
 ---
 
-### TD-009 — EngramTools.cs: Separar por categoría (638 líneas)
+### TD-009 — EngramTools.cs: Separar por categoría (1034 líneas, 26 tools)
 
-**Problema**: Las 15 herramientas MCP están en una sola clase.
+**Problema**: Las **26** herramientas MCP están en una sola clase (1034 LOC; audit 2026-06).
 
 **Propuesta**: Partial classes por categoría: `EngramTools.Save.cs`, `EngramTools.Search.cs`, `EngramTools.Session.cs`, etc.
 
@@ -161,5 +161,39 @@ File.Move(tmp, path, overwrite: true);
 ```
 
 **Impacto**: Previene corrupción de estado. No crítico para Fase A (--force re-exporta todo).
+
+---
+
+## 🔴 Alta Prioridad (audit 2026-06-05)
+
+### TD-013 — SqliteStore: ApplyPulledMutationAsync stub
+
+**Problema**: `SqliteStore.cs:1910-1916` — `ApplyPulledMutationAsync` retorna `Task.CompletedTask` sin aplicar mutaciones. `SyncManager.PullAsync` (L271) invoca este método; el cursor avanza pero los datos pulled no se persisten localmente.
+
+**Propuesta**: Implementar upsert session/observation/prompt desde `SyncMutation.Payload` con FK deferral. Añadir test en `CloudSyncIntegrationTests`.
+
+**Impacto**: P0 funcional para usuarios con `ENGRAM_SYNC_ENABLED` y SQLite local.
+
+**Origen**: AUD-013 — [`.ai-work/code-audit/`](../../.ai-work/code-audit/)
+
+---
+
+### TD-014 — SqliteStore: Métodos Async sincrónicos (14 ocurrencias)
+
+**Problema**: Misma deuda que TD-003 pero en SqliteStore — 14× `return Task.CompletedTask` incluyendo métodos `ILocalSyncStore`.
+
+**Propuesta**: Priorizar después de TD-003 (Postgres prod).
+
+**Impacto**: P2 mantenimiento / thread pool bajo carga.
+
+---
+
+### TD-015 — Debug residual en Server (resuelto parcialmente)
+
+**Problema**: 7× `Console.Error` en `/sync/enroll` y endpoint `/debug-test` sin tests.
+
+**Estado**: Console.Error eliminados y `/debug-test` removido (2026-06-05). Ver ENG-419.
+
+**Impacto**: P2 limpieza operacional.
 
 ---

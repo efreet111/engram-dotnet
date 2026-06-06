@@ -74,6 +74,10 @@ jobs:
         run: dotnet test tests/Engram.Postgres.Tests/Engram.Postgres.Tests.csproj --no-build -c Release --logger "console;verbosity=normal" --logger "trx;LogFileName=test-results.trx"
         timeout-minutes: 10
 
+      - name: Test (Cloud sync integration)
+        run: dotnet test tests/Engram.Server.Tests/Engram.Server.Tests.csproj --no-build -c Release --filter "FullyQualifiedName~CloudSyncIntegrationTests" --logger "console;verbosity=normal"
+        timeout-minutes: 10
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
