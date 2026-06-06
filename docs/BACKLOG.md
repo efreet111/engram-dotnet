@@ -242,6 +242,19 @@ curl http://server:7437/search?q=Offline
 
 **Hecho cuando:** un usuario existente con schema viejo y uno nuevo con schema limpio pueden hacer sync sin errores.
 
+### ⚠️ Nota sobre salud del sync (2026-06-05)
+
+Durante T3 (Docker + Postgres local) y regresiones contra TrueNAS, se observaron errores recurrentes de sync:
+
+- **`SQLite Error 1: 'no such column: id'`** en `ReplayDeferredAsync` — schema mismatch entre cliente viejo y nuevo (ENG-211)
+- **7 `Console.Error.WriteLine` debug prints** en `CloudSyncEndpoints.cs` — removidos (commit `74f4455`), pero sugieren que el handler de `/sync/enroll` tuvo debugging pesado → posible fragilidad
+- **SyncManager ciclos fallando** en background durante pruebas — aunque el server responde bien a `/health` y `/sync/status`, los ciclos de sync pueden estar bloqueados silenciosamente
+
+**Recomendación para release testing:**
+- Monitorear `docker logs engram | grep SyncManager` durante pruebas de aceptación
+- Verificar `GET /sync/status` devuelve `consecutive_failures: 0` después de 5+ minutos de uptime
+- ENG-209 y ENG-210 (multi-usuario) deben incluir verificación de sync health como paso obligatorio
+
 ---
 
 ### ENG-306 — Trazabilidad en backlog (P1, chore)
