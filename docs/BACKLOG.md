@@ -89,7 +89,24 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía “instalación desde git” unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
 | 8 | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Ready | S | backlog | — |
+| — | **Estabilidad inmediata (v1.0.0)** |
+| 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Ready | M | ← PRD memoria semántica | Ver [RFC-001](../docs/architecture/rfc/RFC-001-project-identity.md) |
+| 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Ready | S | ← PRD memoria semántica punto #5 | Una línea de connection string + retry policy |
+| — | **Meta v1.1 — memoria semántica avanzada** |
+| — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
+| — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
+| — | ENG-414 | P2 | Feature | Contradicción temporal y supersedencia de memorias | Ready | L | ← PRD memoria semántica punto #2 | Depende de ENG-412 |
+| — | ENG-415 | P2 | Feature | Resolución de conflictos sync multi-dispositivo | Ready | L | ← PRD memoria semántica punto #6 | — |
+| — | ENG-416 | P2 | Chore | Schema evolution con migraciones versionadas | Ready | M | ← PRD memoria semántica punto #7 | — |
+| — | ENG-417 | P2 | Feature | SQLite encryption (SQLCipher) | Ready | M | ← PRD memoria semántica punto #8 | — |
+| — | ENG-418 | P2 | Feature | Búsqueda híbrida (vector + FTS5 + metadata) | Ready | XL | ← PRD memoria semántica punto #9 | Requiere embeddings |
 | — | **Icebox (no sacar hasta vaciar P0/P1)** |
+| — | ENG-419 | P2 | Bug | Eliminar debug enroll + endpoint /debug-test | Done | S | ← audit AUD-021/022 | Resuelto 2026-06-05 |
+| — | ENG-420 | P1 | Test | CloudSyncIntegrationTests en CI PR | Done | S | ← audit AUD-031 | Step en ci.yml job postgres |
+| — | ENG-421 | P0 | Bug | Implementar ApplyPulledMutationAsync (sync pull) | Ready | L | ← audit AUD-013 | [TD-013](TECHNICAL-DEBT.md#td-013--sqlitestore-applypulledmutationasync-stub) |
+| — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
+| — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
+| — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
 | — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
 | — | ENG-403 | P2 | Feature | Phase 3 — breaking (quitar `project` de writes) | Icebox | L | Requiere guía migración |
@@ -419,6 +436,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 | 2026-06-05 | Logging infrastructure implementado: JSON logging, client_ip, body preview, ENGRAM_LOG_LEVEL env var. |
 | 2026-06-05 | ENG-306 cerrado: secciones detalladas para ENG-4xx (Icebox). |
 | 2026-06-05 | ENG-211 fileado: SyncManager SQLite schema mismatch (bug descubierto gracias a logs JSON). |
+| 2026-06-05 | PRD Memoria Semántica v1.1 documentado (10 puntos) + RFC-001 Project Identity + ENG-410..418 agregados al backlog. |
 | 2026-06-04 | Verificación manual post-deploy: smoke test + 5 regression tests (R1-R5) contra `192.168.0.178:7437`, todos OK. Checklist actualizado. |
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
