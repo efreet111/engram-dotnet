@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-05-28  
+**Última actualización:** 2026-06-06  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -63,7 +63,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | # | ID | P | Tipo | Feature | Estado | Effort | Origen | Spec / notas |
 |---|-----|---|------|---------|--------|--------|--------|--------------|
-| — | **Hecho recientemente (2026-05-27/28)** |
+| — | **Hecho recientemente (2026-05-27/28 y 2026-06-06)** |
 | ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | testing | `69e83d7` |
 | ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | testing | `69e83d7` |
 | ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | testing | `69e83d7` |
@@ -77,18 +77,21 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-205 | — | Doc | Auditoría README vs código (tools, endpoints, versiones) | Done | M | sesión pre-release | Versiones corregidas + 7 endpoints |
 | ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | testing | 2 fixeados, 1 eliminado |
 | ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | sesión pre-release | — |
-| — | **Siguiente (cerrar base pre-release)** |
+| ✓ | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Done | S | backlog | `781e9fe` |
+| ✓ | ENG-306 | P1 | Chore | Mejorar trazabilidad en backlog (columna Origen + template HU) | Done | S | ← ENG-205 | Columna Origen agregada |
+| ✓ | ENG-307 | P1 | Test | Test infrastructure: `regression-test.sh` (31 checks) + `dev-test.sh` (T3 gate) | Done | S | sesión 2026-06-05 | `781e9fe` |
+| ✓ | ENG-308 | P1 | Doc | Dev workflow docs: `AGENTS.md` + `docs/DEVELOPMENT.md` | Done | S | sesión 2026-06-05 | `781e9fe` |
 | ✓ | ENG-207 | P0 | Feature | Logging infrastructure | Done | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
+| — | **Siguiente (cerrar base pre-release)** |
 | 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | ← upstream engram | `mem_current_project` ya Done |
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
 | 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Ready | S | descubierto en sesión logging 2026-06-05 | Ver contexto abajo |
-| 5 | ENG-306 | P1 | Chore | Mejorar trazabilidad en backlog (columna Origen + template HU) | Ready | S | ← ENG-205 | Columna Origen agregada |
+| 4.2 | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array). Fix ya aplicado en L1703. | Ready | S | descubierto en sesión ENG-426 | Bug en sync pull con allowedProjects — post-commit 781e9fe |
 | — | **Meta junio — instalador y DX** |
 | 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
-| 7 | ENG-303 | P1 | Doc | Guía “instalación desde git” unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
-| 8 | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Ready | S | backlog | — |
+| 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Ready | M | ← PRD memoria semántica | Ver [RFC-001](../docs/architecture/rfc/RFC-001-project-identity.md) |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Ready | S | ← PRD memoria semántica punto #5 | Una línea de connection string + retry policy |
@@ -104,6 +107,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | ENG-419 | P2 | Bug | Eliminar debug enroll + endpoint /debug-test | Done | S | ← audit AUD-021/022 | Resuelto 2026-06-05 |
 | — | ENG-420 | P1 | Test | CloudSyncIntegrationTests en CI PR | Done | S | ← audit AUD-031 | Step en ci.yml job postgres |
 | — | ENG-421 | P0 | Bug | Implementar ApplyPulledMutationAsync (sync pull) | Ready | L | ← audit AUD-013 | [TD-013](TECHNICAL-DEBT.md#td-013--sqlitestore-applypulledmutationasync-stub) |
+| ✓ | ENG-425 | P0 | Feature | Server-side mutation apply: servidor aplica mutations a PostgresStore | Done | L | ← ADR-002 decisión | [ADR-002](../docs/architecture/adr/ADR-002-sync-mutation-application.md) |
+| ✓ | ENG-426 | P0 | Architecture | ID mapping strategy: sync_id como canonical (sin mapping a server ID) | Done | M | ← ADR-002 decisión | Verificado V1-V6. Fix bug SQL en ListMutationsSinceAsync (L1703). |
 | — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
@@ -349,6 +354,51 @@ dotnet build -c Release
 
 ---
 
+### ENG-425 — Server-side mutation apply (P0)
+
+**Problema:** El servidor (PostgresStore) solo almacena mutations en `cloud_mutations` pero NO las aplica a su store. Los agentes en centralized mode ven datos vacíos.
+
+**Para qué sirve:** Que el servidor sea la memoria compartida del equipo. Cualquier agente puede consultar y ver todas las memorias sync-eadas.
+
+**Contexto:** ADR-002 decidió que para equipos, el servidor debe aplicar mutations a su PostgresStore. Sin esto, FlowForge y otros agentes trabajan a ciegas.
+
+**Stories:**
+- [ ] `InsertMutationBatchAsync` aplica cada mutation a PostgresStore además de `cloud_mutations`
+- [ ] Observation upsert/delete con `sync_id` como canonical ID
+- [ ] Session upsert/delete
+- [ ] Prompt upsert/delete
+- [ ] FK handling: observation/prompt referencing session via `sync_id`
+- [ ] Tests: verificar que mutations se aplican a PostgresStore
+
+**Cómo probar:**
+```bash
+# Cliente A crea memoria y hace push
+docker run ... save "decisión arquitectura" --project team/mi-api
+# SyncManager hace push
+
+# En otra máquina, Cliente B consulta centralized mode
+curl http://servidor:7437/observations/recent?project=team/mi-api
+# → debe ver la memoria de A ✅
+```
+
+**Hecho cuando:** centralized mode muestra todas las memorias del equipo, no vacío.
+
+---
+
+### ENG-426 — ID mapping strategy para server-side apply (P0, depende de ENG-425)
+
+**Problema:** Cuando el cliente hace push, usa `sync_id` local. El servidor necesita una estrategia para mapear/almacenar estos IDs.
+
+**Decisión pendiente:** Usar `sync_id` como canonical ID o mapear a server ID secuencial.
+
+**Stories:**
+- [ ] Diseñar estrategia de ID mapping
+- [ ] Implementar según estrategia elegida
+- [ ] Verificar que queries por `sync_id` funcionan en PostgresStore
+- [ ] Tests de roundtrip completo (push → server apply → pull → apply local)
+
+---
+
 ### ✅ ENG-202 — OSS essentials (Done)
 
 **Entregado:**
@@ -445,6 +495,14 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-09 | **ENG-425 Done**: Server-side mutation apply implementado y verificado (40/40 tests, PM-1 a PM-7 manuales). Servidor aplica mutations a PostgresStore además de cloud_mutations. sync_id como canonical ID. |
+| 2026-06-09 | **ENG-426 Done**: ID mapping strategy verificado (V1-V6). sync_id como canonical — queries funcionan en todos los paths REST. |
+| 2026-06-09 | **ENG-427 agregado**: Bug en ListMutationsSinceAsync — SQL syntax error con project filter (ANY array). Fix ya aplicado en PostgresStore.cs L1703. |
+| 2026-06-07 | **DECISIÓN ADR-002**: Option B — Server apply mutations a PostgresStore. Prioridad P0. ENG-425 y ENG-426 agregados al backlog. |
+| 2026-06-07 | ENG-425: Server-side mutation apply (P0). ADR-002 decisión: para equipos, el servidor debe ser memoria compartida. Centralized mode funciona correctamente. |
+| 2026-06-07 | ENG-426: ID mapping strategy para server-side apply (P0, depende de ENG-425). |
+| 2026-06-07 | ENG-425 agregado: Servidor como relay puro — mutations no se aplican a PostgresStore. ADR-002 creado con análisis completo. Contradicción: OFFLINE-FIRST-SYNC.md dice "server is source of truth" pero implementación no aplica mutations. |
+| 2026-06-06 | ENG-304, ENG-306 Done: versions centralizadas + trazabilidad backlog. ENG-307 (test scripts: regression-test.sh 31 checks + dev-test.sh T3 gate) y ENG-308 (AGENTS.md + DEVELOPMENT.md) agregados al backlog. |
 | 2026-06-05 | ENG-207 cerrado: Logging infrastructure (5 FRs, PM-*, ~3-4h, código no desplegado) |
 | 2026-06-05 | Logging infrastructure implementado: JSON logging, client_ip, body preview, ENGRAM_LOG_LEVEL env var. |
 | 2026-06-05 | ENG-306 cerrado: secciones detalladas para ENG-4xx (Icebox). |

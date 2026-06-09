@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using Engram.Store;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -581,5 +582,336 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         Assert.NotEmpty(results);
         // Topic-key shortcut should have rank = 10000 (boosted for Postgres DESC sort)
         Assert.Equal(10000.0, results[0].Rank);
+    }
+
+    // ─── Server-side mutation apply (ENG-425) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task PushMutation_SessionUpsert_AppliesToDataStore()
+    {
+        // PM-1: Push de session upsert genera entrada consultable
+        var sessionKey = $"pm1-session-{Guid.NewGuid():N}";
+        var payload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm1",
+            directory = "/test/dir",
+            started_at = "2026-06-07T10:00:00Z",
+            summary = "Test session"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-pm1", "session", sessionKey, "upsert", payload)
+        };
+
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Verify session was applied to data store
+        var session = await _fixture.Store.GetSessionAsync(sessionKey);
+        Assert.NotNull(session);
+        Assert.Equal(sessionKey, session.Id);
+        Assert.Equal("test-pm1", session.Project);
+        Assert.Equal("/test/dir", session.Directory);
+    }
+
+    [Fact]
+    public async Task PushMutation_ObservationUpsert_AppliesToDataStore()
+    {
+        // PM-2: Push de observation upsert genera entrada consultable por sync_id
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm2-session-{Guid.NewGuid():N}";
+
+        // First push the session via mutation (PM-1)
+        var sessionPayload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm2",
+            directory = "/test",
+            started_at = "2026-06-07T10:00:00Z"
+        });
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm2", "session", sessionKey, "upsert", sessionPayload)
+        });
+
+        // Now push the observation
+        var obsKey = $"pm2-obs-{Guid.NewGuid():N}";
+        var obsPayload = JsonSerializer.Serialize(new
+        {
+            sessionId = sessionKey,  // For FK, use session's sync_id as the reference
+            type = "decision",
+            title = "Architecture decision",
+            content = "We chose hexagonal architecture",
+            project = "test-pm2",
+            scope = "project",
+            occurred_at = "2026-06-07T11:00:00Z"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-pm2", "observation", obsKey, "upsert", obsPayload)
+        };
+
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Verify observation exists via direct DB query
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT title FROM observations WHERE sync_id = @syncId",
+            conn);
+        cmd.Parameters.AddWithValue("@syncId", obsKey);
+        var title = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(title);
+        Assert.Equal("Architecture decision", title);
+    }
+
+    [Fact]
+    public async Task PushMutation_ObservationDelete_SoftDeletes()
+    {
+        // PM-3: Observation delete soft-deletes (no elimina fila)
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm3-session-{Guid.NewGuid():N}";
+
+        // Push session first
+        var sessionPayload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm3",
+            directory = "/test",
+            started_at = "2026-06-07T10:00:00Z"
+        });
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm3", "session", sessionKey, "upsert", sessionPayload)
+        });
+
+        // Create observation via direct API
+        var obsKey = $"pm3-obs-{Guid.NewGuid():N}";
+        var obsId = await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = sessionKey,
+            Title = "To delete",
+            Content = "Content",
+            Type = "manual",
+            Project = "test-pm3"
+        });
+
+        // Get the sync_id from the observation
+        var obs = await _fixture.Store.GetObservationAsync(obsId);
+        Assert.NotNull(obs);
+        var syncId = obs.SyncId ?? obsKey;
+
+        // Push delete mutation
+        var deletePayload = JsonSerializer.Serialize(new { });
+        var entries = new[]
+        {
+            new MutationEntry("test-pm3", "observation", syncId, "delete", deletePayload)
+        };
+
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Verify soft-delete
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT deleted_at FROM observations WHERE sync_id = @syncId AND deleted_at IS NOT NULL",
+            conn);
+        cmd.Parameters.AddWithValue("@syncId", syncId);
+        var deletedAt = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(deletedAt);
+    }
+
+    [Fact]
+    public async Task PushMutation_PromptUpsert_AppliesToDataStore()
+    {
+        // PM-4: Prompt upsert aplica con FK referenciando session existente
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm4-session-{Guid.NewGuid():N}";
+
+        // Push session first
+        var sessionPayload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm4",
+            directory = "/test",
+            started_at = "2026-06-07T10:00:00Z"
+        });
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm4", "session", sessionKey, "upsert", sessionPayload)
+        });
+
+        // Now push the prompt
+        var promptKey = $"pm4-prompt-{Guid.NewGuid():N}";
+        var payload = JsonSerializer.Serialize(new
+        {
+            sessionId = sessionKey,  // For FK, use session's sync_id as reference
+            content = "How do I implement JWT?",
+            project = "test-pm4",
+            occurred_at = "2026-06-07T12:00:00Z"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-pm4", "prompt", promptKey, "upsert", payload)
+        };
+
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Verify prompt was applied
+        var prompts = await _fixture.Store.RecentPromptsAsync("test-pm4", null, 10);
+        Assert.NotEmpty(prompts);
+        Assert.Contains(prompts, p => p.Content.Contains("JWT"));
+    }
+
+    [Fact]
+    public async Task PushMutation_Batch_Atomic_CommitsTogether()
+    {
+        // PM-5: Batch atómico - both session and observation commit together
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm5-session-{Guid.NewGuid():N}";
+        var obsKey = $"pm5-obs-{Guid.NewGuid():N}";
+
+        // Batch with valid session + observation
+        var sessionPayload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm5",
+            directory = "/test",
+            started_at = "2026-06-07T10:00:00Z"
+        });
+        var obsPayload = JsonSerializer.Serialize(new
+        {
+            sessionId = sessionKey,
+            type = "manual",
+            title = "Should exist",
+            content = "Content",
+            project = "test-pm5"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-pm5", "session", sessionKey, "upsert", sessionPayload),
+            new MutationEntry("test-pm5", "observation", obsKey, "upsert", obsPayload)
+        };
+
+        // Should succeed - both apply
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Verify both were applied
+        var session = await _fixture.Store.GetSessionAsync(sessionKey);
+        Assert.NotNull(session);
+
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("SELECT title FROM observations WHERE sync_id = @syncId", conn);
+        cmd.Parameters.AddWithValue("@syncId", obsKey);
+        var title = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(title);
+    }
+
+    [Fact]
+    public async Task PushMutation_Batch_Atomic_RollbackOnFkViolation()
+    {
+        // PM-5: Batch atómico con FK violation debe hacer rollback completo
+        await _fixture.ResetAsync();
+        var obsKey = $"pm5-rollback-obs-{Guid.NewGuid():N}";
+        var nonExistentSessionKey = $"non-existent-session-{Guid.NewGuid():N}";
+
+        // Batch with observation referencing NON-EXISTENT-SESSION
+        var obsPayload = JsonSerializer.Serialize(new
+        {
+            sessionId = nonExistentSessionKey,
+            type = "manual",
+            title = "Should NOT exist",
+            content = "Content",
+            project = "test-pm5-rollback"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-pm5-rollback", "observation", obsKey, "upsert", obsPayload)
+        };
+
+        // Attempt should fail due to FK violation
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => _fixture.Store.InsertMutationBatchAsync(entries));
+
+        // Verify observation was NOT inserted (atomic rollback worked)
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var checkCmd = new NpgsqlCommand("SELECT title FROM observations WHERE sync_id = @syncId", conn);
+        checkCmd.Parameters.AddWithValue("@syncId", obsKey);
+        var title = await checkCmd.ExecuteScalarAsync();
+        Assert.Null(title);
+    }
+
+    [Fact]
+    public async Task PushMutation_DuplicateUpsert_IsIdempotent()
+    {
+        // PM-6: Duplicate upsert es idempotente (no falla, actualiza)
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm6-session-{Guid.NewGuid():N}";
+        var payload1 = JsonSerializer.Serialize(new
+        {
+            project = "test-pm6",
+            directory = "/dir1",
+            summary = "Original"
+        });
+        var payload2 = JsonSerializer.Serialize(new
+        {
+            project = "test-pm6",
+            directory = "/dir2",
+            summary = "Updated"
+        });
+
+        // First push
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm6", "session", sessionKey, "upsert", payload1)
+        });
+
+        // Second push (same entity_key, different values)
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm6", "session", sessionKey, "upsert", payload2)
+        });
+
+        // Verify updated (not error)
+        var session = await _fixture.Store.GetSessionAsync(sessionKey);
+        Assert.NotNull(session);
+        Assert.Equal("/dir2", session.Directory);
+        Assert.Equal("Updated", session.Summary);
+    }
+
+    [Fact]
+    public async Task PushMutation_RecentObservations_IncludesSyncedData()
+    {
+        // PM-7: Consultar observations desde REST muestra datos sync-eados
+        await _fixture.ResetAsync();
+        var sessionKey = $"pm7-session-{Guid.NewGuid():N}";
+        var payload = JsonSerializer.Serialize(new
+        {
+            project = "test-pm7",
+            directory = "/test",
+            started_at = "2026-06-07T10:00:00Z"
+        });
+        var obsPayload = JsonSerializer.Serialize(new
+        {
+            sessionId = sessionKey,
+            type = "decision",
+            title = "Arquitectura decisions",
+            content = "We chose hexagonal architecture",
+            project = "test-pm7",
+            scope = "project",
+            occurred_at = "2026-06-07T11:00:00Z"
+        });
+
+        // Push session + observation
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry("test-pm7", "session", sessionKey, "upsert", payload),
+            new MutationEntry("test-pm7", "observation", $"pm7-obs-{Guid.NewGuid():N}", "upsert", obsPayload)
+        });
+
+        // Query via search (simulates GET /observations/recent)
+        var results = await _fixture.Store.SearchAsync("Arquitectura", new SearchOptions { Project = "test-pm7", Limit = 10 });
+        Assert.NotEmpty(results);
     }
 }

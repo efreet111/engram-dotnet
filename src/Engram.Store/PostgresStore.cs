@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Engram.Store;
@@ -9,20 +10,30 @@ namespace Engram.Store;
 /// <summary>
 /// PostgreSQL-backed implementation of IStore.
 /// Schema, dedup logic, and FTS (tsvector) behaviour are intentionally equivalent to SqliteStore.
-/// Implements ICloudMutationStore and ICloudChunkStore for offline-first-sync (Phase 1).
+/// Implements ICloudMutationStore and ICloudChunkStore for offline-first-sync Phase 1).
 /// </summary>
 public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly StoreConfig _cfg;
+    private readonly ILogger<PostgresStore>? _logger;
     public string BackendName => "postgres";
     public int MaxObservationLength => _cfg.MaxObservationLength;
 
+    // JSON options with case-insensitive property matching (for pull payloads)
+    private static readonly JsonSerializerOptions JsonPullOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     // ─── Construction ──────────────────────────────────────────────────────────
 
-    public PostgresStore(StoreConfig cfg)
+    public PostgresStore(StoreConfig cfg) : this(cfg, null) { }
+
+    public PostgresStore(StoreConfig cfg, ILogger<PostgresStore>? logger)
     {
         _cfg = cfg;
+        _logger = logger;
 
         if (string.IsNullOrWhiteSpace(cfg.PgConnectionString))
             throw new ArgumentException(
@@ -1633,6 +1644,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         try
         {
+            // 1. Insert each mutation into cloud_mutations (journal)
             foreach (var entry in entries)
             {
                 await using var cmd = txConn.CreateCommand();
@@ -1651,6 +1663,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 var seq = (long)(await cmd.ExecuteScalarAsync(ct))!;
                 seqs.Add(seq);
             }
+
+            // 2. Apply mutations to data store within the same transaction (PM-5: atomic batch)
+            await ApplyMutationsToDataStoreAsync(txConn, entries, ct);
 
             tx.Commit();
             return seqs;
@@ -1678,14 +1693,8 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         if (allowedProjects is not null && allowedProjects.Count > 0)
         {
-            var projectParams = new List<string>();
-            for (int i = 0; i < allowedProjects.Count; i++)
-            {
-                var paramName = $"@proj{i}";
-                projectParams.Add(paramName);
-                cmd.Parameters.AddWithValue(paramName, allowedProjects[i]);
-            }
-            sql += $" AND project = ANY({{{string.Join(",", projectParams)}}})";
+            cmd.Parameters.AddWithValue("@allowedProjects", allowedProjects.ToArray());
+            sql += " AND project = ANY(@allowedProjects)";
         }
 
         sql += " ORDER BY seq ASC LIMIT @limit";
@@ -2121,6 +2130,244 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         if (s == null) return "";
         if (s.Length <= max) return s;
         return s[..max] + "...";
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Server-side mutation apply (ENG-425)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Payload records for mutation deserialization (match SqliteStore order for JSON deserialization)
+    private record SessionPullPayload(string? Project, string? Directory, string? StartedAt, string? EndedAt, string? Summary);
+    private record ObservationPullPayload(string? SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt);
+    private record ObservationDeletePayload;
+    private record PromptPullPayload(string? SyncId, string? SessionId, string? Content, string? Project, string? OccurredAt);
+    private record PromptDeletePayload;
+
+    /// <summary>
+    /// Apply mutations to the data store within the same transaction.
+    /// Order: sessions first, then observations, then prompts (respects FK constraints).
+    /// </summary>
+    private async Task ApplyMutationsToDataStoreAsync(NpgsqlConnection txConn, IReadOnlyList<MutationEntry> entries, CancellationToken ct)
+    {
+        // Group by entity type for ordered apply (sessions → observations → prompts)
+        var sessionUpserts = entries.Where(e => e.Entity == "session" && e.Op == "upsert").ToList();
+        var observationUpserts = entries.Where(e => e.Entity == "observation" && e.Op == "upsert").ToList();
+        var observationDeletes = entries.Where(e => e.Entity == "observation" && e.Op == "delete").ToList();
+        var promptUpserts = entries.Where(e => e.Entity == "prompt" && e.Op == "upsert").ToList();
+        var promptDeletes = entries.Where(e => e.Entity == "prompt" && e.Op == "delete").ToList();
+
+        // Apply in order: sessions first (root), then observations, then prompts
+        foreach (var entry in sessionUpserts)
+        {
+            await ApplySessionUpsertAsync(txConn, entry, ct);
+        }
+
+        foreach (var entry in observationUpserts)
+        {
+            await ApplyObservationUpsertAsync(txConn, entry, ct);
+        }
+
+        foreach (var entry in observationDeletes)
+        {
+            await ApplyObservationDeleteAsync(txConn, entry, ct);
+        }
+
+        foreach (var entry in promptUpserts)
+        {
+            await ApplyPromptUpsertAsync(txConn, entry, ct);
+        }
+
+        foreach (var entry in promptDeletes)
+        {
+            await ApplyPromptDeleteAsync(txConn, entry, ct);
+        }
+    }
+
+    private async Task ApplySessionUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<SessionPullPayload>(entry.Payload, JsonPullOpts);
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize session payload for entity_key={EntityKey}", entry.EntityKey);
+            return;
+        }
+
+        await using var cmd = conn.CreateCommand();
+        // Use NULLIF to handle empty strings, COALESCE for TEXT fields (schema uses TEXT not TIMESTAMPTZ)
+        cmd.CommandText = @"
+            INSERT INTO sessions (id, project, directory, started_at, ended_at, summary)
+            VALUES (
+                @id, 
+                COALESCE(NULLIF(@project, ''), '(none)'), 
+                COALESCE(NULLIF(@directory, ''), '/'), 
+                COALESCE(@startedAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')),
+                @endedAt, 
+                @summary
+            )
+            ON CONFLICT(id) DO UPDATE SET
+                project    = COALESCE(NULLIF(@project, ''), sessions.project),
+                directory = COALESCE(NULLIF(@directory, ''), sessions.directory),
+                ended_at  = COALESCE(@endedAt, sessions.ended_at),
+                summary   = COALESCE(@summary, sessions.summary),
+                started_at = COALESCE(@startedAt, sessions.started_at)";
+
+        cmd.Parameters.AddWithValue("@id", entry.EntityKey);
+        cmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@directory", (object?)payload.Directory ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@startedAt", (object?)payload.StartedAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@endedAt", (object?)payload.EndedAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@summary", (object?)payload.Summary ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+        _logger?.LogInformation("Applied mutation session/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
+    }
+
+    private async Task ApplyObservationUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<ObservationPullPayload>(entry.Payload, JsonPullOpts);
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize observation payload for entity_key={EntityKey}", entry.EntityKey);
+            return;
+        }
+
+        // Use SessionId from payload (required for FK constraint)
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT id FROM observations WHERE sync_id = @syncId AND deleted_at IS NULL";
+        checkCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+        var existingId = await checkCmd.ExecuteScalarAsync(ct);
+
+        if (existingId is long id && id > 0)
+        {
+            // Update existing
+            await using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = @"
+                UPDATE observations
+                SET type = @type, title = @title, content = @content,
+                    tool_name = @toolName, project = @project, scope = @scope,
+                    topic_key = @topicKey, updated_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')
+                WHERE id = @id";
+
+            updateCmd.Parameters.AddWithValue("@id", id);
+            updateCmd.Parameters.AddWithValue("@type", (object?)payload.Type ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@title", (object?)payload.Title ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@toolName", (object?)payload.ToolName ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@scope", (object?)payload.Scope ?? "project");
+            updateCmd.Parameters.AddWithValue("@topicKey", (object?)payload.TopicKey ?? DBNull.Value);
+
+            await updateCmd.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            // Insert new
+            await using var insertCmd = conn.CreateCommand();
+            insertCmd.CommandText = @"
+                INSERT INTO observations
+                    (sync_id, session_id, type, title, content, tool_name, project,
+                     scope, topic_key, normalized_hash, revision_count, duplicate_count,
+                     last_seen_at, updated_at, created_at)
+                VALUES
+                    (@syncId, @sessionId, @type, @title, @content, @toolName, @project,
+                     @scope, @topicKey, @hash, 1, 1, 
+                     TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'),
+                     TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'),
+                     COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
+
+            insertCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+            insertCmd.Parameters.AddWithValue("@sessionId", (object?)payload.SessionId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@type", (object?)payload.Type ?? "manual");
+            insertCmd.Parameters.AddWithValue("@title", (object?)payload.Title ?? "");
+            insertCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? "");
+            insertCmd.Parameters.AddWithValue("@toolName", (object?)payload.ToolName ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@scope", (object?)payload.Scope ?? "project");
+            insertCmd.Parameters.AddWithValue("@topicKey", (object?)payload.TopicKey ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@hash", (object?)payload.Content ?? "");
+            insertCmd.Parameters.AddWithValue("@occurredAt", (object?)payload.OccurredAt ?? DBNull.Value);
+
+            await insertCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        _logger?.LogInformation("Applied mutation observation/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
+    }
+
+    private async Task ApplyObservationDeleteAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE observations
+            SET deleted_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'), 
+                updated_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')
+            WHERE sync_id = @syncId AND deleted_at IS NULL";
+
+        cmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+        await cmd.ExecuteNonQueryAsync(ct);
+        _logger?.LogInformation("Applied mutation observation/delete for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
+    }
+
+    private async Task ApplyPromptUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<PromptPullPayload>(entry.Payload, JsonPullOpts);
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize prompt payload for entity_key={EntityKey}", entry.EntityKey);
+            return;
+        }
+
+        // Check if prompt exists by sync_id (not soft-deleted)
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT id FROM user_prompts WHERE sync_id = @syncId AND deleted_at IS NULL";
+        checkCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+        var existingId = await checkCmd.ExecuteScalarAsync(ct);
+
+        if (existingId is long id && id > 0)
+        {
+            // Update existing
+            await using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = @"
+                UPDATE user_prompts
+                SET content = @content, project = @project
+                WHERE id = @id";
+
+            updateCmd.Parameters.AddWithValue("@id", id);
+            updateCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
+
+            await updateCmd.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            // Insert new
+            await using var insertCmd = conn.CreateCommand();
+            insertCmd.CommandText = @"
+                INSERT INTO user_prompts (sync_id, session_id, content, project, created_by, created_at)
+                VALUES (@syncId, @sessionId, @content, @project, 'sync', COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
+
+            insertCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+            insertCmd.Parameters.AddWithValue("@sessionId", (object?)payload.SessionId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? "");
+            insertCmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@occurredAt", (object?)payload.OccurredAt ?? DBNull.Value);
+
+            await insertCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        _logger?.LogInformation("Applied mutation prompt/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
+    }
+
+    private async Task ApplyPromptDeleteAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE user_prompts
+            SET deleted_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')
+            WHERE sync_id = @syncId AND deleted_at IS NULL";
+
+        cmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
+        await cmd.ExecuteNonQueryAsync(ct);
+        _logger?.LogInformation("Applied mutation prompt/delete for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 }
 

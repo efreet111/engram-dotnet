@@ -16,6 +16,12 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
     private readonly SqliteConnection _db;
     private readonly StoreConfig _cfg;
 
+    // JSON options with case-insensitive property matching (for pull payloads)
+    private static readonly JsonSerializerOptions JsonPullOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     // ─── Construction ──────────────────────────────────────────────────────────
 
     public SqliteStore(StoreConfig cfg)
@@ -1909,11 +1915,208 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
 
     public Task ApplyPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default)
     {
-        // Phase 1.4: Basic implementation — full apply logic in Phase 2
-        // For now, just log that we received it
-        // TODO: Implement full session/observation/prompt upsert with FK deferral
+        switch (mutation.Entity)
+        {
+            case "session" when mutation.Op == "upsert":
+                ApplySessionUpsert(mutation);
+                break;
+            case "observation" when mutation.Op == "upsert":
+                ApplyObservationUpsert(mutation);
+                break;
+            case "observation" when mutation.Op == "delete":
+                ApplyObservationDelete(mutation);
+                break;
+            case "prompt" when mutation.Op == "upsert":
+                ApplyPromptUpsert(mutation);
+                break;
+            case "prompt" when mutation.Op == "delete":
+                ApplyPromptDelete(mutation);
+                break;
+        }
         return Task.CompletedTask;
     }
+
+    private void ApplySessionUpsert(SyncMutation mutation)
+    {
+        var payload = JsonSerializer.Deserialize<SessionPullPayload>(mutation.Payload, JsonPullOpts);
+        if (payload is null) return;
+
+        WithTx(tx =>
+        {
+            Exec(tx,
+                @"INSERT INTO sessions (id, project, directory, started_at, ended_at, summary)
+                  VALUES (@id, @project, @directory, COALESCE(@startedAt, datetime('now')), @endedAt, @summary)
+                  ON CONFLICT(id) DO UPDATE SET
+                      project    = COALESCE(@project, project),
+                      directory  = COALESCE(@directory, directory),
+                      ended_at   = COALESCE(@endedAt, ended_at),
+                      summary   = COALESCE(@summary, summary),
+                      started_at = COALESCE(@startedAt, started_at)",
+                Param("@id",       mutation.EntityKey),
+                Param("@project",  payload.Project ?? ""),
+                Param("@directory", payload.Directory ?? ""),
+                Param("@startedAt", payload.StartedAt),
+                Param("@endedAt",  payload.EndedAt),
+                Param("@summary",  payload.Summary));
+        });
+    }
+
+    private void ApplyObservationUpsert(SyncMutation mutation)
+    {
+        var payload = JsonSerializer.Deserialize<ObservationPullPayload>(mutation.Payload, JsonPullOpts);
+        if (payload is null) return;
+
+        WithTx(tx =>
+        {
+            try
+            {
+                // Check if observation exists by sync_id
+                var existingId = QueryId(tx,
+                    "SELECT id FROM observations WHERE sync_id = @syncId AND deleted_at IS NULL",
+                    Param("@syncId", mutation.EntityKey));
+
+                if (existingId > 0)
+                {
+                    // Update existing
+                    Exec(tx,
+                        @"UPDATE observations
+                          SET type = @type, title = @title, content = @content,
+                              tool_name = @toolName, project = @project, scope = @scope,
+                              topic_key = @topicKey, updated_at = datetime('now')
+                          WHERE id = @id",
+                        Param("@id",      existingId),
+                        Param("@type",    payload.Type ?? ""),
+                        Param("@title",   payload.Title ?? ""),
+                        Param("@content", payload.Content ?? ""),
+                        Param("@toolName", payload.ToolName ?? ""),
+                        Param("@project", payload.Project ?? ""),
+                        Param("@scope",  payload.Scope ?? "project"),
+                        Param("@topicKey", payload.TopicKey ?? ""));
+                }
+                else
+                {
+                    // Insert new
+                    var hash = payload.Content is { } c ? Normalizers.HashNormalized(c) : "";
+                    Exec(tx,
+                        @"INSERT INTO observations
+                            (sync_id, session_id, type, title, content, tool_name, project,
+                             scope, topic_key, normalized_hash, revision_count, duplicate_count,
+                             last_seen_at, updated_at, created_at)
+                          VALUES
+                            (@syncId, @sessionId, @type, @title, @content, @toolName, @project,
+                             @scope, @topicKey, @hash, 1, 1, datetime('now'), datetime('now'), COALESCE(@occurredAt, datetime('now')))",
+                        Param("@syncId",   mutation.EntityKey),
+                        Param("@sessionId", payload.SessionId ?? ""),
+                        Param("@type",     payload.Type ?? ""),
+                        Param("@title",    payload.Title ?? ""),
+                        Param("@content",  payload.Content ?? ""),
+                        Param("@toolName", payload.ToolName ?? ""),
+                        Param("@project", payload.Project ?? ""),
+                        Param("@scope",   payload.Scope ?? "project"),
+                        Param("@topicKey",  payload.TopicKey ?? ""),
+                        Param("@hash",     hash),
+                        Param("@occurredAt", payload.OccurredAt));
+                }
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT (FK)
+            {
+                InsertDeferred(tx, mutation);
+            }
+        });
+    }
+
+    private void ApplyObservationDelete(SyncMutation mutation)
+    {
+        var payload = JsonSerializer.Deserialize<ObservationDeletePayload>(mutation.Payload, JsonPullOpts);
+        if (payload is null) return;
+
+        WithTx(tx =>
+        {
+            Exec(tx,
+                @"UPDATE observations
+                  SET deleted_at = datetime('now'), updated_at = datetime('now')
+                  WHERE sync_id = @syncId AND deleted_at IS NULL",
+                Param("@syncId", mutation.EntityKey));
+        });
+    }
+
+    private void ApplyPromptUpsert(SyncMutation mutation)
+    {
+        var payload = JsonSerializer.Deserialize<PromptPullPayload>(mutation.Payload, JsonPullOpts);
+        if (payload is null) return;
+
+        WithTx(tx =>
+        {
+            try
+            {
+                // Check if prompt exists by sync_id
+                var existingId = QueryId(tx,
+                    "SELECT id FROM user_prompts WHERE sync_id = @syncId AND deleted_at IS NULL",
+                    Param("@syncId", mutation.EntityKey));
+
+                if (existingId > 0)
+                {
+                    // Update existing
+                    Exec(tx,
+                        @"UPDATE user_prompts
+                          SET content = @content, project = @project
+                          WHERE id = @id",
+                        Param("@id",      existingId),
+                        Param("@content", payload.Content ?? ""),
+                        Param("@project", payload.Project ?? ""));
+                }
+                else
+                {
+                    // Insert new
+                    Exec(tx,
+                        @"INSERT INTO user_prompts (sync_id, session_id, content, project, created_by, created_at)
+                          VALUES (@syncId, @sessionId, @content, @project, @createdBy, COALESCE(@occurredAt, datetime('now')))",
+                        Param("@syncId",   mutation.EntityKey),
+                        Param("@sessionId", payload.SessionId ?? ""),
+                        Param("@content", payload.Content ?? ""),
+                        Param("@project", payload.Project ?? ""),
+                        Param("@createdBy", "sync"),
+                        Param("@occurredAt", payload.OccurredAt));
+                }
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT (FK)
+            {
+                InsertDeferred(tx, mutation);
+            }
+        });
+    }
+
+    private void ApplyPromptDelete(SyncMutation mutation)
+    {
+        var payload = JsonSerializer.Deserialize<PromptDeletePayload>(mutation.Payload, JsonPullOpts);
+        if (payload is null) return;
+
+        WithTx(tx =>
+        {
+            Exec(tx,
+                @"UPDATE user_prompts SET deleted_at = datetime('now')
+                  WHERE sync_id = @syncId AND deleted_at IS NULL",
+                Param("@syncId", mutation.EntityKey));
+        });
+    }
+
+    private void InsertDeferred(SqliteTransaction tx, SyncMutation mutation)
+    {
+        Exec(tx,
+            @"INSERT INTO sync_apply_deferred (entity, entity_key, op, payload, source) 
+              VALUES (@ent, @key, @op, @payload, 'pull')",
+            Param("@ent",     mutation.Entity),
+            Param("@key",     mutation.EntityKey),
+            Param("@op",      mutation.Op),
+            Param("@payload", mutation.Payload));
+    }
+
+    // Payload records for deserialization
+    private record SessionPullPayload(string Id, string? Project, string? Directory, string? EndedAt, string? Summary, string? StartedAt);
+    private record ObservationPullPayload(string SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt);
+    private record ObservationDeletePayload(string SyncId);
+    private record PromptPullPayload(string SyncId, string? SessionId, string? Content, string? Project, string? OccurredAt);
+    private record PromptDeletePayload(string SyncId);
 
     public async Task<ReplayDeferredResult> ReplayDeferredAsync(CancellationToken ct = default)
     {
@@ -2200,6 +2403,14 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
         if (result is null || result == DBNull.Value) return default;
         return (T)Convert.ChangeType(result, typeof(T).IsGenericType
             ? Nullable.GetUnderlyingType(typeof(T))! : typeof(T));
+    }
+
+    private long QueryId(SqliteTransaction tx, string sql, params SqliteParameter[] parms)
+    {
+        using var cmd = TxCmd(tx, sql, parms);
+        var result = cmd.ExecuteScalar();
+        if (result is null || result == DBNull.Value) return 0;
+        return Convert.ToInt64(result);
     }
 
     private static void AppendFilter(StringBuilder sql, List<SqliteParameter> parms, SearchOptions opts)

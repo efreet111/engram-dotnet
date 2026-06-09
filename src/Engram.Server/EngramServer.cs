@@ -202,12 +202,6 @@ public static class EngramServer
         // Cloud sync endpoints (offline-first-sync Phase 1.3)
         app.MapCloudSyncRoutes();
 
-        // Debug/test endpoint
-        app.MapPost("/debug-test", async (HttpContext ctx) =>
-        {
-            Console.Error.WriteLine(">>> DEBUG TEST endpoint hit!");
-            return Results.Ok(new { status = "ok" });
-        });
     }
     
     internal const string UserHeader = "X-Engram-User";
