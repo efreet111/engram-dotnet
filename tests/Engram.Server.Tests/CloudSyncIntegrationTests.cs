@@ -82,12 +82,22 @@ public sealed class CloudSyncPostgresFixture : IAsyncLifetime
     {
         await using var conn = new Npgsql.NpgsqlConnection(_container.GetConnectionString());
         await conn.OpenAsync();
-        await using var cmd = new Npgsql.NpgsqlCommand(
+
+        // Enable sync control
+        await using var cmd1 = new Npgsql.NpgsqlCommand(
             "INSERT INTO cloud_project_controls (project, sync_enabled) VALUES (@p, true) " +
             "ON CONFLICT (project) DO UPDATE SET sync_enabled = true",
             conn);
-        cmd.Parameters.AddWithValue("p", project);
-        await cmd.ExecuteNonQueryAsync();
+        cmd1.Parameters.AddWithValue("p", project);
+        await cmd1.ExecuteNonQueryAsync();
+
+        // Enroll project for the user so pull returns mutations
+        await using var cmd2 = new Npgsql.NpgsqlCommand(
+            "INSERT INTO sync_enrolled_projects (project, \"user\", enrolled_by) VALUES (@p, 'test', 'test') " +
+            "ON CONFLICT (project, \"user\") DO NOTHING",
+            conn);
+        cmd2.Parameters.AddWithValue("p", project);
+        await cmd2.ExecuteNonQueryAsync();
     }
 }
 
