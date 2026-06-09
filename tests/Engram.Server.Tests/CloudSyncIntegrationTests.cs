@@ -93,7 +93,7 @@ public sealed class CloudSyncPostgresFixture : IAsyncLifetime
 
         // Enroll project for the user so pull returns mutations
         await using var cmd2 = new Npgsql.NpgsqlCommand(
-            "INSERT INTO sync_enrolled_projects (project, \"user\", enrolled_by) VALUES (@p, 'test', 'test') " +
+            "INSERT INTO sync_enrolled_projects (project, \"user\", enrolled_by) VALUES (@p, '', 'test') " +
             "ON CONFLICT (project, \"user\") DO NOTHING",
             conn);
         cmd2.Parameters.AddWithValue("p", project);
