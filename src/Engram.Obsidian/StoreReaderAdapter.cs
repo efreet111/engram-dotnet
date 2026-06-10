@@ -18,4 +18,9 @@ public class StoreReaderAdapter : IObsidianStoreReader
     public Task<ExportData> ExportAsync() => _store.ExportAsync();
 
     public Task<Stats> StatsAsync() => _store.StatsAsync();
+
+    public Task<ExportData> ExportProjectAsync(string project) => _store.ExportProjectAsync(project);
+
+    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit) =>
+        _store.ExportSinceAsync(project, afterSeq, limit);
 }

@@ -487,4 +487,42 @@ public class HttpStoreTests : IAsyncDisposable
         var count = await _sut.CountObservationsForProjectAsync("nonexistent-proj");
         Assert.Equal(0, count);
     }
+
+    // ─── DELETE smoke tests ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteSession_SendsDeleteToSessionsEndpoint()
+    {
+        // Create a session first so we can delete it
+        await _sut.CreateSessionAsync("sess-delete-smoke", "proj", "/");
+        await _sut.DeleteSessionAsync("sess-delete-smoke");
+
+        // Verify it's gone
+        var session = await _sut.GetSessionAsync("sess-delete-smoke");
+        Assert.Null(session);
+    }
+
+    [Fact]
+    public async Task DeletePrompt_SendsDeleteToPromptsEndpoint()
+    {
+        // Create a session and prompt first so we can delete it
+        await _sut.CreateSessionAsync("sess-prompt-delete", "proj", "/");
+        await _sut.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = "sess-prompt-delete",
+            Content   = "Prompt to delete",
+            Project   = "proj",
+        });
+
+        // Get recent prompts to find the ID
+        var prompts = await _sut.RecentPromptsAsync("proj", null, 10);
+        var promptToDelete = prompts.FirstOrDefault();
+        Assert.NotNull(promptToDelete);
+
+        await _sut.DeletePromptAsync(promptToDelete.Id);
+
+        // Verify it's gone (recent prompts should not contain it)
+        var remaining = await _sut.RecentPromptsAsync("proj", null, 10);
+        Assert.DoesNotContain(remaining, p => p.Id == promptToDelete.Id);
+    }
 }

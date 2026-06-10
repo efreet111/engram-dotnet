@@ -23,4 +23,15 @@ public record ExportConfig
 
     /// <summary>Controls graph.json handling: preserve|force|skip.</summary>
     public GraphConfigMode GraphConfig { get; init; } = GraphConfigMode.Preserve;
+
+    // Watch mode (ENG-208 Phase 9)
+    /// <summary>If true, run in watch mode (continuous export at intervals).</summary>
+    public bool Watch { get; init; }
+
+    /// <summary>Interval for watch mode (e.g., "30s", "5m", "1h").</summary>
+    public string Interval { get; init; } = "60s";
+
+    // Since filter (ENG-208 Phase 8)
+    /// <summary>Export only observations created at or after this date (ISO 8601 or relative like "30d").</summary>
+    public string Since { get; init; } = "";
 }

@@ -248,10 +248,16 @@ public class EngramToolsTests : IDisposable
     }
 
     [Fact]
-    public void MemSuggestTopicKey_ReturnsError_WhenBothEmpty()
+    public void MemSuggestTopicKey_ReturnsStructuredError_WhenBothEmpty()
     {
         var result = _tools.MemSuggestTopicKey();
-        Assert.Contains("Error", result);
+        // Should return structured error JSON
+        var doc = System.Text.Json.JsonDocument.Parse(result);
+        var root = doc.RootElement;
+        Assert.True(root.GetProperty("error").GetBoolean());
+        Assert.Equal("validation_error", root.GetProperty("error_code").GetString());
+        Assert.Contains("title or content", root.GetProperty("message").GetString());
+        Assert.True(root.TryGetProperty("hint", out _));
     }
 
     // ─── mem_session_start ────────────────────────────────────────────────────
@@ -628,6 +634,116 @@ public class McpConfigTests
 }
 
 /// <summary>
+/// Tests for mem_current_project tool.
+/// Uses synchronous ProjectDetector directly (not the async MCP tool).
+/// </summary>
+public class MemCurrentProjectTests
+{
+    [Fact]
+    public void DetectProjectFull_NormalGitRemote_ReturnsProjectAndSource()
+    {
+        // Setup: create a temp directory with a git repo and origin remote
+        using var tempDir = new TempDir();
+        var repoPath = Path.Combine(tempDir.Path, "auth-service");
+        Directory.CreateDirectory(repoPath);
+
+        // Initialize git repo (must be a real git repo)
+        RunGit(repoPath, "init");
+        RunGit(repoPath, "remote add origin git@github.com:user/auth-service.git");
+
+        // Call the detector directly
+        var result = ProjectDetector.DetectProjectFull(repoPath);
+
+        Assert.Equal("auth-service", result.Project);
+        Assert.Equal(ProjectSources.GitRemote, result.Source);
+    }
+
+    /// <summary>
+    /// Helper to run git commands in tests.
+    /// </summary>
+    private static void RunGit(string workingDir, string arguments)
+    {
+        var gitProcess = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"-C \"{workingDir}\" {arguments}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        gitProcess.Start();
+        gitProcess.WaitForExit();
+    }
+
+    [Fact]
+    public void DetectProjectFull_Ambiguous_ReturnsSuccessWithAvailableProjects()
+    {
+        // Setup: temp dir with 2 child git repos (frontend, backend)
+        using var tempDir = new TempDir();
+        var frontend = Path.Combine(tempDir.Path, "frontend");
+        var backend = Path.Combine(tempDir.Path, "backend");
+        Directory.CreateDirectory(frontend);
+        Directory.CreateDirectory(backend);
+        RunGit(frontend, "init");
+        RunGit(backend, "init");
+
+        // Call the detector
+        var result = ProjectDetector.DetectProjectFull(tempDir.Path);
+
+        // Should NOT be an error — success with empty project
+        Assert.Equal("", result.Project);
+        Assert.Equal(ProjectSources.Ambiguous, result.Source);
+
+        // Available projects should be populated
+        var available = result.GetAvailableProjects();
+        Assert.True(available.Count >= 2);
+    }
+
+    [Fact]
+    public void DetectProjectFull_WarningCase_GitChild_ReturnsWarning()
+    {
+        // Setup: temp dir with exactly 1 child git repo
+        using var tempDir = new TempDir();
+        var myApp = Path.Combine(tempDir.Path, "my-app");
+        Directory.CreateDirectory(myApp);
+        RunGit(myApp, "init");
+
+        // Call the detector
+        var result = ProjectDetector.DetectProjectFull(tempDir.Path);
+
+        Assert.Equal(ProjectSources.GitChild, result.Source);
+        Assert.NotNull(result.Warning);
+        Assert.Contains("my-app", result.Warning);
+    }
+
+    [Fact]
+    public void DetectProjectFull_NoGit_ReturnsCwdBasename()
+    {
+        // Setup: temp dir with NO git repo
+        using var tempDir = new TempDir();
+        // Create some subdirs but NOT .git directories
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "src"));
+        Directory.CreateDirectory(Path.Combine(tempDir.Path, "docs"));
+
+        // Get the basename of temp dir
+        var expected = Path.GetFileName(tempDir.Path);
+
+        // Call the detector
+        var result = ProjectDetector.DetectProjectFull(tempDir.Path);
+
+        Assert.Equal(expected.ToLower(), result.Project);
+        Assert.Equal(ProjectSources.DirBasename, result.Source);
+    }
+}
+
+/// <summary>
+/// No-op verifier for tests — returns empty passing reports.
+
+/// <summary>
 /// No-op verifier for tests — returns empty passing reports.
 /// </summary>
 public sealed class NoOpVerifier : IVerifier
@@ -646,5 +762,24 @@ public sealed class NoOpVerifier : IVerifier
             Escalate = false,
             Summary = "No-op verifier for tests"
         });
+    }
+}
+
+/// <summary>
+/// Helper class that creates a temporary directory and deletes it on dispose.
+/// </summary>
+internal sealed class TempDir : IDisposable
+{
+    public string Path { get; }
+
+    public TempDir()
+    {
+        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
+        Directory.CreateDirectory(Path);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(Path, true); } catch { /* best effort */ }
     }
 }

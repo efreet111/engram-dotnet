@@ -239,9 +239,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("New scope: project or personal")] string? scope = null,
         [Description("New topic key (normalized internally)")] string? topic_key = null)
     {
-        if (id == 0) return "Error: id is required";
+        if (id == 0) return McpErrors.Structured(
+            "validation_error",
+            "id is required",
+            hint: "Pass a non-zero observation ID");
         if (title is null && content is null && type is null && project is null && scope is null && topic_key is null)
-            return "Error: provide at least one field to update";
+            return McpErrors.Structured(
+                "validation_error",
+                "provide at least one field to update",
+                hint: "Pass at least one of: title, content, type, project, scope, topic_key");
 
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
@@ -255,10 +261,14 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 TopicKey = topic_key,
             });
 
-            if (!ok) return $"Error: observation #{id} not found";
+            if (!ok) return McpErrors.Structured(
+                "observation_not_found",
+                $"observation #{id} not found");
 
             var obs = await store.GetObservationAsync(id);
-            if (obs is null) return $"Error: observation #{id} not found after update";
+            if (obs is null) return McpErrors.Structured(
+                "observation_not_found",
+                $"observation #{id} not found after update");
 
             var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
             if (content is not null && content.Length > store.MaxObservationLength)
@@ -278,11 +288,17 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Observation content used as fallback if title is empty")] string? content = null)
     {
         if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(content))
-            return "Error: provide title or content to suggest a topic_key";
+            return McpErrors.Structured(
+                "validation_error",
+                "provide title or content to suggest a topic_key",
+                hint: "Pass a non-empty title or content parameter");
 
         var key = Normalizers.SuggestTopicKey(type, title, content);
         return string.IsNullOrEmpty(key)
-            ? "Error: could not suggest topic_key from input"
+            ? McpErrors.Structured(
+                "validation_error",
+                "could not suggest topic_key from input",
+                hint: "Provide a meaningful title or content with recognizable words")
             : $"Suggested topic_key: {key}";
     }
 
@@ -294,12 +310,17 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Observation ID to delete")] long id,
         [Description("If true, permanently deletes the observation")] bool hard_delete = false)
     {
-        if (id == 0) return "Error: id is required";
+        if (id == 0) return McpErrors.Structured(
+            "validation_error",
+            "id is required",
+            hint: "Pass a non-zero observation ID");
 
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
             var ok = await store.DeleteObservationAsync(id);
-            if (!ok) return $"Error: observation #{id} not found";
+            if (!ok) return McpErrors.Structured(
+                "observation_not_found",
+                $"observation #{id} not found");
 
             var mode = hard_delete ? "permanently deleted" : "soft-deleted";
             return $"Memory #{id} {mode}";
@@ -404,10 +425,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Number of observations to show before the focus (default: 5)")] int before = 5,
         [Description("Number of observations to show after the focus (default: 5)")] int after = 5)
     {
-        if (observation_id == 0) return "Error: observation_id is required";
+        if (observation_id == 0) return McpErrors.Structured(
+            "validation_error",
+            "observation_id is required",
+            hint: "Pass a non-zero observation ID");
 
         var result = await store.TimelineAsync(observation_id, before, after);
-        if (result is null) return $"Error: observation #{observation_id} not found";
+        if (result is null) return McpErrors.Structured(
+            "observation_not_found",
+            $"observation #{observation_id} not found");
 
         var sb = new StringBuilder();
 
@@ -451,10 +477,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     public async Task<string> MemGetObservation(
         [Description("The observation ID to retrieve")] long id)
     {
-        if (id == 0) return "Error: id is required";
+        if (id == 0) return McpErrors.Structured(
+            "validation_error",
+            "id is required",
+            hint: "Pass a non-zero observation ID");
 
         var obs = await store.GetObservationAsync(id);
-        if (obs is null) return $"Error: observation #{id} not found";
+        if (obs is null) return McpErrors.Structured(
+            "observation_not_found",
+            $"observation #{id} not found");
 
         var project   = obs.Project  is not null ? $"\nProject: {obs.Project}"  : "";
         var topic     = obs.TopicKey is not null ? $"\nTopic: {obs.TopicKey}"   : "";
@@ -587,7 +618,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Source identifier (e.g. 'subagent-stop', 'session-end')")] string? source = null)
     {
         if (string.IsNullOrEmpty(content))
-            return "Error: content is required — include text with a '## Key Learnings:' section";
+            return McpErrors.Structured(
+                "validation_error",
+                "content is required — include text with a '## Key Learnings:' section",
+                hint: "Pass text containing a '## Key Learnings:' or '## Aprendizajes Clave:' section");
 
         project    = ResolveProject(project, Engram.Store.Scopes.Personal);
         session_id ??= DefaultSessionId(project);
@@ -630,13 +664,19 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("The canonical project name to merge INTO (e.g. 'engram')")] string to)
     {
         if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
-            return "Error: both 'from' and 'to' are required";
+            return McpErrors.Structured(
+                "validation_error",
+                "both 'from' and 'to' are required",
+                hint: "Pass comma-separated project names in 'from' and a canonical name in 'to'");
 
         var sources = from.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                          .ToList();
 
         if (sources.Count == 0)
-            return "Error: at least one source project name is required in 'from'";
+            return McpErrors.Structured(
+                "validation_error",
+                "at least one source project name is required in 'from'",
+                hint: "Pass at least one project name in the 'from' parameter");
 
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
@@ -662,7 +702,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Path to plan.md (optional)")] string? plan_path = null)
     {
         // 1. Read spec.md from filesystem
-        if (!File.Exists(spec_path)) return $"Error: spec.md not found at \"{spec_path}\"";
+        if (!File.Exists(spec_path)) return McpErrors.Structured(
+            "project_not_found",
+            $"spec.md not found at \"{spec_path}\"",
+            hint: "Verify the spec.md path is correct and the file exists");
         var markdown = await File.ReadAllTextAsync(spec_path);
 
         // 2. Parse spec
@@ -670,7 +713,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         var spec = parser.Parse(markdown);
 
         if (spec.IsUnparseable)
-            return $"Error: Cannot parse spec.md — {spec.Error}";
+            return McpErrors.Structured(
+                "validation_error",
+                $"Cannot parse spec.md — {spec.Error}",
+                hint: "Ensure spec.md is valid Markdown with requirement blocks");
 
         // 3. Track cycle
         var currentCycle = await cycleTracker.GetCurrentCycleAsync(change_name);
@@ -730,7 +776,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Project name to search for related observations")] string? project = null)
     {
         // 1. Read spec.md
-        if (!File.Exists(spec_path)) return $"Error: spec.md not found at \"{spec_path}\"";
+        if (!File.Exists(spec_path)) return McpErrors.Structured(
+            "project_not_found",
+            $"spec.md not found at \"{spec_path}\"",
+            hint: "Verify the spec.md path is correct and the file exists");
         var markdown = await File.ReadAllTextAsync(spec_path);
 
         // 2. Parse
@@ -738,7 +787,10 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         var spec = parser.Parse(markdown);
 
         if (spec.IsUnparseable)
-            return $"Error: Cannot parse spec.md — {spec.Error}";
+            return McpErrors.Structured(
+                "validation_error",
+                $"Cannot parse spec.md — {spec.Error}",
+                hint: "Ensure spec.md is valid Markdown with requirement blocks");
 
         // 3. Build matrix
         var resolvedProject = ResolveProject(project ?? cfg.DefaultProject, Engram.Store.Scopes.Personal);
@@ -789,7 +841,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     {
         md_dir ??= "docs/decisions";
         var result = await _promotionService.PromoteAsync(observation_id, md_dir);
-        if (result == 0) return $"Error: observation #{observation_id} not found or already promoted";
+        if (result == 0) return McpErrors.Structured(
+            "observation_not_found",
+            $"observation #{observation_id} not found or already promoted");
         return $"Observation #{observation_id} promoted to .md in {md_dir}/";
     }
 

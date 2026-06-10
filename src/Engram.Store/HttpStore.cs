@@ -309,6 +309,20 @@ public sealed class HttpStore : IStore
         return await Deserialize<ImportResult>(resp) ?? new ImportResult();
     }
 
+    // ─── Export by Project (ENG-208 Phase 7) ────────────────────────────────
+
+    public Task<ExportData> ExportProjectAsync(string project)
+    {
+        throw new NotImplementedException("TODO(ENG-208 Phase 7): ExportProjectAsync");
+    }
+
+    // ─── Incremental Export via mutation_seq (ENG-208 Phase 6) ─────────────
+
+    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
+    {
+        throw new NotImplementedException("TODO(ENG-208 Phase 6): ExportSinceAsync");
+    }
+
     // ─── Projects ─────────────────────────────────────────────────────────────
 
     public async Task<MergeResult> MergeProjectsAsync(IList<string> sources, string canonical)

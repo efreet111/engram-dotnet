@@ -142,6 +142,9 @@ public class ExportData
     [JsonPropertyName("sessions")]     public List<Session>     Sessions     { get; set; } = [];
     [JsonPropertyName("observations")] public List<Observation> Observations { get; set; } = [];
     [JsonPropertyName("prompts")]      public List<Prompt>      Prompts      { get; set; } = [];
+    // Incremental export fields (ENG-208)
+    [JsonPropertyName("next_seq")] public long  NextSeq   { get; set; }
+    [JsonPropertyName("has_more")] public bool HasMore { get; set; }
 }
 
 public class ImportResult

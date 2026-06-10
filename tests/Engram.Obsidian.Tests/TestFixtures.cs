@@ -19,6 +19,11 @@ public class MockStoreReader : IObsidianStoreReader
     }
 
     public Task<Stats> StatsAsync() => Task.FromResult(Stats);
+
+    public Task<ExportData> ExportProjectAsync(string project) => Task.FromResult(ExportData);
+
+    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit) =>
+        Task.FromResult(ExportData);
 }
 
 /// <summary>

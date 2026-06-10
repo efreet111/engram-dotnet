@@ -17,4 +17,14 @@ public interface IObsidianStoreReader
     /// Get system statistics (total sessions, observations, prompts, projects).
     /// </summary>
     Task<Stats> StatsAsync();
+
+    /// <summary>
+    /// Export filtered by project (ENG-208).
+    /// </summary>
+    Task<ExportData> ExportProjectAsync(string project);
+
+    /// <summary>
+    /// Incremental export via mutation_seq cursor (ENG-208).
+    /// </summary>
+    Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit);
 }

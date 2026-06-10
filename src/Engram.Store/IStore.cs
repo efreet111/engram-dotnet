@@ -34,6 +34,12 @@ public interface IStore : IDisposable
     Task<ExportData> ExportAsync();
     Task<ImportResult> ImportAsync(ExportData data);
 
+    // Project-filtered export (ENG-208)
+    Task<ExportData> ExportProjectAsync(string project);
+
+    // Incremental export via mutation_seq cursor (ENG-208)
+    Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit);
+
     // Retention
     Task<RetentionStats> GetRetentionStatsAsync();
     Task<RetentionPruneResult> PruneOldObservationsAsync(RetentionPruneParams p);
