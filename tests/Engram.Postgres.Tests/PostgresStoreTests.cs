@@ -914,4 +914,97 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var results = await _fixture.Store.SearchAsync("Arquitectura", new SearchOptions { Project = "test-pm7", Limit = 10 });
         Assert.NotEmpty(results);
     }
+
+    // ─── ExportSince (ENG-208 Phase 6) ───────────────────────────────────────
+
+    [Fact]
+    public async Task ExportSince_ReturnsMutationsAfterSeq()
+    {
+        await SeedSession("s-exp", "proj-test");
+        // Seed 5 observations
+        for (int i = 0; i < 5; i++)
+            await _fixture.Store.AddObservationAsync(new AddObservationParams
+            {
+                SessionId = "s-exp",
+                Title = $"Obs {i}",
+                Content = $"Content {i}",
+                Type = "manual",
+                Project = "proj-test",
+            });
+
+        var result = await _fixture.Store.ExportSinceAsync(null, 0, 100);
+
+        Assert.NotNull(result);
+        Assert.Equal(5, result.Observations.Count);
+        Assert.True(result.NextSeq > 0);
+        Assert.False(result.HasMore);
+    }
+
+    [Fact]
+    public async Task ExportSince_RespectsProjectFilter()
+    {
+        await SeedSession("s-exp-a", "proj-a");
+        await SeedSession("s-exp-b", "proj-b");
+        // Seed 3 obs in project A, 2 in project B
+        for (int i = 0; i < 3; i++)
+            await _fixture.Store.AddObservationAsync(new AddObservationParams
+            {
+                SessionId = "s-exp-a",
+                Title = $"Obs A-{i}",
+                Content = $"Content {i}",
+                Type = "manual",
+                Project = "proj-a",
+            });
+        for (int i = 0; i < 2; i++)
+            await _fixture.Store.AddObservationAsync(new AddObservationParams
+            {
+                SessionId = "s-exp-b",
+                Title = $"Obs B-{i}",
+                Content = $"Content {i}",
+                Type = "manual",
+                Project = "proj-b",
+            });
+
+        var result = await _fixture.Store.ExportSinceAsync("proj-a", 0, 100);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Observations.Count);
+        Assert.All(result.Observations, o => Assert.Equal("proj-a", o.Project));
+    }
+
+    [Fact]
+    public async Task ExportSince_PaginationWithLimit()
+    {
+        await SeedSession("s-exp", "proj-test");
+        // Seed 10 observations
+        for (int i = 0; i < 10; i++)
+            await _fixture.Store.AddObservationAsync(new AddObservationParams
+            {
+                SessionId = "s-exp",
+                Title = $"Obs {i}",
+                Content = $"Content {i}",
+                Type = "manual",
+                Project = "proj-test",
+            });
+
+        // First page: limit 3
+        var page1 = await _fixture.Store.ExportSinceAsync(null, 0, 3);
+        Assert.Equal(3, page1.Observations.Count);
+        Assert.True(page1.HasMore);
+
+        // Second page
+        var page2 = await _fixture.Store.ExportSinceAsync(null, page1.NextSeq, 3);
+        Assert.Equal(3, page2.Observations.Count);
+        Assert.True(page2.HasMore);
+
+        // Third page
+        var page3 = await _fixture.Store.ExportSinceAsync(null, page2.NextSeq, 3);
+        Assert.Equal(3, page3.Observations.Count);
+        Assert.True(page3.HasMore);
+
+        // Fourth page - should get remaining 1
+        var page4 = await _fixture.Store.ExportSinceAsync(null, page3.NextSeq, 3);
+        Assert.Equal(1, page4.Observations.Count);
+        Assert.False(page4.HasMore);
+    }
 }

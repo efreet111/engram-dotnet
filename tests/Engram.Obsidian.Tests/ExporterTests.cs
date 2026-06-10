@@ -68,7 +68,7 @@ public class ExporterTests
     [Fact]
     public void Export_Incremental_ExportsOnlyNewObservations()
     {
-        // Seed state with obs ID=1 already exported
+        // Seed state with obs ID=1 already exported (use new per-project state path)
         var stateDir = Path.Combine(_tempDir, "engram");
         Directory.CreateDirectory(stateDir);
         var existingState = new SyncState
@@ -79,7 +79,7 @@ public class ExporterTests
             TopicHubs = [],
             Version = 1,
         };
-        StateFile.WriteState(Path.Combine(stateDir, ".engram-sync-state.json"), existingState);
+        StateFile.WriteState(StateFile.ResolveStatePath(_tempDir, project: null), existingState);
 
         var store = new MockStoreReader
         {
@@ -102,6 +102,10 @@ public class ExporterTests
 
         Assert.Equal(1, result.Created);
         Assert.Equal(1, result.Skipped);
+
+        // Verify state file uses new per-project path
+        var stateFile = StateFile.ResolveStatePath(_tempDir, project: null);
+        Assert.True(File.Exists(stateFile));
     }
 
     // ─── Deleted Observations ─────────────────────────────────────────────────
@@ -123,7 +127,7 @@ public class ExporterTests
             TopicHubs = [],
             Version = 1,
         };
-        StateFile.WriteState(Path.Combine(engDir, ".engram-sync-state.json"), existingState);
+        StateFile.WriteState(StateFile.ResolveStatePath(_tempDir, project: null), existingState);
 
         var deletedAt = "2026-02-01T00:00:00Z";
         var store = new MockStoreReader
@@ -234,8 +238,8 @@ public class ExporterTests
         // 19 live obs created (1 deleted — not in state on first run, so not deleted from vault)
         Assert.Equal(19, result.Created);
 
-        // State file must exist
-        var stateFile = Path.Combine(_tempDir, "engram", ".engram-sync-state.json");
+        // State file must exist (new per-project format)
+        var stateFile = StateFile.ResolveStatePath(_tempDir, project: null);
         Assert.True(File.Exists(stateFile));
 
         // Read back state and verify 19 entries
@@ -526,5 +530,112 @@ public class ExporterTests
         var result = exporter.Export();
 
         Assert.Equal(2, result.Created); // All observations exported
+    }
+
+    // ─── Since Filter (ENG-208 Phase 8) ───────────────────────────────────────
+
+    [Fact]
+    public void Export_WithSince_FiltersObservationsByCreatedAt()
+    {
+        var store = new MockStoreReader
+        {
+            ExportData = new ExportData
+            {
+                Sessions = [new Session { Id = "sess-1", Project = "eng" }],
+                Observations =
+                [
+                    // Old observation - before since cutoff
+                    new Observation { Id = 1, SessionId = "sess-1", Type = "bugfix", Title = "Old fix", Content = "old", Scope = "team", CreatedAt = "2025-01-01T10:00:00Z", UpdatedAt = "2025-01-01T10:00:00Z", Project = "eng" },
+                    // New observation - after since cutoff
+                    new Observation { Id = 2, SessionId = "sess-1", Type = "decision", Title = "New decision", Content = "new", Scope = "team", CreatedAt = "2026-06-01T10:00:00Z", UpdatedAt = "2026-06-01T10:00:00Z", Project = "eng" },
+                ],
+                Prompts = [],
+            },
+        };
+
+        // Since 2026-01-01 should filter out the old observation
+        var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir, Since = "2026-01-01" });
+        var result = exporter.Export();
+
+        Assert.Equal(1, result.Created);
+        Assert.Equal(1, result.Skipped);
+
+        // Only the new observation should have a file
+        var oldFile = Path.Combine(_tempDir, "engram", "eng", "bugfix", "old-fix-1.md");
+        var newFile = Path.Combine(_tempDir, "engram", "eng", "decision", "new-decision-2.md");
+        Assert.False(File.Exists(oldFile));
+        Assert.True(File.Exists(newFile));
+    }
+
+    [Fact]
+    public void Export_WithSince_CompatibleWithProjectFilter()
+    {
+        var store = new MockStoreReader
+        {
+            ExportData = new ExportData
+            {
+                Sessions =
+                [
+                    new Session { Id = "sess-1", Project = "eng" },
+                    new Session { Id = "sess-2", Project = "other" },
+                ],
+                Observations =
+                [
+                    // eng project, old
+                    new Observation { Id = 1, SessionId = "sess-1", Type = "bugfix", Title = "Eng old", Content = "eng old", Scope = "team", CreatedAt = "2025-01-01T10:00:00Z", UpdatedAt = "2025-01-01T10:00:00Z", Project = "eng" },
+                    // eng project, new
+                    new Observation { Id = 2, SessionId = "sess-1", Type = "decision", Title = "Eng new", Content = "eng new", Scope = "team", CreatedAt = "2026-06-01T10:00:00Z", UpdatedAt = "2026-06-01T10:00:00Z", Project = "eng" },
+                    // other project, new (should NOT be exported due to project filter)
+                    new Observation { Id = 3, SessionId = "sess-2", Type = "pattern", Title = "Other new", Content = "other new", Scope = "team", CreatedAt = "2026-06-01T10:00:00Z", UpdatedAt = "2026-06-01T10:00:00Z", Project = "other" },
+                ],
+                Prompts = [],
+            },
+        };
+
+        // Both project filter and since filter
+        var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir, Project = "eng", Since = "2026-01-01" });
+        var result = exporter.Export();
+
+        // Only eng project + new = 1 observation
+        Assert.Equal(1, result.Created);
+
+        // eng/old should not exist
+        var engOldFile = Path.Combine(_tempDir, "engram", "eng", "bugfix", "eng-old-1.md");
+        Assert.False(File.Exists(engOldFile));
+
+        // other project should not exist at all
+        var otherDir = Path.Combine(_tempDir, "engram", "other");
+        Assert.False(Directory.Exists(otherDir));
+    }
+
+    [Fact]
+    public void Export_SinceWithRelativeDuration_FiltersCorrectly()
+    {
+        var now = DateTime.UtcNow;
+        var oldDate = now.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ssZ");
+        var recentDate = now.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+        var store = new MockStoreReader
+        {
+            ExportData = new ExportData
+            {
+                Sessions = [new Session { Id = "sess-1", Project = "eng" }],
+                Observations =
+                [
+                    // Old observation - more than 7 days ago
+                    new Observation { Id = 1, SessionId = "sess-1", Type = "bugfix", Title = "Old fix", Content = "old", Scope = "team", CreatedAt = oldDate, UpdatedAt = oldDate, Project = "eng" },
+                    // Recent observation - yesterday
+                    new Observation { Id = 2, SessionId = "sess-1", Type = "decision", Title = "Recent", Content = "recent", Scope = "team", CreatedAt = recentDate, UpdatedAt = recentDate, Project = "eng" },
+                ],
+                Prompts = [],
+            },
+        };
+
+        // Since 7d should filter out the old observation (30 days old)
+        var exporter = new Exporter(store, new ExportConfig { VaultPath = _tempDir, Since = "7d" });
+        var result = exporter.Export();
+
+        // Should export only the recent observation (within 7 days)
+        Assert.True(result.Created >= 1, $"Expected at least 1 created, got {result.Created}");
     }
 }

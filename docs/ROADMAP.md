@@ -24,6 +24,7 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | Promotion Level 2 | direct | `mem_promote_to_md`, `mem_sync_md_to_repo`, `mem_generate_index` |
 | Verification Tools | direct | `mem_verify_artifact`, `mem_traceability` |
 | Upstream Parity Phase 2 | [#8](https://github.com/efreet111/engram-dotnet/pull/8) | DELETE endpoints for sessions and prompts |
+| Upstream Parity Phase 2 (ENG-208) | `e7e5736` | Structured MCP errors, server-side incremental export, --watch, --since, --project filtering |
 | Upstream Parity Phase 1 | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | Project detection, CLI `projects list\|consolidate\|prune` |
 | PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore with FTS, GIN indexes, 32 IStore methods |
 | Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, 47 tests |
@@ -54,18 +55,22 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 
 ### 🔲 Pending Features
 
-#### Upstream Phase 2 — API Parity (backlog)
+#### Upstream Phase 2 — API Parity ✅ DONE
 
-> **Status**: ~6/10 tasks done. Ver [ENG-208](BACKLOG.md#cola-de-ejecución).
+> **Status**: All 10 features complete. Ver [ENG-208](BACKLOG.md#cola-de-ejecución).
 
-| Done | Missing |
-|------|---------|
-| `DeleteSessionAsync`, `DeletePromptAsync` (Store) | Structured error integration in tools |
-| `handleDeleteSession`, `handleDeletePrompt` (Server) | — |
-| `mem_current_project` MCP tool | — |
-| `Obsidian --since` filter | `ExportProjectAsync` (store-level) si falta |
-| `Obsidian --project` filter | `?project=` integration in server `/export` |
-| | Obsidian `--watch` mode |
+| Done | Status |
+|------|--------|
+| `DeleteSessionAsync`, `DeletePromptAsync` (Store) | ✅ |
+| `handleDeleteSession`, `handleDeletePrompt` (Server) | ✅ |
+| `mem_current_project` MCP tool | ✅ |
+| `McpErrors.cs` helper + 19 migrations | ✅ |
+| `ExportProjectAsync` (store-level) | ✅ |
+| `Obsidian --since` filter | ✅ |
+| `Obsidian --project` filter | ✅ |
+| `?project=` server integration | ✅ |
+| `GET /export/since` endpoint | ✅ |
+| Obsidian `--watch` mode | ✅ |
 
 #### PostgreSQL Backend — Bug Fixes (backlog)
 

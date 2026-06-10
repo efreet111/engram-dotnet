@@ -17,6 +17,7 @@
 
 using System;
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
@@ -768,14 +769,32 @@ var obsidianPersonalOpt  = new Option<bool>("--include-personal", "Include scope
 var obsidianForceOpt     = new Option<bool>("--force", "Ignore state file, do a full re-export");
 var obsidianGraphOpt     = new Option<string>("--graph-config", () => "preserve", "Graph config mode: preserve|force|skip (default: preserve)");
 var obsidianLimitOpt     = new Option<int>("--limit", () => 0, "Max observations to export (0 = no limit)");
+var obsidianSinceOpt     = new Option<string?>("--since", "Filter by date: ISO 8601 (2025-01-01) or relative (30d, 7d, 24h, 5m)");
+var obsidianWatchOpt      = new Option<bool>("--watch", "Run in watch mode (continuous export at intervals)");
+var obsidianIntervalOpt  = new Option<string?>("--interval", "Watch interval: 30s, 5m, 1h (default 60s when --watch)");
 obsidianCmd.AddOption(obsidianVaultOpt);
 obsidianCmd.AddOption(obsidianProjectOpt);
 obsidianCmd.AddOption(obsidianPersonalOpt);
 obsidianCmd.AddOption(obsidianForceOpt);
 obsidianCmd.AddOption(obsidianGraphOpt);
 obsidianCmd.AddOption(obsidianLimitOpt);
-obsidianCmd.SetHandler(async (string vault, string? project, bool includePersonal, bool force, string graphConfig, int limit) =>
+obsidianCmd.AddOption(obsidianSinceOpt);
+obsidianCmd.AddOption(obsidianWatchOpt);
+obsidianCmd.AddOption(obsidianIntervalOpt);
+obsidianCmd.SetHandler(async (InvocationContext context) =>
 {
+    // Get option values from context - need explicit type
+    var vaultResult = context.ParseResult.GetValueForOption(obsidianVaultOpt);
+    var vault = vaultResult ?? "";
+    var project = context.ParseResult.GetValueForOption(obsidianProjectOpt);
+    var includePersonal = context.ParseResult.GetValueForOption(obsidianPersonalOpt);
+    var force = context.ParseResult.GetValueForOption(obsidianForceOpt);
+    var graphConfig = context.ParseResult.GetValueForOption(obsidianGraphOpt) ?? "preserve";
+    var limit = context.ParseResult.GetValueForOption(obsidianLimitOpt);
+    var since = context.ParseResult.GetValueForOption(obsidianSinceOpt);
+    var watch = context.ParseResult.GetValueForOption(obsidianWatchOpt);
+    var interval = context.ParseResult.GetValueForOption(obsidianIntervalOpt);
+
     if (string.IsNullOrEmpty(vault))
     {
         Console.Error.WriteLine("error: --vault path is required");
@@ -793,6 +812,25 @@ obsidianCmd.SetHandler(async (string vault, string? project, bool includePersona
         return;
     }
 
+    // Parse --since if provided
+    string? sinceValue = null;
+    if (!string.IsNullOrEmpty(since))
+    {
+        try
+        {
+            var parsedSince = SinceArgumentParser.Parse(since);
+            sinceValue = parsedSince.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"error: {ex.Message}");
+            return;
+        }
+    }
+
+    // Default interval for watch mode
+    var intervalValue = interval ?? "60s";
+
     var storeCfg = StoreConfig.FromEnvironment();
     using var store = OpenStore(storeCfg);
     var reader = new StoreReaderAdapter(store);
@@ -805,8 +843,43 @@ obsidianCmd.SetHandler(async (string vault, string? project, bool includePersona
         Force             = force,
         GraphConfig       = graphMode,
         Limit             = limit,
+        Since             = sinceValue ?? "",
+        Watch             = watch,
+        Interval         = intervalValue,
     };
 
+    // Handle watch mode
+    if (watch)
+    {
+        var intervalParsed = WatchIntervalParser.Parse(intervalValue);
+        var watchConfig = new WatchConfig
+        {
+            VaultPath = vault,
+            Project = project,
+            Interval = intervalParsed,
+            InitialSince = sinceValue != null ? SinceArgumentParser.Parse(sinceValue) : null,
+            StoreReader = reader,
+        };
+
+        var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (s, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        try
+        {
+            await WatchLoop.RunAsync(watchConfig, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Graceful shutdown
+        }
+        return;
+    }
+
+    // Single export (non-watch)
     var exporter = new Exporter(reader, config);
     var result = exporter.Export();
 
@@ -823,7 +896,7 @@ obsidianCmd.SetHandler(async (string vault, string? project, bool includePersona
         foreach (var err in result.Errors)
             Console.Error.WriteLine($"    - {err.Message}");
     }
-}, obsidianVaultOpt, obsidianProjectOpt, obsidianPersonalOpt, obsidianForceOpt, obsidianGraphOpt, obsidianLimitOpt);
+});
 
 // ─── version ──────────────────────────────────────────────────────────────────
 

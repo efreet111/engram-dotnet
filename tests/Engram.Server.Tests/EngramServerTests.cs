@@ -593,4 +593,101 @@ public class EngramServerTests : IAsyncDisposable
         Assert.True(first["observation_count"]?.GetValue<int>() >= 1);
         Assert.True(first["session_count"]?.GetValue<int>() >= 1);
     }
+
+    // ─── ExportSince (ENG-208 Phase 6) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task GET_export_since_AfterSeq_ReturnsNewMutations()
+    {
+        await SeedSession("s-es", "proj-test");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-es", title = "obs-1", content = "c1", type = "manual", project = "proj-test",
+        }, JsonOpts);
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-es", title = "obs-2", content = "c2", type = "manual", project = "proj-test",
+        }, JsonOpts);
+
+        var resp = await _client.GetAsync("/export/since?project=proj-test&after_seq=0&limit=100");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json["observations"]);
+        Assert.True(json["observations"]?.AsArray().Count >= 2);
+        Assert.NotNull(json["next_seq"]);
+        Assert.NotNull(json["has_more"]);
+    }
+
+    [Fact]
+    public async Task GET_export_since_ProjectFilter_Respected()
+    {
+        await SeedSession("s-es2", "proj-a");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-es2", title = "obs-a", content = "c", type = "manual", project = "proj-a",
+        }, JsonOpts);
+        await SeedSession("s-es3", "proj-b");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-es3", title = "obs-b", content = "c", type = "manual", project = "proj-b",
+        }, JsonOpts);
+
+        var resp = await _client.GetAsync("/export/since?project=proj-a&after_seq=0&limit=100");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        var obs = json["observations"]?.AsArray();
+        Assert.NotNull(obs);
+        Assert.All(obs, o => Assert.Equal("proj-a", (o as JsonObject)?["project"]?.ToString()));
+    }
+
+    [Fact]
+    public async Task GET_export_since_InvalidSeq_Returns400()
+    {
+        var resp = await _client.GetAsync("/export/since?project=proj-test&after_seq=abc");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GET_export_since_BlankProject_Returns400()
+    {
+        var resp = await _client.GetAsync("/export/since?after_seq=0");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    // ─── Export with Project Query (ENG-208 Phase 7) ───────────────────────────
+
+    [Fact]
+    public async Task GET_export_WithProjectQuery_ReturnsOnlyThatProject()
+    {
+        await SeedSession("s-ep", "proj-filtered");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-ep", title = "obs-filtered", content = "c", type = "manual", project = "proj-filtered",
+        }, JsonOpts);
+        await SeedSession("s-ep2", "proj-other");
+        await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = "s-ep2", title = "obs-other", content = "c", type = "manual", project = "proj-other",
+        }, JsonOpts);
+
+        var resp = await _client.GetAsync("/export?project=proj-filtered");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        var obs = json["observations"]?.AsArray();
+        Assert.NotNull(obs);
+        Assert.All(obs, o => Assert.Equal("proj-filtered", (o as JsonObject)?["project"]?.ToString()));
+    }
+
+    [Fact]
+    public async Task GET_export_BlankProject_Returns400()
+    {
+        var resp = await _client.GetAsync("/export?project=");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
 }

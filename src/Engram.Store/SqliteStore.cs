@@ -84,7 +84,7 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
                 summary    TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS observations (
+CREATE TABLE IF NOT EXISTS observations (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 sync_id         TEXT,
                 session_id      TEXT    NOT NULL,
@@ -102,11 +102,12 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
                 created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 deleted_at      TEXT,
-                review_after    TEXT,
-                expires_at      TEXT,
-                embedding       BLOB,
+                review_after   TEXT,
+                expires_at    TEXT,
+                embedding     BLOB,
                 embedding_model TEXT,
                 embedding_created_at TEXT,
+                md_path        TEXT,
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
 
@@ -1344,16 +1345,159 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
 
     // ─── Export by Project (ENG-208 Phase 7) ────────────────────────────────
 
-    public Task<ExportData> ExportProjectAsync(string project)
+    public async Task<ExportData> ExportProjectAsync(string project)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 7): ExportProjectAsync");
+        var data = new ExportData
+        {
+            Version    = "1.1.0",
+            ExportedAt = UtcNow(),
+        };
+
+        // Sessions filtered by project
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions WHERE project = @proj ORDER BY started_at";
+            cmd.Parameters.AddWithValue("@proj", project);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                data.Sessions.Add(new Session
+                {
+                    Id        = r.GetString(0),
+                    Project   = r.GetString(1),
+                    Directory = r.GetString(2),
+                    StartedAt = r.GetString(3),
+                    EndedAt   = r.IsDBNull(4) ? null : r.GetString(4),
+                    Summary   = r.IsDBNull(5) ? null : r.GetString(5),
+                });
+        }
+
+        // Observations filtered by project - need full projection for ReadObservation
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content,
+                       ifnull(o.tool_name,'') as tool_name, ifnull(o.project,'') as project,
+                       ifnull(o.scope,'project') as scope, ifnull(o.topic_key,'') as topic_key,
+                       o.revision_count, o.duplicate_count, ifnull(o.last_seen_at,'') as last_seen_at,
+                       o.created_at, o.updated_at, ifnull(o.deleted_at,'') as deleted_at,
+                       ifnull(o.md_path,'') as md_path
+                FROM observations o
+                WHERE o.project = @proj AND o.deleted_at IS NULL
+                ORDER BY o.id";
+            cmd.Parameters.AddWithValue("@proj", project);
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) data.Observations.Add(ReadObservation(r));
+        }
+
+        // Prompts filtered by project
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT id, ifnull(sync_id,'') as sync_id, session_id, content, ifnull(project,'') as project, created_at FROM user_prompts WHERE project = @proj AND deleted_at IS NULL ORDER BY id";
+            cmd.Parameters.AddWithValue("@proj", project);
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) data.Prompts.Add(ReadPrompt(r));
+        }
+
+        return data;
     }
 
     // ─── Incremental Export via mutation_seq (ENG-208 Phase 6) ─────────────
+    // Note: SqliteStore uses observation/prompt IDs as cursor (not mutation_seq).
+    // Sessions are excluded from incremental export (TEXT id, no numeric sequence).
 
-    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
+    public async Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 6): ExportSinceAsync");
+        var data = new ExportData { Version = "1.1.0", ExportedAt = UtcNow() };
+
+        // Query observations with id > afterSeq (filtered by project if provided)
+        // Must include all 17 columns to match ReadObservation
+        var obsSql = @"
+            SELECT id, ifnull(sync_id,'') as sync_id, session_id, type, title, content,
+                   ifnull(tool_name,'') as tool_name, ifnull(project,'') as project,
+                   ifnull(scope,'project') as scope, ifnull(topic_key,'') as topic_key,
+                   revision_count, duplicate_count, ifnull(last_seen_at,'') as last_seen_at,
+                   created_at, updated_at, ifnull(deleted_at,'') as deleted_at,
+                   ifnull(md_path,'') as md_path
+            FROM observations
+            WHERE id > @afterSeq";
+        
+        var prms = new List<SqliteParameter> { Param("@afterSeq", afterSeq) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            obsSql += " AND project = @project";
+            prms.Add(Param("@project", project));
+        }
+        obsSql += " ORDER BY id LIMIT @limit";
+        prms.Add(Param("@limit", limit + 1)); // Fetch extra to detect has_more
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = obsSql;
+            foreach (var p in prms) cmd.Parameters.Add(p);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                data.Observations.Add(ReadObservation(r));
+            }
+        }
+
+        // Determine has_more and next_seq from observations
+        bool hasMore = data.Observations.Count > limit;
+        if (hasMore)
+        {
+            data.Observations.RemoveAt(data.Observations.Count - 1);
+        }
+        data.NextSeq = data.Observations.Count > 0 ? data.Observations[^1].Id : afterSeq;
+        data.HasMore = hasMore;
+
+        // Query prompts (same pattern)
+        if (data.Observations.Count < limit) // Only fetch prompts if we have room
+        {
+            var promptLimit = limit - data.Observations.Count + 1;
+            var promptSql = @"
+                SELECT id, ifnull(sync_id,'') as sync_id, session_id, content,
+                       ifnull(project,'') as project, created_at
+                FROM user_prompts
+                WHERE id > @afterSeq";
+            
+            prms = [Param("@afterSeq", afterSeq)];
+            if (!string.IsNullOrEmpty(project))
+            {
+                promptSql += " AND project = @project";
+                prms.Add(Param("@project", project));
+            }
+            promptSql += " ORDER BY id LIMIT @limit";
+            prms.Add(Param("@limit", promptLimit + 1));
+
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.CommandText = promptSql;
+                foreach (var p in prms) cmd.Parameters.Add(p);
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    data.Prompts.Add(ReadPrompt(r));
+                }
+            }
+
+            // Update has_more based on prompts too
+            if (data.Prompts.Count > promptLimit - 1)
+            {
+                data.Prompts.RemoveAt(data.Prompts.Count - 1);
+                data.HasMore = true;
+            }
+            
+            // Update next_seq to be the max of obs and prompt cursors
+            if (data.Prompts.Count > 0)
+            {
+                data.NextSeq = Math.Max(data.NextSeq, data.Prompts[^1].Id);
+            }
+        }
+
+        // Sessions are excluded (TEXT id, no numeric sequence for cursor)
+        data.Sessions = [];
+
+        return data;
     }
 
     public Task<ImportResult> ImportAsync(ExportData data)

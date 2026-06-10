@@ -7,6 +7,13 @@
 
 ### Added
 
+- **ENG-208**: Structured MCP error responses — all 18 error sites in EngramTools.cs now return JSON with `error_code`, `message`, optional `hint`, and `available_projects`. New `McpErrors` helper enforces a 9-code catalog.
+- **ENG-208**: `mem_current_project` MCP tool (already existed, now with full test coverage)
+- **ENG-208**: `ExportProjectAsync` and `ExportSinceAsync` store methods. `GET /export?project=X` and `GET /export/since?after_seq=N` server endpoints.
+- **ENG-208**: `engram obsidian-export --watch [--interval 30s] [--since 2025-01-01] [--project X]` — daemon mode with seq cursor when server reachable, timestamp fallback when offline. State persisted per-project.
+- **ENG-208**: `engram obsidian-export --since 2025-01-01` — filter by date (ISO 8601 or relative `30d`/`7d`/`24h`)
+- **ENG-208**: Per-project state files (`state-{project}.json`) for watch mode isolation
+
 - **Logging infrastructure** — structured JSON logging with fields: `@timestamp`, `level`, `method`, `path`, `status`, `duration_ms`, `client_ip`
   - FR-LOG-01: Request/response middleware captures client_ip
   - FR-LOG-02: JSON structured output via `JsonConsoleFormatter`

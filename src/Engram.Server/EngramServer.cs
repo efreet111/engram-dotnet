@@ -186,6 +186,7 @@ public static class EngramServer
         app.MapDelete("/prompts/{id}",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleDeletePrompt(ctx, store)));
         app.MapGet("/context",                      (Func<HttpContext, Task<IResult>>)((ctx) => HandleContext(ctx, store)));
         app.MapGet("/export",                       (Func<HttpContext, Task<IResult>>)((ctx) => HandleExport(ctx, store)));
+        app.MapGet("/export/since",                (Func<HttpContext, Task<IResult>>)((ctx) => HandleExportSince(ctx, store)));
         app.MapPost("/import",                      (Func<HttpContext, Task<IResult>>)((ctx) => HandleImport(ctx, store)));
         app.MapGet("/stats",                        (Func<HttpContext, Task<IResult>>)((ctx) => HandleStats(ctx, store)));
         app.MapPost("/projects/migrate",            (Func<HttpContext, Task<IResult>>)((ctx) => HandleMigrateProject(ctx, store)));
@@ -470,8 +471,42 @@ public static class EngramServer
 
     private static async Task<IResult> HandleExport(HttpContext ctx, IStore store)
     {
-        var data = await store.ExportAsync();
+        var projectParam = ctx.Request.Query["project"];
+        var project = projectParam.FirstOrDefault();
+        
+        // If project param is present in URL but blank, return 400
+        if (projectParam.Count > 0 && string.IsNullOrEmpty(project))
+            return Error("project parameter must not be blank", 400);
+        
+        // If project is provided, use ExportProjectAsync; otherwise full export
+        var data = !string.IsNullOrEmpty(project)
+            ? await store.ExportProjectAsync(project)
+            : await store.ExportAsync();
+        
         ctx.Response.Headers["Content-Disposition"] = "attachment; filename=engram-export.json";
+        return Json(data);
+    }
+
+    private static async Task<IResult> HandleExportSince(HttpContext ctx, IStore store)
+    {
+        var project = ctx.Request.Query["project"].FirstOrDefault();
+        var afterSeqStr = ctx.Request.Query["after_seq"].FirstOrDefault() ?? "0";
+        var limitStr = ctx.Request.Query["limit"].FirstOrDefault() ?? "100";
+
+        // Validate after_seq
+        if (!long.TryParse(afterSeqStr, out var afterSeq) || afterSeq < 0)
+            return Error("after_seq must be a non-negative integer", 400);
+
+        // Validate limit
+        if (!int.TryParse(limitStr, out var limit))
+            limit = 100;
+        limit = Math.Clamp(limit, 1, 1000); // Cap at 1000
+
+        // Validate project - blank project returns 400 (sync context required)
+        if (string.IsNullOrEmpty(project))
+            return Error("project parameter must not be blank", 400);
+
+        var data = await store.ExportSinceAsync(project, afterSeq, limit);
         return Json(data);
     }
 

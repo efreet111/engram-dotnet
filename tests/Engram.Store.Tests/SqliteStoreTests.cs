@@ -1146,4 +1146,68 @@ public class SqliteStoreTests : IDisposable
         }
         return mutations;
     }
+
+    // ─── ExportSince (ENG-208 Phase 6) ───────────────────────────────────────
+
+    [Fact]
+    public async Task ExportSince_ReturnsMutationsAfterSeq()
+    {
+        await SeedSession(); // Required for observations
+        // Seed 5 observations with sequential IDs
+        for (int i = 0; i < 5; i++)
+            await SeedObservation(title: $"Obs {i}");
+
+        var result = await _store.ExportSinceAsync(null, 0, 100);
+
+        Assert.NotNull(result);
+        Assert.Equal(5, result.Observations.Count);
+        Assert.True(result.NextSeq > 0);
+        Assert.False(result.HasMore);
+    }
+
+    [Fact]
+    public async Task ExportSince_RespectsProjectFilter()
+    {
+        await SeedSession(); // Required for observations
+        // Seed 3 obs in project A, 2 in project B
+        for (int i = 0; i < 3; i++)
+            await SeedObservation(title: $"Obs A-{i}", project: "proj-a");
+        for (int i = 0; i < 2; i++)
+            await SeedObservation(title: $"Obs B-{i}", project: "proj-b");
+
+        var result = await _store.ExportSinceAsync("proj-a", 0, 100);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Observations.Count);
+        Assert.All(result.Observations, o => Assert.Equal("proj-a", o.Project));
+    }
+
+    [Fact]
+    public async Task ExportSince_PaginationWithLimit()
+    {
+        await SeedSession(); // Required for observations
+        // Seed 10 observations
+        for (int i = 0; i < 10; i++)
+            await SeedObservation(title: $"Obs {i}");
+
+        // First page: limit 3
+        var page1 = await _store.ExportSinceAsync(null, 0, 3);
+        Assert.Equal(3, page1.Observations.Count);
+        Assert.True(page1.HasMore);
+
+        // Second page: continue from next_seq
+        var page2 = await _store.ExportSinceAsync(null, page1.NextSeq, 3);
+        Assert.Equal(3, page2.Observations.Count);
+        Assert.True(page2.HasMore);
+
+        // Third page
+        var page3 = await _store.ExportSinceAsync(null, page2.NextSeq, 3);
+        Assert.Equal(3, page3.Observations.Count);
+        Assert.True(page3.HasMore);
+
+        // Fourth page - should get remaining 1 (10 - 3 - 3 - 3 = 1)
+        var page4 = await _store.ExportSinceAsync(null, page3.NextSeq, 3);
+        Assert.Equal(1, page4.Observations.Count);
+        Assert.False(page4.HasMore);
+    }
 }

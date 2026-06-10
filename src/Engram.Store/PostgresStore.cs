@@ -1166,16 +1166,136 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     // ─── Export by Project (ENG-208 Phase 7) ────────────────────────────────
 
-    public Task<ExportData> ExportProjectAsync(string project)
+    public async Task<ExportData> ExportProjectAsync(string project)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 7): ExportProjectAsync");
+        var data = new ExportData
+        {
+            ExportedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+        };
+
+        // Sessions filtered by project
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT id, project, directory, started_at, ended_at, summary FROM sessions WHERE project = @proj ORDER BY started_at";
+            cmd.Parameters.AddWithValue("@proj", project);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                data.Sessions.Add(new Session
+                {
+                    Id        = r.GetString(0),
+                    Project   = r.GetString(1),
+                    Directory = r.GetString(2),
+                    StartedAt = r.GetString(3),
+                    EndedAt   = r.IsDBNull(4) ? null : r.GetString(4),
+                    Summary   = r.IsDBNull(5) ? null : r.GetString(5),
+                });
+        }
+
+        // Observations filtered by project
+        data.Observations = QueryObservations(
+            @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                     o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                     o.created_at, o.updated_at, o.deleted_at
+              FROM observations o WHERE o.deleted_at IS NULL AND o.project = @proj ORDER BY o.id",
+            [new NpgsqlParameter("@proj", project)]);
+
+        // Prompts filtered by project
+        data.Prompts = QueryPrompts(
+            "SELECT id, sync_id, session_id, content, project, created_at FROM user_prompts WHERE deleted_at IS NULL AND project = @proj ORDER BY id",
+            [new NpgsqlParameter("@proj", project)]);
+
+        return data;
     }
 
     // ─── Incremental Export via mutation_seq (ENG-208 Phase 6) ─────────────
+    // Note: PostgresStore uses cloud_mutations table with mutation_seq.
 
-    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
+    public async Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 6): ExportSinceAsync");
+        var data = new ExportData
+        {
+            Version    = "1.1.0",
+            ExportedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+        };
+
+        // Query observations with id > afterSeq (filtered by project if provided)
+        var obsParams = new List<NpgsqlParameter> { new("@afterSeq", afterSeq), new("@limit", limit + 1) };
+        var obsSql = @"
+            SELECT id, COALESCE(sync_id,''), session_id, type, title, content, COALESCE(tool_name,''), COALESCE(project,''),
+                   COALESCE(scope,'project'), COALESCE(topic_key,''), revision_count, duplicate_count, COALESCE(last_seen_at,''),
+                   created_at, updated_at, COALESCE(deleted_at,'')
+            FROM observations
+            WHERE id > @afterSeq";
+        
+        if (!string.IsNullOrEmpty(project))
+        {
+            obsSql += " AND project = @project";
+            obsParams.Add(new("@project", project));
+        }
+        obsSql += " ORDER BY id LIMIT @limit";
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = obsSql;
+            foreach (var p in obsParams) cmd.Parameters.Add(p);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                data.Observations.Add(ReadObservation(r));
+        }
+
+        // Determine has_more and next_seq from observations
+        bool hasMore = data.Observations.Count > limit;
+        if (hasMore)
+        {
+            data.Observations.RemoveAt(data.Observations.Count - 1);
+        }
+        data.NextSeq = data.Observations.Count > 0 ? data.Observations[^1].Id : afterSeq;
+        data.HasMore = hasMore;
+
+        // Query prompts (same pattern)
+        if (data.Observations.Count < limit)
+        {
+            var promptLimit = limit - data.Observations.Count + 1;
+            var promptParams = new List<NpgsqlParameter> { new("@afterSeq", afterSeq), new("@limit", promptLimit + 1) };
+            var promptSql = @"
+                SELECT id, COALESCE(sync_id,''), session_id, content, COALESCE(project,''), created_at
+                FROM user_prompts
+                WHERE id > @afterSeq";
+            
+            if (!string.IsNullOrEmpty(project))
+            {
+                promptSql += " AND project = @project";
+                promptParams.Add(new("@project", project));
+            }
+            promptSql += " ORDER BY id LIMIT @limit";
+
+            using (var cmd = _dataSource.CreateCommand())
+            {
+                cmd.CommandText = promptSql;
+                foreach (var p in promptParams) cmd.Parameters.Add(p);
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    data.Prompts.Add(ReadPrompt(r));
+            }
+
+            // Update has_more based on prompts too
+            if (data.Prompts.Count > promptLimit - 1)
+            {
+                data.Prompts.RemoveAt(data.Prompts.Count - 1);
+                data.HasMore = true;
+            }
+            
+            // Update next_seq to be the max of obs and prompt cursors
+            if (data.Prompts.Count > 0)
+            {
+                data.NextSeq = Math.Max(data.NextSeq, data.Prompts[^1].Id);
+            }
+        }
+
+        // Sessions are excluded (TEXT id, no numeric sequence for cursor)
+        data.Sessions = [];
+
+        return data;
     }
 
     public async Task<ImportResult> ImportAsync(ExportData data)

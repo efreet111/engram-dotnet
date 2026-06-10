@@ -40,8 +40,8 @@ public class Exporter
         foreach (var d in new[] { engRoot, sessionsDir, topicsDir })
             Directory.CreateDirectory(d);
 
-        // ── Read incremental state ────────────────────────────────────────────
-        var stateFile = Path.Combine(engRoot, ".engram-sync-state.json");
+        // ── Read incremental state (per-project state files) ──────────────────
+        var stateFile = StateFile.ResolveStatePath(_config.VaultPath, _config.Project);
         var state = StateFile.ReadState(stateFile);
         if (_config.Force)
         {
@@ -55,8 +55,17 @@ public class Exporter
 
         // ── Determine cutoff time ─────────────────────────────────────────────
         DateTime cutoff = default;
-        if (!string.IsNullOrEmpty(state.LastExportAt))
+
+        // Priority: --since flag > state file > default
+        if (!string.IsNullOrEmpty(_config.Since))
+        {
+            // Parse --since argument (ISO 8601 or relative like "30d")
+            cutoff = ParseSinceValue(_config.Since);
+        }
+        else if (!string.IsNullOrEmpty(state.LastExportAt))
+        {
             DateTime.TryParse(state.LastExportAt, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out cutoff);
+        }
 
         // ── Fetch data from store ─────────────────────────────────────────────
         var data = _store.ExportAsync().GetAwaiter().GetResult();
@@ -109,6 +118,16 @@ public class Exporter
             var normalizedScope = NormalizeScope(obs.Scope);
             if (!_config.IncludePersonal && normalizedScope == Scopes.Personal)
                 continue;
+
+            // --since filter: skip if created_at < cutoff
+            if (cutoff != default && DateTime.TryParse(obs.CreatedAt, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var createdAt))
+            {
+                if (createdAt < cutoff)
+                {
+                    result.Skipped++;
+                    continue;
+                }
+            }
 
             // Incremental filter: skip if updated_at <= cutoff AND already in state
             if (cutoff != default && DateTime.TryParse(obs.UpdatedAt, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var updatedAt))
@@ -261,13 +280,46 @@ public class Exporter
         }
     }
 
-    /// <summary>
-    /// Normalizes a scope value to either "team" or "personal".
-    /// Mirrors SqliteStore.NormalizeScope.
-    /// </summary>
-    private static string NormalizeScope(string? scope)
+/// <summary>
+/// Normalizes a scope value to either "team" or "personal".
+/// Mirrors SqliteStore.NormalizeScope.
+/// </summary>
+private static string NormalizeScope(string? scope)
+{
+    var v = (scope ?? "").Trim().ToLowerInvariant();
+    return v == Scopes.Team ? Scopes.Team : Scopes.Personal;
+}
+
+/// <summary>
+/// Parses a --since value (ISO 8601 or relative duration).
+/// </summary>
+private static DateTime ParseSinceValue(string since)
+{
+    // Try ISO 8601 first
+    if (DateTime.TryParse(since, null,
+        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+        out var isoResult))
     {
-        var v = (scope ?? "").Trim().ToLowerInvariant();
-        return v == Scopes.Team ? Scopes.Team : Scopes.Personal;
+        return isoResult;
     }
+
+    // Try relative duration (30d, 7d, 24h, 5m)
+    if (since.Length >= 2)
+    {
+        var suffix = since[^1];
+        if (int.TryParse(since[..^1], out var value) && value > 0)
+        {
+            var now = DateTime.UtcNow;
+            return suffix switch
+            {
+                'd' => now.AddDays(-value),
+                'h' => now.AddHours(-value),
+                'm' => now.AddMinutes(-value),
+                _ => throw new ArgumentException($"invalid --since format: '{since}'. Use ISO 8601 (2025-01-01) or relative (30d, 7d, 24h, 5m)"),
+            };
+        }
+    }
+
+    throw new ArgumentException($"invalid --since format: '{since}'. Use ISO 8601 (2025-01-01) or relative (30d, 7d, 24h, 5m)", nameof(since));
+}
 }

@@ -311,16 +311,21 @@ public sealed class HttpStore : IStore
 
     // ─── Export by Project (ENG-208 Phase 7) ────────────────────────────────
 
-    public Task<ExportData> ExportProjectAsync(string project)
+    public async Task<ExportData> ExportProjectAsync(string project)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 7): ExportProjectAsync");
+        var resp = await Get($"export?project={Uri.EscapeDataString(project)}");
+        await EnsureSuccess(resp, "ExportProject");
+        return await Deserialize<ExportData>(resp) ?? new ExportData();
     }
 
     // ─── Incremental Export via mutation_seq (ENG-208 Phase 6) ─────────────
 
-    public Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
+    public async Task<ExportData> ExportSinceAsync(string? project, long afterSeq, int limit)
     {
-        throw new NotImplementedException("TODO(ENG-208 Phase 6): ExportSinceAsync");
+        var qs = $"?project={Uri.EscapeDataString(project ?? "")}&after_seq={afterSeq}&limit={limit}";
+        var resp = await Get("export/since" + qs);
+        await EnsureSuccess(resp, "ExportSince");
+        return await Deserialize<ExportData>(resp) ?? new ExportData();
     }
 
     // ─── Projects ─────────────────────────────────────────────────────────────

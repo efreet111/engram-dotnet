@@ -53,6 +53,18 @@ curl -X POST http://192.168.0.178:7437/sessions \
 {"id":"session-1","status":"created"}
 ```
 
+### DELETE /sessions/{id}
+
+```bash
+curl -X DELETE http://192.168.0.178:7437/sessions/session-1
+```
+
+| Status | Response |
+|--------|----------|
+| 200 | `{"id": "session-1", "status": "deleted"}` |
+| 404 | `{"error": true, "error_code": "session_not_found", "message": "session not found: session-1"}` |
+| 409 | `{"error": true, "error_code": "blocked_by_observations", "message": "session has N active observations, cannot delete"}` |
+
 ---
 
 ## 📋 Observations
@@ -140,8 +152,28 @@ curl "http://192.168.0.178:7437/timeline?observation_id=123&window=5"
 
 ### `GET /export`
 
+Export all data, optionally filtered by project.
+
 ```bash
 curl "http://192.168.0.178:7437/export?project=team/mi-api"
+```
+
+### `GET /export/since`
+
+Export mutations after a specific sequence cursor (for incremental sync).
+
+```bash
+curl "http://192.168.0.178:7437/export/since?project=team/mi-api&after_seq=0&limit=100"
+```
+
+```json
+{
+  "observations": [...],
+  "prompts": [...],
+  "sessions": [...],
+  "next_seq": 1234,
+  "has_more": true
+}
 ```
 
 ### `POST /import`
@@ -162,6 +194,18 @@ curl -X POST http://192.168.0.178:7437/import \
 | GET | `/prompts/recent` | List recent prompts |
 | GET | `/prompts/search` | Search prompts |
 | DELETE | `/prompts/{id}` | Delete a prompt |
+
+### DELETE /prompts/{id}
+
+```bash
+curl -X DELETE http://192.168.0.178:7437/prompts/42
+```
+
+| Status | Response |
+|--------|----------|
+| 200 | `{"id": 42, "status": "deleted"}` |
+| 400 | `{"error": true, "error_code": "validation_error", "message": "invalid prompt id"}` |
+| 404 | `{"error": true, "error_code": "prompt_not_found", "message": "prompt not found: 999"}` |
 
 ---
 
@@ -352,6 +396,33 @@ engram doctor --server http://192.168.0.178:7437
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/debug-test` | Debug endpoint (returns request details) |
+
+---
+
+## Error Responses
+
+Errors return HTTP error status codes with a JSON body:
+
+```json
+{
+  "error": true,
+  "error_code": "snake_case_code",
+  "message": "Human readable description",
+  "hint": "Optional suggestion",
+  "available_projects": ["..."]
+}
+```
+
+Error codes:
+- `ambiguous_project` — multiple git repos in cwd
+- `unknown_project` — project override not found in store
+- `project_not_found` — project doesn't exist
+- `session_not_found` — session ID doesn't exist
+- `prompt_not_found` — prompt ID doesn't exist
+- `observation_not_found` — observation ID doesn't exist
+- `validation_error` — invalid parameter
+- `blocked_by_observations` — session can't be deleted (has active observations)
+- `internal_error` — unexpected server error
 
 ---
 

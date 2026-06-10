@@ -215,11 +215,11 @@ SESSION="sess-verify-$TS"
 # ── Bug #1: push sin entries → 400 (no 500) ─────────────────────────────
 curl -s -w "\nHTTP %{http_code}\n" -X POST "$BASE/sync/mutations/push" \
   -H "Content-Type: application/json" -d '{"created_by":"test"}'
-# Esperado: HTTP 400, error_code "empty-batch"
+# Esperado: HTTP 400, error_code "validation_error"
 
 curl -s -w "\nHTTP %{http_code}\n" -X POST "$BASE/sync/mutations/push" \
   -H "Content-Type: application/json" -d '{"entries":null,"created_by":"test"}'
-# Esperado: HTTP 400, error_code "empty-batch"
+# Esperado: HTTP 400, error_code "validation_error"
 
 # ── Bug #2: delete session con obs soft-deleted → 200 ───────────────────
 curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
@@ -265,6 +265,63 @@ curl -s "$BASE/prompts/recent?project=$PROJECT&limit=50" -H "X-Engram-User: user
 | R3 | Delete session (solo soft-deleted) | HTTP 200 | ✅ | ✅ |
 | R4 | Delete session (obs activa) | HTTP 409 | ✅ | ✅ |
 | R5 | `/prompts/recent` + `X-Engram-User` | Solo prompts del usuario | ✅ | ✅ |
+
+---
+
+## ENG-208 — Phase 2 API Parity (2026-06-10)
+
+> Feature: **ENG-208** — Upstream Phase 2 API parity
+> Commit: `e7e5736` (pendiente de deploy)
+> Servidor: `http://localhost:7437` (local dev)
+
+| PM | Case | Steps | Expected | [x] |
+|----|------|-------|----------|------|
+| PM-1 | DELETE /sessions/empty | `curl -X DELETE http://localhost:7437/sessions/{empty-id}` | 200, `{ "id": "...", "status": "deleted" }` | [ ] |
+| PM-2 | DELETE /sessions/with-obs | `curl -X DELETE http://localhost:7437/sessions/{id-with-obs}` | 409, observation count in error | [ ] |
+| PM-3 | DELETE /prompts/existing | `curl -X DELETE http://localhost:7437/prompts/{existing-id}` | 200, `{ "id": N, "status": "deleted" }` | [ ] |
+| PM-4 | DELETE /prompts/nonexistent | `curl -X DELETE http://localhost:7437/prompts/999999` | 404 | [ ] |
+| PM-5 | All 19 MCP tool error paths | Call each tool in error conditions via MCP | All return structured JSON `{ "error": true, "error_code": "...", "message": "..." }` | [ ] |
+| PM-6 | mem_current_project normal | Call `mem_current_project` from inside git repo | Returns project name, `project_source`, no error | [ ] |
+| PM-7 | mem_current_project ambiguous | Call `mem_current_project` from dir with multiple git repos | Returns `IsError = false`, `project = ""`, `available_projects` populated | [ ] |
+| PM-8 | Watch mode initial + tick | `engram obsidian-export --watch --interval 2s --vault /tmp/v` | Initial export runs immediately, second after ~2s | [ ] |
+| PM-9 | --since 30d filter | `engram obsidian-export --since 30d --vault /tmp/v` | Only observations from last 30 days in vault | [ ] |
+| PM-10 | --project X export | `engram obsidian-export --project X --vault /tmp/v` | Only project X's data in vault | [ ] |
+| PM-11 | GET /export?project=X | `curl "http://localhost:7437/export?project=X"` | Only project X's data in JSON | [ ] |
+| PM-12 | GET /export/since | `curl "http://localhost:7437/export/since?project=X&after_seq=0"` | JSON with `observations`, `prompts`, `sessions`, `next_seq`, `has_more` | [ ] |
+| PM-13 | Watch continues after error | Kill store server while `--watch` is running | Cycle logs error, next cycle retries | [ ] |
+| PM-14 | Watch graceful shutdown | Start `--watch`, press Ctrl+C | Exit code 0, state file persisted | [ ] |
+
+### curl snippets (ENG-208)
+
+```bash
+BASE="http://localhost:7437"
+
+# PM-1: Delete empty session
+SESSION="sess-empty-$RANDOM"
+curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
+  -d "{\"id\":\"$SESSION\",\"project\":\"team/test\",\"directory\":\"/tmp\"}"
+curl -s -w "\nHTTP %{http_code}\n" -X DELETE "$BASE/sessions/$SESSION"
+
+# PM-2: Delete session with active observations
+SESSION2="sess-with-obs-$RANDOM"
+curl -s -X POST "$BASE/sessions" -H "Content-Type: application/json" \
+  -d "{\"id\":\"$SESSION2\",\"project\":\"team/test\",\"directory\":\"/tmp\"}"
+curl -s -X POST "$BASE/observations" -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION2\",\"title\":\"test\",\"content\":\"x\",\"type\":\"manual\",\"project\":\"team/test\"}"
+curl -s -w "\nHTTP %{http_code}\n" -X DELETE "$BASE/sessions/$SESSION2"
+
+# PM-3: Delete existing prompt
+curl -s -X DELETE "$BASE/prompts/1"
+
+# PM-4: Delete nonexistent prompt
+curl -s -w "\nHTTP %{http_code}\n" -X DELETE "$BASE/prompts/999999"
+
+# PM-11: Export with project filter
+curl -s "$BASE/export?project=team/test" | jq 'length'
+
+# PM-12: Export since with cursor
+curl -s "$BASE/export/since?project=team/test&after_seq=0&limit=10" | jq '{next_seq, has_more, observations}'
+```
 
 ---
 

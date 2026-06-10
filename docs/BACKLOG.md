@@ -82,8 +82,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-307 | P1 | Test | Test infrastructure: `regression-test.sh` (31 checks) + `dev-test.sh` (T3 gate) | Done | S | sesión 2026-06-05 | `781e9fe` |
 | ✓ | ENG-308 | P1 | Doc | Dev workflow docs: `AGENTS.md` + `docs/DEVELOPMENT.md` | Done | S | sesión 2026-06-05 | `781e9fe` |
 | ✓ | ENG-207 | P0 | Feature | Logging infrastructure | Done | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
+| ✓ | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity (structured errors, server-side incremental, --watch, --since) | Done | M | ← upstream engram | `e7e5736` |
 | — | **Siguiente (cerrar base pre-release)** |
-| 2 | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity | Ready | M | ← upstream engram | `mem_current_project` ya Done |
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
 | 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Ready | S | descubierto en sesión logging 2026-06-05 | Ver contexto abajo |
@@ -151,24 +151,23 @@ curl http://localhost:7437/health
 
 ---
 
-### ENG-208 — Upstream Phase 2 API parity (P1)
+### ENG-208 — Upstream Phase 2 API parity (P1) ✅ DONE
 
-**Problema:** El upstream original de Engram tiene endpoints que aún no portamos (DELETE de sessions/prompts ya están, faltan algunos). Si alguien migra desde el upstream espera la misma API.
+**Entregado:**
+- [x] `DELETE /sessions/{id}` — 200/404/409 con respuestas estructuradas
+- [x] `DELETE /prompts/{id}` — 200/404/400 con respuestas estructuradas
+- [x] `mem_current_project` MCP tool con tests
+- [x] `McpErrors.cs` helper con 9 códigos de error
+- [x] 18 migraciones de error en `EngramTools.cs` a formato estructurado
+- [x] `ExportProjectAsync` + `ExportSinceAsync` en store
+- [x] `GET /export?project=X` server endpoint
+- [x] `GET /export/since?project=X&after_seq=N` endpoint con cursor
+- [x] `--since` filter CLI (ISO 8601 y relativo)
+- [x] `--watch` mode daemon
+- [x] `--interval` flag
+- [x] Per-project state files (`state-{project}.json`)
 
-**Para qué sirve:** Compatibilidad total con clientes que usan la API original.
-
-**Stories:**
-- [ ] Revisar diff de endpoints entre upstream y este port
-- [ ] Implementar endpoints faltantes
-- [ ] Tests de paridad
-
-**Cómo probar:**
-```bash
-# Comparar contra la API reference del upstream
-curl http://localhost:7437/health
-```
-
-**Hecho cuando:** todos los endpoints del upstream existen acá con la misma firma.
+**Commit:** `e7e5736`
 
 ---
 

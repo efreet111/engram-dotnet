@@ -116,6 +116,39 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 
 ---
 
+## ⚡️ CLI Commands
+
+### engram serve
+
+```bash
+./dist/engram serve --port 7437
+```
+
+### engram obsidian-export
+
+Export observations to an Obsidian vault.
+
+| Flag | Description |
+|------|-------------|
+| `--project <name>` | Filter export to a single project |
+| `--since <date>` | Filter by creation date: ISO 8601 (`2025-01-01`) or relative (`30d`, `7d`, `24h`) |
+| `--watch` | Run as a daemon, exporting continuously |
+| `--interval <duration>` | Watch interval: `30s`, `5m`, `1h` (default `60s`) |
+
+### engram sync status
+
+```bash
+engram sync status
+```
+
+### engram doctor
+
+```bash
+engram doctor --server http://localhost:7437
+```
+
+---
+
 ## 📚 Documentation
 
 | Doc | Audience |
