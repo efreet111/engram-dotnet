@@ -932,7 +932,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
                 Project = "proj-test",
             });
 
-        var result = await _fixture.Store.ExportSinceAsync(null, 0, 100);
+        var result = await _fixture.Store.ExportSinceAsync("proj-test", 0, 100);
 
         Assert.NotNull(result);
         Assert.Equal(5, result.Observations.Count);
@@ -988,22 +988,22 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
             });
 
         // First page: limit 3
-        var page1 = await _fixture.Store.ExportSinceAsync(null, 0, 3);
+        var page1 = await _fixture.Store.ExportSinceAsync("proj-test", 0, 3);
         Assert.Equal(3, page1.Observations.Count);
         Assert.True(page1.HasMore);
 
         // Second page
-        var page2 = await _fixture.Store.ExportSinceAsync(null, page1.NextSeq, 3);
+        var page2 = await _fixture.Store.ExportSinceAsync("proj-test", page1.NextSeq, 3);
         Assert.Equal(3, page2.Observations.Count);
         Assert.True(page2.HasMore);
 
         // Third page
-        var page3 = await _fixture.Store.ExportSinceAsync(null, page2.NextSeq, 3);
+        var page3 = await _fixture.Store.ExportSinceAsync("proj-test", page2.NextSeq, 3);
         Assert.Equal(3, page3.Observations.Count);
         Assert.True(page3.HasMore);
 
         // Fourth page - should get remaining 1
-        var page4 = await _fixture.Store.ExportSinceAsync(null, page3.NextSeq, 3);
+        var page4 = await _fixture.Store.ExportSinceAsync("proj-test", page3.NextSeq, 3);
         Assert.Equal(1, page4.Observations.Count);
         Assert.False(page4.HasMore);
     }
