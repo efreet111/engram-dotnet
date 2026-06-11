@@ -77,8 +77,8 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
 
     // ─── helpers ──────────────────────────────────────────────────────────────
 
-    private Task SeedSession(string id = SessionId)
-        => _fixture.Store.CreateSessionAsync(id, "test-project", "/tmp");
+    private Task SeedSession(string id = SessionId, string project = "test-project")
+        => _fixture.Store.CreateSessionAsync(id, project, "/tmp");
 
     private Task<long> SeedObservation(
         string title = "Test observation",

@@ -90,6 +90,34 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Engram.Cli -- serve
 
 ---
 
+## Comentarios XML en código
+
+> **Decisión:** [ADR-003](../architecture/adr/ADR-003-xml-doc-comment-policy.md) (adopción local) · **Canónico FlowForge:** [ADR-002-scaffold-doc-policy](../../../FlowForge/docs/decisions/ADR-002-scaffold-doc-policy.md)
+
+Regla corta: **`///` solo si aporta algo que la firma, el cuerpo o los tests no dicen ya.**
+
+| Escribir `///` | No escribir `///` |
+|----------------|-------------------|
+| Summary de **clase** con reglas no obvias (formatos de parser, invariantes store) | `<param>` / `<returns>` / `<exception>` que repiten la firma |
+| Comentario inline en invariante no testeada | One-liner en propiedad autoexplicativa (`Interval`, `VaultPath`) |
+| `[Description]` en tools MCP (atributo, no XML) | Misma info ya en xUnit del archivo |
+
+**Ejemplo — podar (ENG-208):**
+
+```csharp
+// ✅ Mantener en el tipo (una vez)
+/// Parses --since: ISO 8601 or relative (30d, 7d, 24h, 5m).
+public static class SinceArgumentParser
+{
+    // ✅ Sin XML en métodos triviales — ObsidianSinceTests documenta casos
+    public static DateTime Parse(string input) { ... }
+}
+```
+
+**Alcance de limpieza:** PRs pequeños al tocar parsers/DTOs; no poda masiva de `IStore`/`PostgresStore` en un solo PR.
+
+---
+
 ## Workflow de desarrollo (T1-T5)
 
 > **Regla**: Antes de proponer `commit` o `push`, el código DEBE haber pasado **T3**. T1 y T2 no son suficientes — SQLite no es prod.

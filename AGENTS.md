@@ -124,6 +124,7 @@ Un HU por tema. Si dos HUs cubren el mismo origen (`sdd/...`), consolidar en una
 - Leer `docs/BACKLOG.md` y specs/HU relevantes antes de implementar
 - **Pasar el workflow T1-T5 antes de proponer commit/push** (ver [§ Workflow T1-T5](#workflow-de-desarrollo-capas-t1-t5))
 - Mantener cambios mínimos y alineados con el estilo existente
+- Seguir la política de comentarios `///` en [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md#comentarios-xml-en-código) — canónica en [FlowForge ADR-002](../FlowForge/docs/decisions/ADR-002-scaffold-doc-policy.md); adopción local [ADR-003](docs/architecture/adr/ADR-003-xml-doc-comment-policy.md)
 - Ejecutar tests localmente antes de proponer merge
 - Documentar decisiones no obvias en el PR o en `docs/` cuando el humano lo pida
 - Responder en español al usuario salvo que pida otro idioma

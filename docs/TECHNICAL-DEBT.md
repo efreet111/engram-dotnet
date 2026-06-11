@@ -197,3 +197,47 @@ File.Move(tmp, path, overwrite: true);
 **Impacto**: P2 limpieza operacional.
 
 ---
+
+### TD-016 — Exporter: full scan en vez de incremental (AUD-062)
+
+**Problema**: `Exporter.cs:71` siempre llama `_store.ExportAsync()` (dump completo) y filtra en memoria por project/since. No usa los nuevos métodos `ExportProjectAsync` / `ExportSinceAsync` que existen en IStore, REST y `IObsidianStoreReader`.
+
+**Descubrimiento**: ENG-208 (AUD-062). El export incremental existe en la capa Store y Server pero el Exporter de Obsidian no lo aprovecha.
+
+**Impacto**: P2. Con datasets pequeños (la realidad actual) no duele. Con 10k+ observaciones, el watch mode va a escanear toda la DB cada ciclo aunque solo haya 2 obs nuevas.
+
+**Propuesta**: Unificar flujo: `ObsidianExport` → usar `ExportProjectAsync(project)` cuando hay `--project`, y `ExportSinceAsync(project, lastSeq, limit)` cuando el state tiene `last_seq`.
+
+---
+
+### TD-017 — WatchLoop: prefetch ExportSince sin alimentar Exporter (AUD-063)
+
+**Problema**: `WatchLoop.cs:72-106` llama `ExportSinceAsync` para obtener `NextSeq`/calcular fallback timestamp, pero el export real sigue siendo full scan via Exporter. El prefetch no reduce I/O.
+
+**Relación**: Mismo origen que TD-016. La solución es integral.
+
+**Impacto**: P2. Rendimiento en watch mode con datasets grandes.
+
+---
+
+### TD-018 — MemCurrentProject no expone hint de ambigüedad (PM-7 gap)
+
+**Problema**: `EngramTools.cs:963-1034` (`mem_current_project`) recibe `DetectionResult` del detector pero solo expone `warning` cuando es `null`. El campo `DetectionResult.Error` (p. ej. "Ambiguous project: multiple git repositories found") no se mapea a `warning` ni a ningún campo del JSON de respuesta.
+
+**Descubrimiento**: ENG-208 auditoría PM-7. El detector sí setea `Error` correctamente, pero el wrapper `MemCurrentProject` no lo pasa al JSON de salida.
+
+**Impacto**: P3. El agente MCP recibe `available_projects` correctamente pero sin hint textual. En modo ambiguo, el agente tiene que inferir la ambigüedad desde `project=""` + `available_projects[]`.
+
+---
+
+### TD-019 — Comentarios XML redundantes en parsers CLI (AUD-068)
+
+**Problema**: `SinceArgumentParser.cs`, `WatchIntervalParser.cs`, `WatchLoop.cs`/`WatchConfig` tienen bloques `///` (`<param>`, `<returns>`, `<exception>`) que parafrasean la firma sin aportar información. ~45% de los archivos .cs en src/ tienen al menos un `///` redundante.
+
+**Descubrimiento**: ENG-208 auditoría (AUD-068). Concentrado en parsers nuevos, no es patrón inventado por este feature.
+
+**Impacto**: P3. Ruido cognitivo — lector pierde tiempo filtrando lo obvio. No afecta compilación ni runtime.
+
+**Propuesta**: PR post-merge de ~30-50 líneas menos en parsers afectados. Dejar class-level summary donde aporte (formatos válidos de --since/--interval), podar `<param>`/`<returns>`/`<exception>` espejo de firma. Documentar política en `docs/DEVELOPMENT.md` (tabla cuándo sí/no).
+
+---

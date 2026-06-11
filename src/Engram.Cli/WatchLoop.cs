@@ -23,6 +23,9 @@ public class WatchConfig
 
     /// <summary>The store reader to use for exports.</summary>
     public required IObsidianStoreReader StoreReader { get; init; }
+
+    /// <summary>Include personal-scoped observations (default: team only).</summary>
+    public bool IncludePersonal { get; init; }
 }
 
 /// <summary>
@@ -40,11 +43,8 @@ public static class WatchLoop
     {
         var stateFile = StateFile.ResolveStatePath(config.VaultPath, config.Project);
 
-        // Read state once at start
-        var state = StateFile.ReadState(stateFile);
-
         // Initial export (may use InitialSince for first cycle only)
-        await RunCycleAsync(config, stateFile, state, config.InitialSince, ct);
+        await RunCycleAsync(config, stateFile, config.InitialSince, ct);
 
         // Watch loop
         while (!ct.IsCancellationRequested)
@@ -58,9 +58,10 @@ public static class WatchLoop
                 break;
             }
 
-            // Re-read state to determine export method
-            state = StateFile.ReadState(stateFile);
+            // Read state (written by the exporter on the last cycle)
+            var state = StateFile.ReadState(stateFile);
             DateTime? sinceForCycle = null;
+            long? updatedLastSeq = null;
 
             // Seq-based if we have last_seq, otherwise timestamp-based
             if (state.LastSeq.HasValue && state.LastSeq > 0)
@@ -74,6 +75,7 @@ public static class WatchLoop
                     if (incrementalData.NextSeq > 0)
                     {
                         state.LastSeq = incrementalData.NextSeq;
+                        updatedLastSeq = incrementalData.NextSeq;
                     }
 
                     // Fallback to timestamp if no new data
@@ -100,21 +102,31 @@ public static class WatchLoop
                     : DateTime.Parse(state.LastExportAt);
             }
 
-            // Run cycle with timestamp filter, passing state to preserve LastSeq
-            await RunCycleAsync(config, stateFile, state, sinceForCycle, ct);
+            // Run cycle (exporter writes state with populated Files on success)
+            await RunCycleAsync(config, stateFile, sinceForCycle, ct);
+
+            // Persist LastSeq in the state written by the exporter
+            if (updatedLastSeq.HasValue)
+            {
+                var diskState = StateFile.ReadState(stateFile);
+                diskState.LastSeq = updatedLastSeq;
+                StateFile.WriteState(stateFile, diskState);
+            }
         }
     }
 
     /// <summary>
-    /// Runs a single export cycle.
+    /// Runs a single export cycle. State persistence is handled by the exporter
+    /// on success and by this method on error (so the next cycle doesn't
+    /// re-export everything).
     /// </summary>
-    private static async Task RunCycleAsync(WatchConfig config, string stateFile, Engram.Obsidian.SyncState state, DateTime? since, CancellationToken ct)
+    private static async Task RunCycleAsync(WatchConfig config, string stateFile, DateTime? since, CancellationToken ct)
     {
         var exportConfig = new ExportConfig
         {
             VaultPath = config.VaultPath,
             Project = config.Project,
-            IncludePersonal = false,
+            IncludePersonal = config.IncludePersonal,
             Force = false,
             GraphConfig = GraphConfigMode.Preserve,
             Limit = 0,
@@ -132,10 +144,6 @@ public static class WatchLoop
             // Log to stderr
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
             await Console.Error.WriteLineAsync($"[watch] exported {result.Created} observations at {timestamp}");
-
-            // Persist state with last_export_at (use passed-in state to preserve LastSeq)
-            state.LastExportAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            StateFile.WriteState(stateFile, state);
         }
         catch (Exception ex)
         {
@@ -143,11 +151,12 @@ public static class WatchLoop
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
             await Console.Error.WriteLineAsync($"[watch] error at {timestamp}: {ex.Message}");
 
-            // Still persist state so we don't re-export everything on next cycle
+            // Still persist a fallback state so we don't re-export everything
             try
             {
-                state.LastExportAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-                StateFile.WriteState(stateFile, state);
+                var fallbackState = StateFile.ReadState(stateFile);
+                fallbackState.LastExportAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                StateFile.WriteState(stateFile, fallbackState);
             }
             catch
             {

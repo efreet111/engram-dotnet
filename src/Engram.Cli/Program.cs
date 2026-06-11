@@ -859,6 +859,7 @@ obsidianCmd.SetHandler(async (InvocationContext context) =>
             Interval = intervalParsed,
             InitialSince = sinceValue != null ? SinceArgumentParser.Parse(sinceValue) : null,
             StoreReader = reader,
+            IncludePersonal = includePersonal,
         };
 
         var cts = new CancellationTokenSource();
