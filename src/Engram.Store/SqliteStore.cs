@@ -1,6 +1,8 @@
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using Polly;
+using Polly.Retry;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
@@ -15,6 +17,19 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
 {
     private readonly SqliteConnection _db;
     private readonly StoreConfig _cfg;
+
+    // Retry policy for SQLITE_BUSY (error code 5).
+    // Works alongside PRAGMA busy_timeout=5000 — catches cases where
+    // the internal SQLite retry window expires.
+    private static readonly ResiliencePipeline SqliteRetry = new ResiliencePipelineBuilder()
+        .AddRetry(new RetryStrategyOptions
+        {
+            ShouldHandle = new PredicateBuilder().Handle<SqliteException>(e => e.SqliteErrorCode == 5),
+            MaxRetryAttempts = 3,
+            Delay = TimeSpan.FromMilliseconds(100),
+            BackoffType = DelayBackoffType.Exponential,
+        })
+        .Build();
 
     // JSON options with snake_case matching (mutation payloads use snake_case)
     private static readonly JsonSerializerOptions JsonPullOpts = new()
@@ -2623,7 +2638,7 @@ CREATE TABLE IF NOT EXISTS observations (
     {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = sql;
-        cmd.ExecuteNonQuery();
+        SqliteRetry.Execute(() => cmd.ExecuteNonQuery());
     }
 
     private void Exec(SqliteTransaction tx, string sql, params SqliteParameter[] parms)
@@ -2635,7 +2650,7 @@ CREATE TABLE IF NOT EXISTS observations (
     private long ExecRows(SqliteTransaction tx, string sql, params SqliteParameter[] parms)
     {
         using var cmd = TxCmd(tx, sql, parms);
-        cmd.ExecuteNonQuery();
+        SqliteRetry.Execute(() => cmd.ExecuteNonQuery());
         using var rowCmd = _db.CreateCommand();
         rowCmd.Transaction = tx;
         rowCmd.CommandText = "SELECT changes()";
@@ -2661,9 +2676,12 @@ CREATE TABLE IF NOT EXISTS observations (
 
     private void WithTx(Action<SqliteTransaction> fn)
     {
-        using var tx = _db.BeginTransaction();
-        fn(tx);
-        tx.Commit();
+        SqliteRetry.Execute(() =>
+        {
+            using var tx = _db.BeginTransaction();
+            fn(tx);
+            tx.Commit();
+        });
     }
 
     // ─── Sync mutation journal ─────────────────────────────────────────────────
