@@ -98,12 +98,12 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
-| 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Ready | S | ← ENG-410 | Gap detectado en auditoría. Campo existe en código, no en respuesta MCP. |
-| 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Ready | S | ← ENG-410 | Si `.engram-id` está en `.gitignore`, el equipo nunca recibe la identidad. Blocker silencioso. |
-| 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID: warning si `.engram-id` ≠ cálculo determinista | Ready | S | ← ENG-410 | Detección de corrupción/edición manual del archivo. |
-| 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | Comando de debug para ver identidad del proyecto actual. |
-| 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup (`engram mcp`/`engram serve`) | Ready | S | ← ENG-410 | Opcional via flag. Si no hay .engram-id pero sí git, generarlo automáticamente. |
-| 17 | ENG-434 | P1 | Feature | Migración gradual: `project` string → GUID como key canónica en el store | Ready | L | ← ENG-410 + ENG-404 | v1.1. Requiere ENG-404 (memory relations). Breaking, necesita guía de migración. |
+| 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-429-project-id-mcp/spec.md) |
+| 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-430-gitignore-check/spec.md) |
+| 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-431-guid-validation/spec.md) |
+| 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
+| 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-433) |
+| 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | L | ← ENG-410 + ENG-404 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434) |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
