@@ -87,9 +87,11 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
 | 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Done | S | descubierto en sesión logging 2026-06-05 | `de63304` |
-| 4.2 | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Ready | S | descubierto en sesión ENG-209/210 2026-06-15 | Bloquea sync push vía CLI. Ver § detalle abajo. |
+| 4.2 | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Done | S | descubierto en sesión ENG-209/210 2026-06-15 | `628be52`. Fix: SnakeCaseLower en JsonPullOpts |
 | 4.3 | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix post-commit 781e9fe |
-| — | **Meta junio — instalador y DX** |
+| — | **Siguiente** |
+| 3 | ENG-209 | P1 | Test | Pull entre 2 clientes (sync) — **dockerizado: OK** `bash scripts/test-2client-pull.sh` | Ready | S | roadmap | Verificado end-to-end 2026-06-15 |
+| 4 | ENG-210 | P1 | Test | Offline + reconexión — **dockerizado:** `bash scripts/test-offline-reconnect.sh` | Ready | S | roadmap | Sin testear aún (depende de ENG-428 que ya está Done) |
 | 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
@@ -252,34 +254,15 @@ curl http://server:7437/search?q=Offline
 
 ---
 
-### ENG-428 — Mutation push: observation sin session_id (P1, bug)
+### ✅ ENG-428 — Mutation push: observation sin session_id (P1, bug) — DONE
 
 **Descubierto durante:** Sesión ENG-209/210 (2026-06-15) — test dockerizado de sync multi-cliente.
 
-**Problema:** Cuando `engram save` crea una memoria vía CLI, el `SyncManager` genera una mutation y la envía al servidor (`POST /sync/mutations/push`). El servidor `PostgresStore.ApplyObservationUpsertAsync` falla con `PostgresException 23502: null value in column "session_id" of relation "observations" violates not-null constraint` porque el payload de la mutation no incluye `session_id`.
+**Problema:** Cuando `engram save` crea una memoria vía CLI, el `SyncManager` genera una mutation y la envía al servidor. La mutation se serializa con claves snake_case (`session_id`) pero el servidor deserializa esperando camelCase (`sessionId`). `PropertyNameCaseInsensitive = true` no alcanza porque la diferencia es un underscore, no case.
 
-**Causa:** El `engram save` del CLI crea la sesión y la observación, pero al generar la mutation para push, el `session_id` no se serializa en el payload. La tabla `observations` en PostgreSQL requiere `session_id NOT NULL`.
+**Fix:** Agregar `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower` a `JsonPullOpts` en `SqliteStore.cs` y `PostgresStore.cs`. Esto mapea `SessionId` → `"session_id"` correctamente.
 
-**Impacto:** Bloquea el sync push para cualquier observación creada vía CLI. Las memorias se quedan en SQLite local y nunca llegan al servidor. Esto rompe ENG-209 (pull entre 2 clientes) y ENG-210 (offline + reconexión).
-
-**Stack trace relevante:**
-```
-PostgresStore.ApplyObservationUpsertAsync → PostgresStore.ApplyMutationsToDataStoreAsync
-  → PostgresStore.InsertMutationBatchAsync
-  → CloudSyncEndpoints.HandleMutationPushAsync
-```
-
-**Fix propuesto:** Asegurar que el payload de la mutation incluya `session_id` al serializar. Posiblemente en `SqliteStore` o en el `SyncManager` al generar `MutationEntry`. O como alternativa, hacer que `ApplyObservationUpsertAsync` use un `session_id` por defecto si no viene en el payload.
-
-**Stories:**
-- [ ] Identificar dónde se genera el payload de la mutation (probablemente en `SqliteStore` o `SyncManager`)
-- [ ] Agregar `session_id` al payload de mutations de observación
-- [ ] Verificar push funciona con test dockerizado (`scripts/test-2client-pull.sh`)
-- [ ] Verificar no rompe mutations de sesión ni de prompt
-
-**Depende de:** ENG-425 (server-side mutation apply ya implementado). Ningún otro blocker.
-
-**Hecho cuando:** `scripts/test-2client-pull.sh` completa con PASS verificando que Client-B ve la memoria de Client-A.
+**Resultado:** `scripts/test-2client-pull.sh` pasa end-to-end. Servidor recibe la mutation, aplica la observación, y Client-B puede verla via pull.
 
 ---
 
@@ -531,6 +514,12 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-15 | **ENG-428 Done**: Fix JsonPullOpts SnakeCaseLower — session_id ≠ sessionId rompía push. Test 2-client pasa end-to-end. |
+| 2026-06-15 | **ENG-211 Done**: AddColumnIfNotExists para sync_apply_deferred. |
+| 2026-06-15 | **ENG-208 Done + push**: Upstream Phase 2 parity completo (structured errors, incremental, watch, since). 5 commits. |
+| 2026-06-15 | **ENG-428 agregado**: Null session_id en mutation push bloquea sync pull. |
+| 2026-06-15 | **ENG-421/427 marcados Done**: ApplyPulledMutationAsync (ENG-425), ListMutationsSince SQL (ENG-426). |
+| 2026-06-15 | **ENG-209/210 dockerizados**: scripts/test-2client-pull.sh + test-offline-reconnect.sh. |
 | 2026-06-09 | **ENG-425 Done**: Server-side mutation apply implementado y verificado (40/40 tests, PM-1 a PM-7 manuales). Servidor aplica mutations a PostgresStore además de cloud_mutations. sync_id como canonical ID. |
 | 2026-06-09 | **ENG-426 Done**: ID mapping strategy verificado (V1-V6). sync_id como canonical — queries funcionan en todos los paths REST. |
 | 2026-06-09 | **ENG-427 agregado**: Bug en ListMutationsSinceAsync — SQL syntax error con project filter (ANY array). Fix ya aplicado en PostgresStore.cs L1703. |
