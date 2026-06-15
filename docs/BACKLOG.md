@@ -99,7 +99,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
 | 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-429-project-id-mcp/spec.md) |
-| 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-430-gitignore-check/spec.md) |
+| 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Done | S | ← ENG-410 | `680dd1a` — doctor check + .gitignore docs + CONTRIBUTING |
 | 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-431-guid-validation/spec.md) |
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-433) |
