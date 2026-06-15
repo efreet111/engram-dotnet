@@ -637,7 +637,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var obsKey = $"pm2-obs-{Guid.NewGuid():N}";
         var obsPayload = JsonSerializer.Serialize(new
         {
-            sessionId = sessionKey,  // For FK, use session's sync_id as the reference
+            session_id = sessionKey,  // snake_case: matches ObsPayload format (ENG-428)
             type = "decision",
             title = "Architecture decision",
             content = "We chose hexagonal architecture",
@@ -743,7 +743,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var promptKey = $"pm4-prompt-{Guid.NewGuid():N}";
         var payload = JsonSerializer.Serialize(new
         {
-            sessionId = sessionKey,  // For FK, use session's sync_id as reference
+            session_id = sessionKey,  // snake_case: matches production payload format (ENG-428)
             content = "How do I implement JWT?",
             project = "test-pm4",
             occurred_at = "2026-06-07T12:00:00Z"
