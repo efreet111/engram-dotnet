@@ -86,8 +86,9 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Siguiente (cerrar base pre-release)** |
 | 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
 | 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
-| 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Ready | S | descubierto en sesión logging 2026-06-05 | Ver contexto abajo |
-| 4.2 | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array). Fix ya aplicado en L1703. | Ready | S | descubierto en sesión ENG-426 | Bug en sync pull con allowedProjects — post-commit 781e9fe |
+| 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Done | S | descubierto en sesión logging 2026-06-05 | `de63304` |
+| 4.2 | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Ready | S | descubierto en sesión ENG-209/210 2026-06-15 | Bloquea sync push vía CLI. Ver § detalle abajo. |
+| 4.3 | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix post-commit 781e9fe |
 | — | **Meta junio — instalador y DX** |
 | 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
@@ -248,6 +249,39 @@ curl http://server:7437/search?q=Offline
 - [ ] Documentar: `rm -rf ~/.engram/data/` como workaround
 
 **Hecho cuando:** un usuario existente con schema viejo y uno nuevo con schema limpio pueden hacer sync sin errores.
+
+---
+
+### ENG-428 — Mutation push: observation sin session_id (P1, bug)
+
+**Descubierto durante:** Sesión ENG-209/210 (2026-06-15) — test dockerizado de sync multi-cliente.
+
+**Problema:** Cuando `engram save` crea una memoria vía CLI, el `SyncManager` genera una mutation y la envía al servidor (`POST /sync/mutations/push`). El servidor `PostgresStore.ApplyObservationUpsertAsync` falla con `PostgresException 23502: null value in column "session_id" of relation "observations" violates not-null constraint` porque el payload de la mutation no incluye `session_id`.
+
+**Causa:** El `engram save` del CLI crea la sesión y la observación, pero al generar la mutation para push, el `session_id` no se serializa en el payload. La tabla `observations` en PostgreSQL requiere `session_id NOT NULL`.
+
+**Impacto:** Bloquea el sync push para cualquier observación creada vía CLI. Las memorias se quedan en SQLite local y nunca llegan al servidor. Esto rompe ENG-209 (pull entre 2 clientes) y ENG-210 (offline + reconexión).
+
+**Stack trace relevante:**
+```
+PostgresStore.ApplyObservationUpsertAsync → PostgresStore.ApplyMutationsToDataStoreAsync
+  → PostgresStore.InsertMutationBatchAsync
+  → CloudSyncEndpoints.HandleMutationPushAsync
+```
+
+**Fix propuesto:** Asegurar que el payload de la mutation incluya `session_id` al serializar. Posiblemente en `SqliteStore` o en el `SyncManager` al generar `MutationEntry`. O como alternativa, hacer que `ApplyObservationUpsertAsync` use un `session_id` por defecto si no viene en el payload.
+
+**Stories:**
+- [ ] Identificar dónde se genera el payload de la mutation (probablemente en `SqliteStore` o `SyncManager`)
+- [ ] Agregar `session_id` al payload de mutations de observación
+- [ ] Verificar push funciona con test dockerizado (`scripts/test-2client-pull.sh`)
+- [ ] Verificar no rompe mutations de sesión ni de prompt
+
+**Depende de:** ENG-425 (server-side mutation apply ya implementado). Ningún otro blocker.
+
+**Hecho cuando:** `scripts/test-2client-pull.sh` completa con PASS verificando que Client-B ve la memoria de Client-A.
+
+---
 
 ### ⚠️ Nota sobre salud del sync (2026-06-05)
 

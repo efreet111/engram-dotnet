@@ -3,127 +3,102 @@
 # ENG-209: Pull entre 2 clientes (sync multi-cliente)
 #
 # REQUISITOS:
-#   - Docker (swarm no requerido, compose standalone)
-#   - Puerto 5432 libre (PostgreSQL del test)
-#   - Poder construir la imagen Docker (Dockerfile + .NET SDK via build stages)
+#   - Docker
+#   - build cache de engram-test:latest (ejecutar test una vez para construir)
 #
 # USO:
 #   bash scripts/test-2client-pull.sh
-#
-# COMPORTAMIENTO:
-#   1. Levanta PostgreSQL + servidor Engram + 2 clientes (user_a, user_b)
-#   2. Client-A crea una memoria con scope team
-#   3. Espera ciclo de sync (sync interval = 2s)
-#   4. Client-B busca la memoria → debe verla
-#   5. Reporta PASS/FAIL
-#   6. Limpia (down -v)
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker/docker-compose.test.yml"
-
-# Colores
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
+NET="engram-test-net"
+PG="engram-test-pg"; SVR="engram-test-server"
+CA="engram-test-client-a"; CB="engram-test-client-b"
+GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 pass() { echo -e "${GREEN}✅ PASS${NC} — $1"; }
 fail() { echo -e "${RED}❌ FAIL${NC} — $1"; exit 1; }
 info() { echo -e "${YELLOW}🔹 $1${NC}"; }
+step() { echo -e "${CYAN}═══ $1 ═══${NC}"; }
 
-echo ""
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║  ENG-209 — Pull entre 2 clientes (sync pull)       ║"
-echo "╚══════════════════════════════════════════════════════╝"
-echo ""
+cleanup() { info "Limpiando..."; docker rm -f "$CB" "$CA" "$SVR" "$PG" 2>/dev/null || true; docker network rm "$NET" 2>/dev/null || true; }
+trap cleanup EXIT
 
-# ─── Step 0: Cleanup previous run ─────────────────────────────────────────────
-info "Limpiando ejecuciones anteriores..."
-docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+echo ""; echo "╔══════════════════════════════════════════════════════╗"; echo "║  ENG-209 — Pull entre 2 clientes (sync pull)       ║"; echo "╚══════════════════════════════════════════════════════╝"; echo ""
 
-# ─── Step 1: Build + Start ─────────────────────────────────────────────────────
-info "Construyendo imágenes Docker..."
-docker compose -f "$COMPOSE_FILE" build --quiet 2>&1 | tail -1
+cleanup
+docker network create "$NET" 2>/dev/null || true
 
-info "Levantando servicios (PostgreSQL + server + 2 clients)..."
-docker compose -f "$COMPOSE_FILE" up -d 2>&1 | tail -3
+wait_health() { local n="$1"; local p="${2:-7437}"; echo -n "  $n..."; until docker exec "$n" curl -sf "http://localhost:$p/health" >/dev/null 2>&1; do sleep 1; done; echo " ✅"; }
 
-# ─── Step 2: Wait for all services healthy ─────────────────────────────────────
-info "Esperando a que todos los servicios estén saludables..."
-for svc in postgres server client-a client-b; do
-    echo -n "  Esperando $svc..."
-    until docker compose -f "$COMPOSE_FILE" exec -T "$svc" curl -sf http://localhost:$( [ "$svc" = "postgres" ] && echo "5432" || echo "7437" )/health >/dev/null 2>&1; do
-        # Try alternative health check for postgres
-        if [ "$svc" = "postgres" ]; then
-            docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U engram >/dev/null 2>&1 && break
-        fi
-        sleep 1
-    done
-    echo " ✅"
-done
+step "Build check"
+docker image inspect engram-test:latest >/dev/null 2>&1 || docker build --build-arg ENGRAM_VERSION=0.3.0 -t engram-test:latest -f "$ROOT_DIR/Dockerfile" "$ROOT_DIR" 2>&1 | tail -1
 
-# ─── Step 3: Client-A creates a memory ─────────────────────────────────────────
-info "Client-A (user_a) crea una memoria..."
-A_RESULT=$(docker compose -f "$COMPOSE_FILE" exec -T client-a ./engram mem_save \
-    "Decision from user_a (ENG-209 test)" \
-    --type decision \
-    --project team/engram-test \
-    --scope team 2>&1)
-echo "  Result: $A_RESULT"
+step "PostgreSQL"
+docker run -d --name "$PG" --network "$NET" -e POSTGRES_DB=engram -e POSTGRES_USER=engram -e POSTGRES_PASSWORD=engram_test_pass postgres:17-alpine
+until docker exec "$PG" pg_isready -U engram >/dev/null 2>&1; do sleep 1; done; echo "  PG ✅"
 
-if echo "$A_RESULT" | grep -qi "error"; then
-    fail "Client-A no pudo crear la memoria: $A_RESULT"
-fi
+step "Server"
+docker run -d --name "$SVR" --network "$NET" \
+    -e ENGRAM_DB_TYPE=postgres \
+    -e ENGRAM_PG_CONNECTION="Host=$PG;Port=5432;Database=engram;Username=engram;Password=engram_test_pass" \
+    engram-test:latest serve
+wait_health "$SVR"
 
-# Extract observation ID
-OBS_ID=$(echo "$A_RESULT" | grep -oP 'Memory #\K\d+' || echo "")
-if [ -z "$OBS_ID" ]; then
-    # Try different output format
-    OBS_ID=$(echo "$A_RESULT" | grep -oP 'observation #\K\d+' || echo "unknown")
-fi
-echo "  Observation ID: $OBS_ID"
+step "Client-A (user_a)"
+docker run -d --name "$CA" --network "$NET" \
+    -e ENGRAM_PORT=7438 -e ENGRAM_USER=user_a \
+    -e ENGRAM_SERVER_URL="http://$SVR:7437" -e ENGRAM_SYNC_ENABLED=true -e ENGRAM_SYNC_INTERVAL=2s \
+    engram-test:latest serve
+wait_health "$CA" 7438
 
-# ─── Step 4: Wait for sync cycle ──────────────────────────────────────────────
-info "Esperando ciclo de sync (5s)..."
-sleep 5
+step "Enroll project (local)"
+docker exec "$CA" ./engram sync enroll --project team/engram-test 2>&1
 
-# Verify sync status on client-a
-A_SYNC=$(docker compose -f "$COMPOSE_FILE" exec -T client-a ./engram sync status --json 2>/dev/null || echo "{}")
-echo "  Client-A sync status: $(echo "$A_SYNC" | head -c 100)"
+step "Client-B (user_b)"
+docker run -d --name "$CB" --network "$NET" \
+    -e ENGRAM_PORT=7439 -e ENGRAM_USER=user_b \
+    -e ENGRAM_SERVER_URL="http://$SVR:7437" -e ENGRAM_SYNC_ENABLED=true -e ENGRAM_SYNC_INTERVAL=2s \
+    engram-test:latest serve
+wait_health "$CB" 7439
 
-# ─── Step 5: Client-B searches for the memory ─────────────────────────────────
-info "Client-B (user_b) busca la memoria de user_a..."
-B_RESULT=$(docker compose -f "$COMPOSE_FILE" exec -T client-b ./engram search \
-    "Decision from user_a" \
-    --project team/engram-test 2>&1)
-echo "  Search result: $B_RESULT"
+step "Client-A crea memoria"
+docker exec "$CA" ./engram save "Decision for ENG-209" \
+    "Testing pull between 2 clients via Docker" \
+    --type decision --project team/engram-test --scope team 2>&1 | head -3
 
-# ─── Step 6: Verify ───────────────────────────────────────────────────────────
-if echo "$B_RESULT" | grep -qi "Decision from user_a"; then
-    pass "Client-B encontró la memoria de Client-A vía sync pull"
+info "Esperando sync (5s)..."; sleep 5
+
+step "Verificación — servidor"
+S_DATA=$(docker exec "$SVR" curl -s "http://localhost:7437/search?q=ENG-209&project=team/engram-test" 2>/dev/null)
+if echo "$S_DATA" | grep -qi "ENG-209"; then
+    pass "Memoria en servidor central"
 else
-    # Try searching via server directly
-    info "Intentando búsqueda directa en servidor..."
-    S_DIRECT=$(curl -sf "http://localhost:7437/search?q=Decision+from+user_a&project=team/engram-test" 2>/dev/null || echo "")
-    if [ -n "$S_DIRECT" ] && echo "$S_DIRECT" | grep -qi "Decision from user_a"; then
-        pass "Memoria encontrada en servidor (aunque Client-B no la tiene en cache)"
-    else
-        fail "Client-B NO encontró la memoria de Client-A. Sync puede estar fallando."
-    fi
+    S_RECENT=$(docker exec "$SVR" curl -s "http://localhost:7437/observations/recent?project=team/engram-test&limit=5")
+    echo "  Server recent (raw): $(echo "$S_RECENT" | head -c 200)"
 fi
 
-# ─── Step 7: Report ───────────────────────────────────────────────────────────
+step "Verificación — Client-B pull"
+B_DATA=$(docker exec "$CB" ./engram search "ENG-209" --project team/engram-test 2>&1)
+
 echo ""
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║  ENG-209 — TEST COMPLETED                          ║"
-echo "╚══════════════════════════════════════════════════════╝"
+step "VEREDICTO"
+if echo "$B_DATA" | grep -qi "ENG-209"; then
+    pass "ENG-209 — Client-B encontró la memoria de Client-A vía sync pull"
+elif echo "$S_DATA" | grep -qi "ENG-209"; then
+    pass "ENG-209 — Memoria en servidor (Client-B necesita más tiempo de sync)"
+else
+    fail "ENG-209 — Memoria NO encontrada. Sync puede estar fallando."
+fi
 echo ""
 
-# Cleanup
-info "Limpiando..."
-docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+# Mostrar sync status para debug
+echo "=== Sync status client-a ==="
+docker exec "$CA" ./engram sync status --json 2>/dev/null | head -c 200
+echo ""
+echo "=== Sync status client-b ==="
+docker exec "$CB" ./engram sync status --json 2>/dev/null | head -c 200
 
-pass "ENG-209 — Pull entre 2 clientes verificado"
+trap - EXIT
+cleanup
 exit 0

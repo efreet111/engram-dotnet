@@ -2012,6 +2012,24 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(list);
     }
 
+    public Task EnrollProjectLocalAsync(string project)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "INSERT OR IGNORE INTO sync_enrolled_projects (project) VALUES (@project)";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task UnenrollProjectLocalAsync(string project)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "DELETE FROM sync_enrolled_projects WHERE project = @project";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
     public Task AckSyncMutationSeqsAsync(string targetKey, IReadOnlyList<long> seqs, CancellationToken ct = default)
     {
         if (seqs.Count == 0) return Task.CompletedTask;

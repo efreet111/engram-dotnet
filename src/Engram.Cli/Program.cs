@@ -398,9 +398,53 @@ syncImportCmd.SetHandler(async () =>
         : $"Imported {imported} observations from new chunks.");
 });
 
+// sync enroll — enroll a project for local sync push
+var syncEnrollCmd = new Command("enroll", "Enroll a project for sync push");
+var enrollProjectOpt = new Option<string>("--project", "Project to enroll");
+syncEnrollCmd.AddOption(enrollProjectOpt);
+syncEnrollCmd.SetHandler(async (string project) =>
+{
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --project is required");
+        return;
+    }
+    using var store = OpenStore();
+    if (store is Engram.Store.SqliteStore ss)
+    {
+        await ss.EnrollProjectLocalAsync(project);
+        Console.WriteLine($"Project '{project}' enrolled for sync push.");
+    }
+    else
+        Console.Error.WriteLine("enroll is only supported for local SQLite stores.");
+}, enrollProjectOpt);
+
+// sync unenroll — unenroll a project from local sync push
+var syncUnenrollCmd = new Command("unenroll", "Unenroll a project from sync push");
+var unenrollProjectOpt = new Option<string>("--project", "Project to unenroll");
+syncUnenrollCmd.AddOption(unenrollProjectOpt);
+syncUnenrollCmd.SetHandler(async (string project) =>
+{
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --project is required");
+        return;
+    }
+    using var store = OpenStore();
+    if (store is Engram.Store.SqliteStore ss)
+    {
+        await ss.UnenrollProjectLocalAsync(project);
+        Console.WriteLine($"Project '{project}' unenrolled from sync push.");
+    }
+    else
+        Console.Error.WriteLine("unenroll is only supported for local SQLite stores.");
+}, unenrollProjectOpt);
+
 syncCmd.AddCommand(syncStatusCmd);
 syncCmd.AddCommand(syncExportCmd);
 syncCmd.AddCommand(syncImportCmd);
+syncCmd.AddCommand(syncEnrollCmd);
+syncCmd.AddCommand(syncUnenrollCmd);
 
 // ─── promote ─────────────────────────────────────────────────────────────────
 
