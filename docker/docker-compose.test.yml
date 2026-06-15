@@ -1,0 +1,130 @@
+# docker-compose.test.yml — Multi-client sync tests (ENG-209, ENG-210)
+#
+# USO:
+#   docker compose -f docker/docker-compose.test.yml build   # construir
+#   bash scripts/test-2client-pull.sh                        # ENG-209
+#   bash scripts/test-offline-reconnect.sh                   # ENG-210
+#   docker compose -f docker/docker-compose.test.yml down -v # limpiar
+
+services:
+  # ─── PostgreSQL (servidor central) ──────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: engram-test-pg
+    environment:
+      POSTGRES_DB: engram
+      POSTGRES_USER: engram
+      POSTGRES_PASSWORD: engram_test_pass
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U engram -d engram"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      test-net:
+        aliases:
+          - postgres
+
+  # ─── Servidor Engram (PostgreSQL backend) ──────────────────────────────
+  server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v0.3.0
+    container_name: engram-test-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENGRAM_DB_TYPE: postgres
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7437"
+      ENGRAM_PG_CONNECTION: "Host=postgres;Port=5432;Database=engram;Username=engram;Password=engram_test_pass"
+    ports:
+      - "7437:7437"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      test-net:
+        aliases:
+          - server
+
+  # ─── Cliente A (User: user_a, SQLite local + sync) ─────────────────────
+  client-a:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v0.3.0
+    container_name: engram-test-client-a
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7438"
+      ENGRAM_DB_TYPE: sqlite
+      ENGRAM_USER: user_a
+      ENGRAM_SERVER_URL: http://server:7437
+      ENGRAM_SYNC_ENABLED: "true"
+      ENGRAM_SYNC_INTERVAL: "2s"
+      DOTNET_ENVIRONMENT: Development
+    ports:
+      - "7438:7438"
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7438/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      test-net:
+        aliases:
+          - client-a
+
+  # ─── Cliente B (User: user_b, SQLite local + sync) ─────────────────────
+  client-b:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v0.3.0
+    container_name: engram-test-client-b
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7439"
+      ENGRAM_DB_TYPE: sqlite
+      ENGRAM_USER: user_b
+      ENGRAM_SERVER_URL: http://server:7437
+      ENGRAM_SYNC_ENABLED: "true"
+      ENGRAM_SYNC_INTERVAL: "2s"
+      DOTNET_ENVIRONMENT: Development
+    ports:
+      - "7439:7439"
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7439/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      test-net:
+        aliases:
+          - client-b
+
+networks:
+  test-net:
+    driver: bridge

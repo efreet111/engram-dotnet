@@ -106,9 +106,12 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Icebox (no sacar hasta vaciar P0/P1)** |
 | — | ENG-419 | P2 | Bug | Eliminar debug enroll + endpoint /debug-test | Done | S | ← audit AUD-021/022 | Resuelto 2026-06-05 |
 | — | ENG-420 | P1 | Test | CloudSyncIntegrationTests en CI PR | Done | S | ← audit AUD-031 | Step en ci.yml job postgres |
-| — | ENG-421 | P0 | Bug | Implementar ApplyPulledMutationAsync (sync pull) | Ready | L | ← audit AUD-013 | [TD-013](TECHNICAL-DEBT.md#td-013--sqlitestore-applypulledmutationasync-stub) |
+| ✓ | ENG-421 | P0 | Bug | ApplyPulledMutationAsync (sync pull) — resuelto como parte de ENG-425 (server-side apply, ADR-002) | Done | L | ← audit AUD-013 | Implementado en SqliteStore.cs:2082 + 11 tests |
 | ✓ | ENG-425 | P0 | Feature | Server-side mutation apply: servidor aplica mutations a PostgresStore | Done | L | ← ADR-002 decisión | [ADR-002](../docs/architecture/adr/ADR-002-sync-mutation-application.md) |
 | ✓ | ENG-426 | P0 | Architecture | ID mapping strategy: sync_id como canonical (sin mapping a server ID) | Done | M | ← ADR-002 decisión | Verificado V1-V6. Fix bug SQL en ListMutationsSinceAsync (L1703). |
+| — | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array). Fix ya aplicado en PostgresStore.cs:1814. | Ready | S | descubierto en sesión ENG-426 | Fix post-commit 781e9fe — **marcar Done** |
+| — | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) — **Dockerizado:** `bash scripts/test-2client-pull.sh` | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
+| — | ENG-210 | P1 | Test | Manual: offline + reconexión — **Dockerizado:** `bash scripts/test-offline-reconnect.sh` | Ready | S | roadmap | Idem |
 | — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
