@@ -2650,7 +2650,7 @@ CREATE TABLE IF NOT EXISTS observations (
     private long ExecRows(SqliteTransaction tx, string sql, params SqliteParameter[] parms)
     {
         using var cmd = TxCmd(tx, sql, parms);
-        SqliteRetry.Execute(() => cmd.ExecuteNonQuery());
+        cmd.ExecuteNonQuery();
         using var rowCmd = _db.CreateCommand();
         rowCmd.Transaction = tx;
         rowCmd.CommandText = "SELECT changes()";
