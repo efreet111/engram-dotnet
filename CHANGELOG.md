@@ -7,6 +7,8 @@
 
 ### Added
 
+- **ENG-410**: Project identity fingerprint — UUID v5 determinista desde git remote URL + primer commit SHA. Archivo `.engram-id` en raíz del repo. `DetectionResult.ProjectId` integrado en `DetectProjectFull()`. RFC-001.
+- **ENG-411**: Polly resilience pipeline para SQLITE_BUSY (SQLite error code 5). 3 retries con exponential backoff (100ms-400ms-800ms). Wraps `Exec()` y `WithTx()` en SqliteStore. Complementa `PRAGMA journal_mode=WAL` + `busy_timeout=5000` ya existentes.
 - **ENG-208**: Structured MCP error responses — all 18 error sites in EngramTools.cs now return JSON with `error_code`, `message`, optional `hint`, and `available_projects`. New `McpErrors` helper enforces a 9-code catalog.
 - **ENG-208**: `mem_current_project` MCP tool (already existed, now with full test coverage)
 - **ENG-208**: `ExportProjectAsync` and `ExportSinceAsync` store methods. `GET /export?project=X` and `GET /export/since?after_seq=N` server endpoints.

@@ -25,6 +25,7 @@ public record DetectionResult(
     string Project,
     string Source,
     string ProjectPath,
+    string? ProjectId = null,
     string? Warning = null,
     string? Error = null,
     List<string>? AvailableProjects = null
@@ -34,6 +35,11 @@ public record DetectionResult(
     /// Returns AvailableProjects if set, otherwise an empty list.
     /// </summary>
     public IReadOnlyList<string> GetAvailableProjects() => AvailableProjects ?? [];
+
+    /// <summary>
+    /// Returns true if ProjectId is set (from .engram-id or computed).
+    /// </summary>
+    public bool HasProjectId => !string.IsNullOrEmpty(ProjectId);
 }
 
 /// <summary>
@@ -88,10 +94,12 @@ public static class ProjectDetector
         if (!string.IsNullOrEmpty(remoteUrl))
         {
             var rootPath = DetectGitRootPath(dir);
+            var projectId = TryGetProjectId(rootPath);
             return new DetectionResult(
                 Project: Normalizers.NormalizeProject(remoteUrl),
                 Source: ProjectSources.GitRemote,
-                ProjectPath: string.IsNullOrEmpty(rootPath) ? dir : rootPath
+                ProjectPath: string.IsNullOrEmpty(rootPath) ? dir : rootPath,
+                ProjectId: projectId
             );
         }
 
@@ -105,10 +113,12 @@ public static class ProjectDetector
                 var name = Path.GetFileName(rootPath2);
                 if (!string.IsNullOrEmpty(name) && name != ".")
                 {
+                    var projectId = TryGetProjectId(rootPath2);
                     return new DetectionResult(
                         Project: Normalizers.NormalizeProject(name),
                         Source: ProjectSources.GitRoot,
-                        ProjectPath: rootPath2
+                        ProjectPath: rootPath2,
+                        ProjectId: projectId
                     );
                 }
             }
@@ -119,10 +129,12 @@ public static class ProjectDetector
         if (children.Count == 1)
         {
             var child = children[0];
+            var projectId = TryGetProjectId(child.Path);
             return new DetectionResult(
                 Project: Normalizers.NormalizeProject(child.Name),
                 Source: ProjectSources.GitChild,
                 ProjectPath: child.Path,
+                ProjectId: projectId,
                 Warning: $"Auto-promoted single child repo '{child.Name}'"
             );
         }
@@ -445,5 +457,73 @@ public static class ProjectDetector
         }
 
         return prev[a.Length];
+    }
+
+    /// <summary>
+    /// Intenta obtener el ProjectId desde .engram-id o calcularlo desde git.
+    /// Retorna null si no es posible (no hay repo, no hay remote, etc).
+    /// </summary>
+    internal static string? TryGetProjectId(string repoPath)
+    {
+        // 1. Try to read from .engram-id file
+        var projectId = ProjectIdentity.GetProjectId(repoPath);
+        if (!string.IsNullOrEmpty(projectId))
+            return projectId;
+
+        // 2. Check if it's a git repo with remote
+        var remoteUrl = DetectFromGitRemote(repoPath);
+        if (string.IsNullOrEmpty(remoteUrl))
+            return null;
+
+        // 3. Get the first commit SHA
+        var firstCommitSha = ProjectIdentity.GetFirstCommitSha(repoPath);
+        if (string.IsNullOrEmpty(firstCommitSha))
+            return null;
+
+        // 4. Compute UUID v5 from normalized URL + first commit
+        // We need the full normalized URL, not just the repo name
+        var fullRemoteUrl = GetFullRemoteUrl(repoPath);
+        if (string.IsNullOrEmpty(fullRemoteUrl))
+            return null;
+
+        var guid = ProjectIdentity.ComputeProjectId(fullRemoteUrl, firstCommitSha);
+        return guid.ToString("D");
+    }
+
+    /// <summary>
+    /// Gets the full remote URL (not just the repo name).
+    /// </summary>
+    private static string? GetFullRemoteUrl(string dir)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"-C \"{dir}\" remote get-url origin",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            if (!process.WaitForExit(2000))
+            {
+                try { process.Kill(); } catch { /* best effort */ }
+                return null;
+            }
+            if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
+                return null;
+
+            return output;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

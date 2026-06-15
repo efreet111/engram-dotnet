@@ -415,6 +415,157 @@ public class ProjectDetectorTests
     {
         Assert.Equal("", Normalizers.NormalizeProject("   "));
     }
+
+    // ─── ProjectIdentity ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void ProjectIdentity_NormalizeUrl_Https()
+    {
+        var result = ProjectIdentity.NormalizeUrl("https://github.com/User/Repo.git");
+        Assert.Equal("github.com/user/repo", result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_NormalizeUrl_Ssh()
+    {
+        var result = ProjectIdentity.NormalizeUrl("git@github.com:User/Repo.git");
+        Assert.Equal("github.com/user/repo", result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_NormalizeUrl_NoSuffix()
+    {
+        var result = ProjectIdentity.NormalizeUrl("https://github.com/User/Repo");
+        Assert.Equal("github.com/user/repo", result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_NormalizeUrl_Empty_ReturnsEmpty()
+    {
+        var result = ProjectIdentity.NormalizeUrl("");
+        Assert.Equal("", result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_NormalizeUrl_Whitespace_ReturnsTrimmed()
+    {
+        var result = ProjectIdentity.NormalizeUrl("  https://github.com/User/Repo  ");
+        Assert.Equal("github.com/user/repo", result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_ComputeProjectId_Deterministic()
+    {
+        // Same inputs should produce same UUID
+        var id1 = ProjectIdentity.ComputeProjectId(
+            "https://github.com/efreet111/engram-dotnet",
+            "abc123def456");
+        var id2 = ProjectIdentity.ComputeProjectId(
+            "https://github.com/efreet111/engram-dotnet",
+            "abc123def456");
+
+        Assert.Equal(id1, id2);
+    }
+
+    [Fact]
+    public void ProjectIdentity_ComputeProjectId_DifferentInputs_DifferentIds()
+    {
+        var id1 = ProjectIdentity.ComputeProjectId(
+            "https://github.com/efreet111/engram-dotnet",
+            "abc123def456");
+        var id2 = ProjectIdentity.ComputeProjectId(
+            "https://github.com/efreet111/engram-dotnet",
+            "differentcommit");
+
+        Assert.NotEqual(id1, id2);
+    }
+
+    [Fact]
+    public void ProjectIdentity_GetProjectId_ExistingFile_ReturnsGuid()
+    {
+        using var tempDir = new TempDirectory();
+        var idFile = Path.Combine(tempDir.Path, ".engram-id");
+        var expectedGuid = "550e8400-e29b-41d4-a716-446655440000";
+        File.WriteAllText(idFile, expectedGuid);
+
+        var result = ProjectIdentity.GetProjectId(tempDir.Path);
+
+        Assert.Equal(expectedGuid, result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_GetProjectId_NoFile_ReturnsNull()
+    {
+        using var tempDir = new TempDirectory();
+
+        var result = ProjectIdentity.GetProjectId(tempDir.Path);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_GetProjectId_InvalidGuid_ReturnsNull()
+    {
+        using var tempDir = new TempDirectory();
+        var idFile = Path.Combine(tempDir.Path, ".engram-id");
+        File.WriteAllText(idFile, "not-a-valid-guid");
+
+        var result = ProjectIdentity.GetProjectId(tempDir.Path);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ProjectIdentity_SaveProjectId_CreatesFile()
+    {
+        using var tempDir = new TempDirectory();
+        var projectId = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
+
+        ProjectIdentity.SaveProjectId(tempDir.Path, projectId);
+
+        var idFile = Path.Combine(tempDir.Path, ".engram-id");
+        Assert.True(File.Exists(idFile));
+        var content = File.ReadAllText(idFile).Trim();
+        Assert.Equal("550e8400-e29b-41d4-a716-446655440000", content);
+    }
+
+    // ─── DetectionResult.ProjectId ─────────────────────────────────────────
+
+    [Fact]
+    public void DetectionResult_HasProjectId_WhenSet()
+    {
+        var result = new DetectionResult(
+            Project: "test",
+            Source: "git_root",
+            ProjectPath: "/tmp",
+            ProjectId: "550e8400-e29b-41d4-a716-446655440000");
+
+        Assert.True(result.HasProjectId);
+        Assert.Equal("550e8400-e29b-41d4-a716-446655440000", result.ProjectId);
+    }
+
+    [Fact]
+    public void DetectionResult_HasProjectId_WhenNull()
+    {
+        var result = new DetectionResult(
+            Project: "test",
+            Source: "git_root",
+            ProjectPath: "/tmp");
+
+        Assert.False(result.HasProjectId);
+    }
+
+    [Fact]
+    public void DetectionResult_HasProjectId_WhenEmpty()
+    {
+        var result = new DetectionResult(
+            Project: "test",
+            Source: "git_root",
+            ProjectPath: "/tmp",
+            ProjectId: "");
+
+        Assert.False(result.HasProjectId);
+    }
 }
 
 /// <summary>

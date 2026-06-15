@@ -96,8 +96,14 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
 | — | **Estabilidad inmediata (v1.0.0)** |
-| 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Ready | M | ← PRD memoria semántica | Ver [RFC-001](../docs/architecture/rfc/RFC-001-project-identity.md) |
+| 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
+| 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Ready | S | ← ENG-410 | Gap detectado en auditoría. Campo existe en código, no en respuesta MCP. |
+| 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Ready | S | ← ENG-410 | Si `.engram-id` está en `.gitignore`, el equipo nunca recibe la identidad. Blocker silencioso. |
+| 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID: warning si `.engram-id` ≠ cálculo determinista | Ready | S | ← ENG-410 | Detección de corrupción/edición manual del archivo. |
+| 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | Comando de debug para ver identidad del proyecto actual. |
+| 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup (`engram mcp`/`engram serve`) | Ready | S | ← ENG-410 | Opcional via flag. Si no hay .engram-id pero sí git, generarlo automáticamente. |
+| 17 | ENG-434 | P1 | Feature | Migración gradual: `project` string → GUID como key canónica en el store | Ready | L | ← ENG-410 + ENG-404 | v1.1. Requiere ENG-404 (memory relations). Breaking, necesita guía de migración. |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
@@ -263,6 +269,92 @@ curl http://server:7437/search?q=Offline
 **Fix:** Agregar `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower` a `JsonPullOpts` en `SqliteStore.cs` y `PostgresStore.cs`. Esto mapea `SessionId` → `"session_id"` correctamente.
 
 **Resultado:** `scripts/test-2client-pull.sh` pasa end-to-end. Servidor recibe la mutation, aplica la observación, y Client-B puede verla via pull.
+
+---
+
+---
+
+### ENG-429 — Exponer `project_id` en `mem_current_project` (P1, S)
+
+**Problema:** `DetectionResult.ProjectId` ya existe en código. Pero `mem_current_project` no lo incluye en su JSON. El campo está en el modelo pero el wrapper MCP lo ignora.
+
+**Valor:** Agente FlowForge conoce el UUID estable del proyecto, no solo el nombre. Referencias cross-machine. `.engram-id` pasa de ser invisible a estar disponible para el ecosistema.
+
+**Criterios:**
+- [ ] `mem_current_project` incluye `project_id` en snake_case
+- [ ] `null` cuando no hay identidad
+- [ ] Test unitario
+
+---
+
+### ENG-430 — `.engram-id` en `.gitignore` + check (P0, S)
+
+**Problema:** Si `.engram-id` está en `.gitignore`, el archivo nunca se comparte. El equipo tendría GUIDs diferentes → memorias duplicadas. Es un bloqueo silencioso.
+
+**Valor:** Garantiza que el equipo comparte la misma identidad. Sin esto, project identity no sirve en equipos.
+
+**Criterios:**
+- [ ] `.engram-id` NO en `.gitignore` del template
+- [ ] `engram doctor` check que verifica el archivo no está ignorado
+- [ ] Documentar en CONTRIBUTING.md que debe commitearse
+
+---
+
+### ENG-431 — Validación de consistencia del GUID (P2, S)
+
+**Problema:** Si alguien edita `.engram-id` manualmente, el GUID no coincide con `UUIDv5(remote, first_commit)`. El sistema usa el GUID editado sin warning. Otros miembros tendrían identidad diferente.
+
+**Valor:** Detección temprana de corrupción. Evita divergencia de identidad silenciosa.
+
+**Criterios:**
+- [ ] Al leer `.engram-id`, validar contra cálculo determinista
+- [ ] Si no coincide → log warning
+- [ ] El archivo manda (no bloquea)
+- [ ] `ENGRAM_STRICT_PROJECT_ID=true` para CI (fatal)
+
+---
+
+### ENG-432 — CLI `engram project id` (P2, S)
+
+**Problema:** No hay forma de ver el `project_id` desde terminal. Debug requiere abrir `.engram-id` a mano.
+
+**Valor:** Comando análogo a `git remote -v`. Utilidad para desarrollo.
+
+**Criterios:**
+- [ ] `engram project id` → imprime GUID o `null`
+- [ ] `--json` → output estructurado con `source` (file|computed|none)
+- [ ] `--regenerate` → recalcula y sobreescribe (con confirmación)
+
+---
+
+### ENG-433 — Auto-generación de `.engram-id` en startup (P2, S)
+
+**Problema:** `.engram-id` debe generarse manualmente hoy. Si un nuevo miembro clona antes de que exista, queda sin identidad.
+
+**Valor:** Elimina fricción de setup. Primer contacto con el proyecto = identidad generada automáticamente.
+
+**Criterios:**
+- [ ] Flag `ENGRAM_AUTO_ENROLL=true` habilita auto-generación
+- [ ] Por defecto OFF (no generar archivos sin consentimiento)
+- [ ] Detecta git repo sin `.engram-id` → calcula y guarda
+- [ ] Log: "Generated project identity: ..."
+
+---
+
+### ENG-434 — Migración `project` string → GUID canónico (P1, L, v1.1)
+
+**Problema:** `project` string (nombre de carpeta) es la key del store hoy. Renombrar carpeta = perder memorias. El GUID existe pero no se usa en storage.
+
+**Valor:** Identidad inmune a renames, clones y moves. Fundación para sync multi-dispositivo confiable.
+
+**Depende de:** ENG-404 (memory relations).
+
+**Criterios:**
+- [ ] Store acepta `project_id` GUID como parámetro
+- [ ] Search/save/context con GUID canónico
+- [ ] Migración automática de memorias existentes
+- [ ] Guía de migración para equipos
+- [ ] Deprecation period para `project` string
 
 ---
 
