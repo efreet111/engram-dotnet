@@ -18,6 +18,12 @@ docker/.env
 *.env.local
 .env.*.local
 secrets/
+
+# Project identity — DO NOT ignore .engram-id
+# This file contains the UUID v5 project fingerprint and MUST be committed
+# so all team members share the same project identity.
+# If .engram-id is in .gitignore, team members will have different IDs.
+# !.engram-id
 *.pem
 *.key
 *.pfx

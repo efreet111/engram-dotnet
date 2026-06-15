@@ -45,12 +45,14 @@ public sealed class DiagnosticService : IDiagnosticService
         var dbCheck = CheckDatabaseAsync(cancellationToken);
         var httpCheck = CheckHttpServerAsync(cancellationToken);
         var mcpCheck = CheckMcpServerAsync(cancellationToken);
+        var identityCheck = CheckProjectIdentityAsync(cancellationToken);
 
-        await Task.WhenAll(dbCheck, httpCheck, mcpCheck);
+        await Task.WhenAll(dbCheck, httpCheck, mcpCheck, identityCheck);
 
         result.Components["database"] = await dbCheck;
         result.Components["http_server"] = await httpCheck;
         result.Components["mcp_server"] = await mcpCheck;
+        result.Components["project_identity"] = await identityCheck;
 
         // System is healthy if all components are healthy
         result.IsHealthy = result.Components.Values.All(c => c.IsHealthy);
@@ -245,6 +247,119 @@ public sealed class DiagnosticService : IDiagnosticService
                 Message = $"MCP check failed: {ex.Message}",
                 LatencyMs = stopwatch.ElapsedMilliseconds
             });
+        }
+    }
+
+    /// <summary>
+    /// Checks project identity: .engram-id existence and gitignore status.
+    /// ENG-410 / ENG-430.
+    /// </summary>
+    private Task<ComponentHealth> CheckProjectIdentityAsync(CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            // Find git root
+            var cwd = Directory.GetCurrentDirectory();
+            var repoRoot = FindGitRoot(cwd);
+
+            if (repoRoot is null)
+            {
+                return Task.FromResult(new ComponentHealth
+                {
+                    IsHealthy = true,
+                    Message = "Not a git repository — project identity N/A",
+                    LatencyMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+
+            var idFile = Path.Combine(repoRoot, ".engram-id");
+
+            if (!File.Exists(idFile))
+            {
+                return Task.FromResult(new ComponentHealth
+                {
+                    IsHealthy = true,
+                    Message = "No .engram-id found. Run 'engram project id --generate' to create one.",
+                    LatencyMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+
+            // Check if .engram-id is in .gitignore
+            var isIgnored = IsGitIgnored(repoRoot, ".engram-id");
+
+            if (isIgnored)
+            {
+                stopwatch.Stop();
+                return Task.FromResult(new ComponentHealth
+                {
+                    IsHealthy = false,
+                    Message = ".engram-id is in .gitignore — team members may have " +
+                              "different project identities. Remove '.engram-id' from .gitignore " +
+                              "and commit the file so all team members share the same identity.",
+                    LatencyMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+
+            // Healthy: .engram-id exists and is tracked
+            stopwatch.Stop();
+            var guid = File.ReadAllText(idFile).Trim();
+            return Task.FromResult(new ComponentHealth
+            {
+                IsHealthy = true,
+                Message = $"Project identity found: {guid[..8]}...",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return Task.FromResult(new ComponentHealth
+            {
+                IsHealthy = false,
+                Message = $"Project identity check failed: {ex.Message}",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            });
+        }
+    }
+
+    private static string? FindGitRoot(string startDir)
+    {
+        var dir = startDir;
+        while (dir is not null)
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")))
+                return dir;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
+
+    private static bool IsGitIgnored(string repoRoot, string path)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"check-ignore -q -- {path}",
+                WorkingDirectory = repoRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = Process.Start(psi);
+            process?.WaitForExit(5000);
+            // git check-ignore returns 0 if the file IS ignored
+            return process?.ExitCode == 0;
+        }
+        catch
+        {
+            // If git is not available, assume not ignored
+            return false;
         }
     }
 }

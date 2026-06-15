@@ -68,6 +68,19 @@ Si es una vulnerabilidad de seguridad, **no abras issue público**. Seguí [SECU
 
 ---
 
+---
+
+## Project Identity (`.engram-id`)
+
+This repo uses a project identity fingerprint for stable memory tracking across clones and renames. The file `.engram-id` at the repository root contains a UUID v5 deterministically computed from the git remote URL and first commit SHA.
+
+- **Commit `.engram-id`** — it must be in version control so all team members share the same identity.
+- **Never add `.engram-id` to `.gitignore`** — doing so causes silent identity divergence (each member gets a different project ID, memories become isolated).
+- **Don't edit `.engram-id` manually** — the UUID is deterministic. Editing breaks the guarantee.
+- If you lose the file, run `engram project id --regenerate` to recreate it (same UUID, deterministic).
+
+---
+
 ## Code of Conduct
 
 Este proyecto sigue el [Contributor Covenant](CODE_OF_CONDUCT.md). Sé respetuoso, el feedback constructivo es bienvenido, el maltrato no.
