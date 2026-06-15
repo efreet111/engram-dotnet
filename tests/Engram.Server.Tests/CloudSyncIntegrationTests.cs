@@ -151,7 +151,7 @@ public class CloudSyncIntegrationTests : IClassFixture<CloudSyncPostgresFixture>
                     entity = "observation",
                     entity_key = "obs-1",
                     op = "upsert",
-                    payload = """{"sessionId":"int-session","title":"Integration test obs","content":"Roundtrip test"}"""
+                    payload = """{"session_id":"int-session","title":"Integration test obs","content":"Roundtrip test"}"""
                 },
             }
         };
