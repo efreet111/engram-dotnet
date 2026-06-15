@@ -23,6 +23,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     // JSON options with case-insensitive property matching (for pull payloads)
     private static readonly JsonSerializerOptions JsonPullOpts = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         PropertyNameCaseInsensitive = true
     };
 

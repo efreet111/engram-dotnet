@@ -16,9 +16,10 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
     private readonly SqliteConnection _db;
     private readonly StoreConfig _cfg;
 
-    // JSON options with case-insensitive property matching (for pull payloads)
+    // JSON options with snake_case matching (mutation payloads use snake_case)
     private static readonly JsonSerializerOptions JsonPullOpts = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         PropertyNameCaseInsensitive = true
     };
 
