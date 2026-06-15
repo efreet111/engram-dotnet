@@ -13,6 +13,18 @@
 - **ENG-208**: `engram obsidian-export --watch [--interval 30s] [--since 2025-01-01] [--project X]` — daemon mode with seq cursor when server reachable, timestamp fallback when offline. State persisted per-project.
 - **ENG-208**: `engram obsidian-export --since 2025-01-01` — filter by date (ISO 8601 or relative `30d`/`7d`/`24h`)
 - **ENG-208**: Per-project state files (`state-{project}.json`) for watch mode isolation
+- **ENG-211**: SQLite schema migration for `sync_apply_deferred` — `AddColumnIfNotExists` for `retry_count` and `last_error` columns in Migrate(). ReplayDeferredAsync no longer fails with "no such column" on old DBs.
+- **ENG-428**: Fix sync push — `JsonPullOpts` now uses `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower`. Mutation payloads use snake_case keys (`session_id`) but were being deserialized with camelCase, causing null `session_id` and PostgresException 23502.
+- **ENG-209**: Dockerized multi-client sync test (`scripts/test-2client-pull.sh`) — PostgreSQL + server + 2 clients with sync, end-to-end verification.
+- **ENG-210**: Dockerized offline + reconnection test (`scripts/test-offline-reconnect.sh`) — network disconnect, 3 offline memories, reconnect, verify on server.
+- **Sync enroll/unenroll**: New CLI commands `engram sync enroll --project X` and `engram sync unenroll --project X` for local sync_enrolled_projects table management.
+
+### Fixed
+
+- **ENG-428**: Mutation payload `session_id` not deserialized — `ObsPayload` uses `session_id` (snake_case) but `ObservationPullPayload` expected `sessionId`. Fix: `SnakeCaseLower` naming policy in both SqliteStore and PostgresStore.
+- **ENG-208 audit**: `WatchLoop.cs` had `IncludePersonal=false` hardcoded; `--include-personal` flag never reached WatchConfig. Fixed.
+- **ENG-208 audit**: `RunCycleAsync` overwrote exporter state (`Files`, `Version`). Fixed: exporter persists, loop only handles `LastSeq`.
+- **ENG-211**: ReplayDeferredAsync "no such column" on old SQLite databases. Fixed: AddColumnIfNotExists for `retry_count` and `last_error`.
 
 - **Logging infrastructure** — structured JSON logging with fields: `@timestamp`, `level`, `method`, `path`, `status`, `duration_ms`, `client_ip`
   - FR-LOG-01: Request/response middleware captures client_ip
