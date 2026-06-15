@@ -147,7 +147,7 @@ public class WatchModeTests
         };
 
         var cts = new CancellationTokenSource();
-        cts.CancelAfter(300);
+        cts.CancelAfter(800);
 
         // Should not throw - should continue after error
         await WatchLoop.RunAsync(config, cts.Token);
