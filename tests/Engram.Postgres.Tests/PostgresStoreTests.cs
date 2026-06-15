@@ -779,7 +779,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         });
         var obsPayload = JsonSerializer.Serialize(new
         {
-            sessionId = sessionKey,
+            session_id = sessionKey,
             type = "manual",
             title = "Should exist",
             content = "Content",
@@ -818,7 +818,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         // Batch with observation referencing NON-EXISTENT-SESSION
         var obsPayload = JsonSerializer.Serialize(new
         {
-            sessionId = nonExistentSessionKey,
+            session_id = nonExistentSessionKey,
             type = "manual",
             title = "Should NOT exist",
             content = "Content",
@@ -894,7 +894,7 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         });
         var obsPayload = JsonSerializer.Serialize(new
         {
-            sessionId = sessionKey,
+            session_id = sessionKey,
             type = "decision",
             title = "Arquitectura decisions",
             content = "We chose hexagonal architecture",
