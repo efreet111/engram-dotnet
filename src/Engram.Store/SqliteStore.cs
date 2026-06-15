@@ -234,7 +234,10 @@ CREATE TABLE IF NOT EXISTS observations (
         ");
 
         // ─── sync_apply_deferred (offline-first-sync Phase 1.4) ─────────────────
+        // Note: CREATE TABLE IF NOT EXISTS fails if table exists with different schema.
+        // We use a two-phase approach: first create with base columns, then add optional ones.
 
+        // Phase 1: Create table if not exists (base columns only - these always existed)
         Exec(@"
             CREATE TABLE IF NOT EXISTS sync_apply_deferred (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,12 +246,17 @@ CREATE TABLE IF NOT EXISTS observations (
                 op          TEXT NOT NULL,
                 payload     TEXT NOT NULL,
                 source      TEXT NOT NULL DEFAULT 'pull',
-                pulled_at   TEXT NOT NULL DEFAULT (datetime('now')),
-                retry_count INTEGER NOT NULL DEFAULT 0,
-                last_error  TEXT
+                pulled_at   TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            CREATE INDEX IF NOT EXISTS idx_sync_apply_deferred_retry ON sync_apply_deferred(retry_count);
         ");
+
+        // Phase 2: Add optional columns (for schema drift) + create index
+        // These columns were added later and may be missing in old schemas
+        AddColumnIfNotExists("sync_apply_deferred", "retry_count", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfNotExists("sync_apply_deferred", "last_error",  "TEXT");
+
+        // Create index for retry tracking
+        Exec("CREATE INDEX IF NOT EXISTS idx_sync_apply_deferred_retry ON sync_apply_deferred(retry_count)");
 
         // Backfill project column in sync_mutations from JSON payload
         Exec(@"

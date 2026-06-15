@@ -1030,6 +1030,80 @@ public class SqliteStoreTests : IDisposable
         Assert.Equal(5, retryCount);
     }
 
+    [Fact]
+    public async Task ReplayDeferredAsync_WithOldSchema_MigratesAndSucceeds()
+    {
+        // Simulate an old schema: create DB with sync_apply_deferred missing retry_count and last_error
+        // Use a separate temp directory for this test to avoid conflicts
+        var oldSchemaDir = Path.Combine(Path.GetTempPath(), "engram-old-schema-test", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(oldSchemaDir);
+        var dbPath = Path.Combine(oldSchemaDir, "engram.db");
+
+        try
+        {
+            using var conn = new SqliteConnection($"Data Source={dbPath}");
+            await conn.OpenAsync();
+
+            // Create old schema (without retry_count, last_error columns)
+            var createCmd = conn.CreateCommand();
+            createCmd.CommandText = @"
+                CREATE TABLE sync_apply_deferred (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    op TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'pull',
+                    pulled_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                CREATE TABLE sync_state (
+                    target_key TEXT PRIMARY KEY,
+                    lifecycle TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT INTO sync_state (target_key, lifecycle, updated_at) VALUES ('cloud', 'idle', datetime('now'));
+            ";
+            await createCmd.ExecuteNonQueryAsync();
+
+            // Insert a deferred mutation (old schema doesn't have retry_count)
+            var insertCmd = conn.CreateCommand();
+            insertCmd.CommandText = @"
+                INSERT INTO sync_apply_deferred (entity, entity_key, op, payload, source)
+                VALUES (@entity, @entity_key, @op, @payload, 'pull')";
+            insertCmd.Parameters.AddWithValue("@entity", "session");
+            insertCmd.Parameters.AddWithValue("@entity_key", "old-obs-001");
+            insertCmd.Parameters.AddWithValue("@op", "insert");
+            insertCmd.Parameters.AddWithValue("@payload", "{\"title\":\"Old Schema Test\"}");
+            await insertCmd.ExecuteNonQueryAsync();
+
+            // Now create a new SqliteStore pointing to this old DB - Migrate() should add missing columns
+            var store = new SqliteStore(new StoreConfig { DataDir = oldSchemaDir });
+
+            // Verify columns were added via migration BEFORE replay
+            var beforeReplayCmd = conn.CreateCommand();
+            beforeReplayCmd.CommandText = "SELECT retry_count, last_error FROM sync_apply_deferred WHERE entity_key = 'old-obs-001'";
+            using var r = await beforeReplayCmd.ExecuteReaderAsync();
+            Assert.True(await r.ReadAsync()); // Row exists
+            Assert.Equal(0, r.GetInt32(0)); // retry_count was added with default 0
+            Assert.True(r.IsDBNull(1)); // last_error was added as NULL
+            r.Close();
+
+            // Now ReplayDeferredAsync should work without "no such column" error
+            var result = await store.ReplayDeferredAsync();
+
+            // Verify it was replayed successfully
+            Assert.Equal(1, result.ReplayCount);
+            Assert.Equal(0, result.DeadCount);
+
+            store.Dispose();
+        }
+        finally
+        {
+            // Cleanup
+            try { Directory.Delete(oldSchemaDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
     // ─── Helpers for ReplayDeferredAsync tests ─────────────────────────────────
 
     private async Task<long> InsertDeferredMutation(string entity, string entityKey, string op, string payload)
