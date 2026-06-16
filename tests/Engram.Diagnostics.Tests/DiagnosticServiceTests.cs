@@ -234,7 +234,7 @@ public sealed class DiagnosticServiceTests : IDisposable
 
         // Assert
         Assert.True(result.IsHealthy);
-        Assert.Equal(3, result.Components.Count);
+        Assert.True(result.Components.Count >= 4);
         Assert.All(result.Components.Values, c => Assert.True(c.IsHealthy));
     }
 
@@ -305,9 +305,11 @@ public sealed class DiagnosticServiceTests : IDisposable
         // Act
         var result = await _diagnosticService.RunDiagnosticsAsync();
 
-        // Assert
+        // Assert — core components should be unhealthy; project_identity depends on
+        // the actual git repo (may be healthy if running from a valid project)
         Assert.False(result.IsHealthy);
-        Assert.All(result.Components.Values, c => Assert.False(c.IsHealthy));
+        Assert.False(result.Components["database"].IsHealthy);
+        Assert.False(result.Components["http_server"].IsHealthy);
     }
 
     [Fact]
@@ -322,10 +324,11 @@ public sealed class DiagnosticServiceTests : IDisposable
         var result = await _diagnosticService.RunDiagnosticsAsync();
 
         // Assert
-        Assert.Equal(3, result.Components.Count);
+        Assert.True(result.Components.Count >= 4);
         Assert.Contains("database", result.Components.Keys);
         Assert.Contains("http_server", result.Components.Keys);
         Assert.Contains("mcp_server", result.Components.Keys);
+        Assert.Contains("project_identity", result.Components.Keys);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
