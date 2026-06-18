@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-06-06  
+**Última actualización:** 2026-06-18  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -63,7 +63,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | # | ID | P | Tipo | Feature | Estado | Effort | Origen | Spec / notas |
 |---|-----|---|------|---------|--------|--------|--------|--------------|
-| — | **Hecho recientemente (2026-05-27/28 y 2026-06-16)** |
+| — | **Hecho recientemente (2026-05-27/28 y 2026-06-18)** |
 | ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | testing | `69e83d7` |
 | ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | testing | `69e83d7` |
 | ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | testing | `69e83d7` |
@@ -100,7 +100,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-431-guid-validation/spec.md) |
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-433) |
-| 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | L | ← ENG-410 + ENG-404 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434) |
+| 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | L | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434) |
 | 18 | ENG-435 | P1 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Done | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
