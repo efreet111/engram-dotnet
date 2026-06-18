@@ -19,6 +19,12 @@
 - **ENG-428**: Fix sync push — `JsonPullOpts` now uses `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower`. Mutation payloads use snake_case keys (`session_id`) but were being deserialized with camelCase, causing null `session_id` and PostgresException 23502.
 - **ENG-209**: Dockerized multi-client sync test (`scripts/test-2client-pull.sh`) — PostgreSQL + server + 2 clients with sync, end-to-end verification.
 - **ENG-210**: Dockerized offline + reconnection test (`scripts/test-offline-reconnect.sh`) — network disconnect, 3 offline memories, reconnect, verify on server.
+- **ENG-429**: `project_id` exposed in `mem_current_project` MCP tool response — includes GUID when `.engram-id` exists, null when absent.
+- **ENG-430**: Doctor check `CheckProjectIdentityAsync` validates `.engram-id` against gitignore. `CONTRIBUTING.md` documents `.engram-id` must be committed. `engram doctor` warns if project identity is gitignored.
+- **ENG-431**: GUID consistency validation — `ProjectIdentity.Validate()` compares `.engram-id` against deterministic recomputation. Logs warning on mismatch. `ENGRAM_STRICT_PROJECT_ID=true` throws `ProjectIdMismatchException` (for CI/pre-commit hooks).
+- **ENG-432**: CLI `engram project id` with `--json` output (project_id, source, computed) and `--regenerate` to recompute and overwrite `.engram-id`.
+- **ENG-433**: Auto-generate `.engram-id` on startup via `--auto-enroll` flag or `ENGRAM_AUTO_ENROLL=true` env var. No auto-commit. Deterministic UUID v5 from remote URL + first commit SHA.
+- **ENG-435**: Legacy identity migration toolkit — `engram project id --set <guid>` to force a custom GUID, `engram project migrate --to <guid>` to migrate all observations/sessions/prompts from legacy project name to new identity. Supports `--from`, `--dry-run`, `-y`, and automatic rollback on failure.
 - **Sync enroll/unenroll**: New CLI commands `engram sync enroll --project X` and `engram sync unenroll --project X` for local sync_enrolled_projects table management.
 
 ### Fixed
