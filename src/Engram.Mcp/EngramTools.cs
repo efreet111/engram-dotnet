@@ -1026,6 +1026,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         {
             project        = result.Project,
             project_source = result.Source,
+            project_id     = result.ProjectId,
             project_path   = result.ProjectPath,
             cwd            = dir,
             available_projects = result.GetAvailableProjects(),

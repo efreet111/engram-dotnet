@@ -1776,6 +1776,35 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(result);
     }
 
+    public Task<MigrationResult> MigrateProjectAsync(string fromProject, string toProject)
+    {
+        fromProject = Normalizers.NormalizeProject(fromProject);
+        toProject = Normalizers.NormalizeProject(toProject);
+        if (string.IsNullOrEmpty(fromProject))
+            throw new ArgumentException("from project name must not be empty");
+        if (string.IsNullOrEmpty(toProject))
+            throw new ArgumentException("to project name must not be empty");
+        if (fromProject == toProject)
+            throw new ArgumentException("from and to project names must be different");
+
+        var result = new MigrationResult { FromProject = fromProject, ToProject = toProject };
+
+        WithTx(tx =>
+        {
+            result.ObservationsMigrated = ExecRows(tx, "UPDATE observations SET project = @to WHERE project = @from",
+                Param("@to", toProject), Param("@from", fromProject));
+            result.SessionsMigrated = ExecRows(tx, "UPDATE sessions SET project = @to WHERE project = @from",
+                Param("@to", toProject), Param("@from", fromProject));
+            result.PromptsMigrated = ExecRows(tx, "UPDATE user_prompts SET project = @to WHERE project = @from",
+                Param("@to", toProject), Param("@from", fromProject));
+        });
+
+        // Record the migration for audit trail
+        AddProjectMigrationAsync(fromProject, toProject).GetAwaiter().GetResult();
+
+        return Task.FromResult(result);
+    }
+
     public Task<IList<string>> ListProjectNamesAsync()
     {
         var results = new List<string>();

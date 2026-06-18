@@ -463,12 +463,21 @@ public static class ProjectDetector
     /// Intenta obtener el ProjectId desde .engram-id o calcularlo desde git.
     /// Retorna null si no es posible (no hay repo, no hay remote, etc).
     /// </summary>
+    /// <remarks>
+    /// ENG-431: Si .engram-id existe, valida contra cálculo determinista.
+    /// El archivo manda (no se sobreescribe), pero se loguea warning si hay
+    /// mismatch. Con <c>ENGRAM_STRICT_PROJECT_ID=true</c>, mismatch es fatal.
+    /// </remarks>
     internal static string? TryGetProjectId(string repoPath)
     {
         // 1. Try to read from .engram-id file
         var projectId = ProjectIdentity.GetProjectId(repoPath);
         if (!string.IsNullOrEmpty(projectId))
+        {
+            // ENG-431: Validate (logs warning or throws on strict-mode)
+            ProjectIdentity.Validate(repoPath, projectId);
             return projectId;
+        }
 
         // 2. Check if it's a git repo with remote
         var remoteUrl = DetectFromGitRemote(repoPath);

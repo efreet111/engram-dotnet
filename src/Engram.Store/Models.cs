@@ -163,6 +163,15 @@ public class MergeResult
     [JsonPropertyName("prompts_updated")]        public long         PromptsUpdated      { get; set; }
 }
 
+public class MigrationResult
+{
+    [JsonPropertyName("from_project")]           public string FromProject         { get; set; } = "";
+    [JsonPropertyName("to_project")]             public string ToProject           { get; set; } = "";
+    [JsonPropertyName("observations_migrated")]  public long   ObservationsMigrated { get; set; }
+    [JsonPropertyName("sessions_migrated")]      public long   SessionsMigrated     { get; set; }
+    [JsonPropertyName("prompts_migrated")]       public long   PromptsMigrated      { get; set; }
+}
+
 // ─── Params ───────────────────────────────────────────────────────────────────
 
 public record AddObservationParams

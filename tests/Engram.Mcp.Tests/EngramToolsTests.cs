@@ -497,6 +497,80 @@ public class EngramToolsTests : IDisposable
         Assert.Contains("RF-DEF", result);
         Assert.Contains("traced", result);
     }
+
+    // ─── ENG-429: mem_current_project MCP tool exposes project_id ────────
+
+    [Fact]
+    public void MemCurrentProject_WithEngramId_IncludesProjectIdField()
+    {
+        // Setup: git repo with a deterministic remote + a pre-seeded .engram-id
+        using var tempDir = new TempDir();
+        var repoPath = Path.Combine(tempDir.Path, "id-repo");
+        Directory.CreateDirectory(repoPath);
+        RunGit(repoPath, "init");
+        RunGit(repoPath, "remote add origin git@github.com:org/id-repo.git");
+
+        // Seed .engram-id with a known GUID
+        var knownId = "00112233-4455-6677-8899-aabbccddeeff";
+        File.WriteAllText(Path.Combine(repoPath, ".engram-id"), knownId);
+
+        var json = _tools.MemCurrentProject(repoPath);
+
+        // ProjectId field MUST be present and equal to the seeded GUID
+        Assert.Contains("\"project_id\"", json);
+        Assert.Contains(knownId, json);
+    }
+
+    [Fact]
+    public void MemCurrentProject_WithoutEngramIdOrGit_OmitsProjectIdField()
+    {
+        // Setup: plain directory, no git, no .engram-id
+        using var tempDir = new TempDir();
+
+        var json = _tools.MemCurrentProject(tempDir.Path);
+
+        // Without identity, WhenWritingNull omits the field — equivalent to null per spec
+        Assert.DoesNotContain("\"project_id\"", json);
+    }
+
+    [Fact]
+    public void MemCurrentProject_GitRepoWithoutEngramId_OmitsProjectIdField()
+    {
+        // Setup: git repo with a remote, but no .engram-id file
+        using var tempDir = new TempDir();
+        var repoPath = Path.Combine(tempDir.Path, "git-no-id-repo");
+        Directory.CreateDirectory(repoPath);
+        RunGit(repoPath, "init");
+        RunGit(repoPath, "remote add origin git@github.com:org/git-no-id-repo.git");
+
+        var json = _tools.MemCurrentProject(repoPath);
+
+        // Git detected → source is git_remote
+        Assert.Contains("\"project_source\":\"git_remote\"", json);
+        // No .engram-id → WhenWritingNull strips the field, equivalent to null per spec
+        Assert.DoesNotContain("\"project_id\"", json);
+    }
+
+    /// <summary>
+    /// Helper to run git commands in tests (mirrors MemCurrentProjectTests.RunGit).
+    /// </summary>
+    private static void RunGit(string workingDir, string arguments)
+    {
+        var gitProcess = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"-C \"{workingDir}\" {arguments}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        gitProcess.Start();
+        gitProcess.WaitForExit();
+    }
 }
 
 // ─── McpConfig — user/project namespace tests ─────────────────────────────────

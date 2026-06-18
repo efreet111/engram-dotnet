@@ -355,6 +355,23 @@ public sealed class HttpStore : IStore
         };
     }
 
+    public async Task<MigrationResult> MigrateProjectAsync(string fromProject, string toProject)
+    {
+        var resp = await Post("projects/migrate", new { old_project = fromProject, new_project = toProject });
+        if (!resp.IsSuccessStatusCode)
+            throw new Exception($"Migration failed: {resp.StatusCode}");
+
+        // For HTTP store, we can't get exact counts — return placeholder
+        return new MigrationResult
+        {
+            FromProject = fromProject,
+            ToProject = toProject,
+            ObservationsMigrated = 0,
+            SessionsMigrated = 0,
+            PromptsMigrated = 0,
+        };
+    }
+
     public async Task<IList<string>> ListProjectNamesAsync()
     {
         var resp = await Get("projects/list");

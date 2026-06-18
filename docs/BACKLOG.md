@@ -63,7 +63,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 
 | # | ID | P | Tipo | Feature | Estado | Effort | Origen | Spec / notas |
 |---|-----|---|------|---------|--------|--------|--------|--------------|
-| — | **Hecho recientemente (2026-05-27/28 y 2026-06-06)** |
+| — | **Hecho recientemente (2026-05-27/28 y 2026-06-16)** |
 | ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | testing | `69e83d7` |
 | ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | testing | `69e83d7` |
 | ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | testing | `69e83d7` |
@@ -83,15 +83,12 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-308 | P1 | Doc | Dev workflow docs: `AGENTS.md` + `docs/DEVELOPMENT.md` | Done | S | sesión 2026-06-05 | `781e9fe` |
 | ✓ | ENG-207 | P0 | Feature | Logging infrastructure | Done | M | roadmap | [sdd/logging-infrastructure/](../sdd/logging-infrastructure/specs/logging-infrastructure.md) |
 | ✓ | ENG-208 | P1 | Feature | Completar Upstream Phase 2 API parity (structured errors, server-side incremental, --watch, --since) | Done | M | ← upstream engram | `e7e5736` |
-| — | **Siguiente (cerrar base pre-release)** |
-| 3 | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
-| 4 | ENG-210 | P1 | Test | Manual: offline + reconexión | Ready | S | roadmap | Idem |
-| 4.1 | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Done | S | descubierto en sesión logging 2026-06-05 | `de63304` |
-| 4.2 | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Done | S | descubierto en sesión ENG-209/210 2026-06-15 | `628be52`. Fix: SnakeCaseLower en JsonPullOpts |
-| 4.3 | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix post-commit 781e9fe |
+| ✓ | ENG-209 | P1 | Test | Pull entre 2 clientes (sync) | Done | S | roadmap | `bash scripts/test-2client-pull.sh` — verificado end-to-end 2026-06-15 |
+| ✓ | ENG-210 | P1 | Test | Offline + reconexión | Done | S | roadmap | `bash scripts/test-offline-reconnect.sh` — verificado end-to-end 2026-06-16 |
+| ✓ | ENG-211 | P1 | Bug | SyncManager: ReplayDeferredAsync falla con "no such column: id" en SQLite con schema viejo | Done | S | descubierto en sesión logging 2026-06-05 | `de63304` |
+| ✓ | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Done | S | descubierto en sesión ENG-209/210 2026-06-15 | `628be52`. Fix: SnakeCaseLower en JsonPullOpts |
+| ✓ | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix en PostgresStore.cs:1814 (post-commit 781e9fe) |
 | — | **Siguiente** |
-| 3 | ENG-209 | P1 | Test | Pull entre 2 clientes (sync) — **dockerizado: OK** `bash scripts/test-2client-pull.sh` | Ready | S | roadmap | Verificado end-to-end 2026-06-15 |
-| 4 | ENG-210 | P1 | Test | Offline + reconexión — **dockerizado:** `bash scripts/test-offline-reconnect.sh` | Ready | S | roadmap | Sin testear aún (depende de ENG-428 que ya está Done) |
 | 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
@@ -104,6 +101,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-433) |
 | 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | L | ← ENG-410 + ENG-404 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434) |
+| 18 | ENG-435 | P1 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Done | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
@@ -118,9 +116,6 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-421 | P0 | Bug | ApplyPulledMutationAsync (sync pull) — resuelto como parte de ENG-425 (server-side apply, ADR-002) | Done | L | ← audit AUD-013 | Implementado en SqliteStore.cs:2082 + 11 tests |
 | ✓ | ENG-425 | P0 | Feature | Server-side mutation apply: servidor aplica mutations a PostgresStore | Done | L | ← ADR-002 decisión | [ADR-002](../docs/architecture/adr/ADR-002-sync-mutation-application.md) |
 | ✓ | ENG-426 | P0 | Architecture | ID mapping strategy: sync_id como canonical (sin mapping a server ID) | Done | M | ← ADR-002 decisión | Verificado V1-V6. Fix bug SQL en ListMutationsSinceAsync (L1703). |
-| — | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array). Fix ya aplicado en PostgresStore.cs:1814. | Ready | S | descubierto en sesión ENG-426 | Fix post-commit 781e9fe — **marcar Done** |
-| — | ENG-209 | P1 | Test | Manual: pull entre 2 clientes (sync) — **Dockerizado:** `bash scripts/test-2client-pull.sh` | Ready | S | roadmap | [ROADMAP § Manual Testing](ROADMAP.md#-manual-testing-backlog) |
-| — | ENG-210 | P1 | Test | Manual: offline + reconexión — **Dockerizado:** `bash scripts/test-offline-reconnect.sh` | Ready | S | roadmap | Idem |
 | — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
@@ -358,18 +353,23 @@ curl http://server:7437/search?q=Offline
 
 ---
 
-### ⚠️ Nota sobre salud del sync (2026-06-05)
+### ⚠️ Nota sobre salud del sync (2026-06-16)
 
-Durante T3 (Docker + Postgres local) y regresiones contra TrueNAS, se observaron errores recurrentes de sync:
+**Actualización:** Los issues originales detectados en T3 (2026-06-05) están **resueltos**:
+- ✅ **ENG-211**: `SQLite Error 1: 'no such column: id'` en `ReplayDeferredAsync` — fix `AddColumnIfNotExists` aplicado (`de63304`)
+- ✅ **ENG-428**: `null session_id` en mutation push — fix `SnakeCaseLower` en `JsonPullOpts` (`628be52`)
+- ✅ **ENG-427**: SQL syntax error con project filter (ANY array) — fix en `PostgresStore.cs:1814`
+- ✅ **ENG-209/210**: validación end-to-end con Docker (2-client pull + offline + reconexión) — PASS
 
-- **`SQLite Error 1: 'no such column: id'`** en `ReplayDeferredAsync` — schema mismatch entre cliente viejo y nuevo (ENG-211)
-- **7 `Console.Error.WriteLine` debug prints** en `CloudSyncEndpoints.cs` — removidos (commit `74f4455`), pero sugieren que el handler de `/sync/enroll` tuvo debugging pesado → posible fragilidad
-- **SyncManager ciclos fallando** en background durante pruebas — aunque el server responde bien a `/health` y `/sync/status`, los ciclos de sync pueden estar bloqueados silenciosamente
+**Estado actual del sync (verificado 2026-06-16):**
+- Pull multi-cliente funciona (3/3 memorias transferidas)
+- Offline + reconexión funciona (3/3 memorias recuperadas y visibles en servidor)
+- `pending_push` se reconcilia más rápido de lo esperado (0 después de reconectar, no 3)
 
 **Recomendación para release testing:**
+- Mantener `bash scripts/test-2client-pull.sh` y `bash scripts/test-offline-reconnect.sh` en CI como smoke tests de regresión
 - Monitorear `docker logs engram | grep SyncManager` durante pruebas de aceptación
 - Verificar `GET /sync/status` devuelve `consecutive_failures: 0` después de 5+ minutos de uptime
-- ENG-209 y ENG-210 (multi-usuario) deben incluir verificación de sync health como paso obligatorio
 
 ---
 
@@ -606,6 +606,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-16 | **ENG-210 Done**: Validado `scripts/test-offline-reconnect.sh` end-to-end (3/3 memorias offline recuperadas). Backlog consolidado: eliminadas 3 filas duplicadas (ENG-209/210/427), notación de salud de sync actualizada. |
 | 2026-06-15 | **ENG-428 Done**: Fix JsonPullOpts SnakeCaseLower — session_id ≠ sessionId rompía push. Test 2-client pasa end-to-end. |
 | 2026-06-15 | **ENG-211 Done**: AddColumnIfNotExists para sync_apply_deferred. |
 | 2026-06-15 | **ENG-208 Done + push**: Upstream Phase 2 parity completo (structured errors, incremental, watch, since). 5 commits. |

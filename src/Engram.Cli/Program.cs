@@ -63,8 +63,10 @@ serveCmd.SetHandler(async (int port) =>
 
 var mcpCmd       = new Command("mcp", "Start the MCP server (stdio transport)");
 var mcpProjectOpt = new Option<string?>("--project", "Override detected project name");
+var mcpAutoEnrollOpt = new Option<bool>("--auto-enroll", "Auto-generate .engram-id if missing (also via ENGRAM_AUTO_ENROLL=true)");
 mcpCmd.AddOption(mcpProjectOpt);
-mcpCmd.SetHandler(async (string? project) =>
+mcpCmd.AddOption(mcpAutoEnrollOpt);
+mcpCmd.SetHandler(async (string? project, bool autoEnroll) =>
 {
     var storeCfg = StoreConfig.FromEnvironment();
 
@@ -73,6 +75,19 @@ mcpCmd.SetHandler(async (string? project) =>
         ?? storeCfg.Project
         ?? ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
     defaultProject = Normalizers.NormalizeProject(defaultProject);
+
+    // ENG-433: Auto-enroll .engram-id if flag is set
+    var shouldAutoEnroll = autoEnroll
+        || string.Equals(Environment.GetEnvironmentVariable("ENGRAM_AUTO_ENROLL"), "true", StringComparison.OrdinalIgnoreCase);
+
+    if (shouldAutoEnroll)
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        if (ProjectIdentity.TryAutoEnroll(cwd, out var generatedId))
+        {
+            Console.Error.WriteLine($"[engram] Generated project identity: {generatedId}");
+        }
+    }
 
     // User identity: provided by IT via ENGRAM_USER (empty in local mode)
     var user = storeCfg.User ?? "";
@@ -156,7 +171,7 @@ mcpCmd.SetHandler(async (string? project) =>
     }
 
     await mcpBuilder.Build().RunAsync();
-}, mcpProjectOpt);
+}, mcpProjectOpt, mcpAutoEnrollOpt);
 
 // ─── search ──────────────────────────────────────────────────────────────────
 
@@ -445,6 +460,229 @@ syncCmd.AddCommand(syncExportCmd);
 syncCmd.AddCommand(syncImportCmd);
 syncCmd.AddCommand(syncEnrollCmd);
 syncCmd.AddCommand(syncUnenrollCmd);
+
+// ─── project id (ENG-432) ─────────────────────────────────────────────────────
+
+var projectCmd   = new Command("project", "Project identity operations");
+var projectIdCmd = new Command("id", "Show or regenerate the project identity GUID (.engram-id)");
+var projectIdJsonOpt      = new Option<bool>("--json", "Output as JSON (machine-readable)");
+var projectIdRegenOpt     = new Option<bool>("--regenerate", "Recompute and overwrite .engram-id with the deterministic GUID");
+var projectIdSetOpt       = new Option<string?>("--set", "Set .engram-id to a specific GUID (valid UUID)");
+var projectIdYesOpt       = new Option<bool>("-y", () => false, "Skip confirmation prompt (assumes yes)");
+projectIdCmd.AddOption(projectIdJsonOpt);
+projectIdCmd.AddOption(projectIdRegenOpt);
+projectIdCmd.AddOption(projectIdSetOpt);
+projectIdCmd.AddOption(projectIdYesOpt);
+projectIdCmd.SetHandler(async (bool json, bool regen, string? setGuid, bool assumeYes) =>
+{
+    var cwd = Directory.GetCurrentDirectory();
+    var fileGuid = ProjectIdentity.GetProjectId(cwd);
+    var computedGuid = ProjectIdentity.TryComputeDeterministicGuid(cwd);
+
+    // Compute GUID from deterministic formula for output / regenerate
+    var computed = computedGuid?.ToString("D");
+
+    // ─── Set custom GUID path (REQ-435-001) ─────────────────────────────────────
+    if (setGuid is not null)
+    {
+        if (!Guid.TryParse(setGuid, out var customGuid))
+        {
+            Console.Error.WriteLine("error: invalid GUID format");
+            Environment.Exit(1);
+            return;
+        }
+
+        if (!assumeYes && fileGuid is not null)
+        {
+            Console.Write($"Overwrite existing project identity ({fileGuid}) with {setGuid}? [y/N] ");
+            var answer = Console.ReadLine()?.Trim().ToLowerInvariant();
+            if (answer != "y" && answer != "yes")
+            {
+                Console.WriteLine("Cancelled.");
+                return;
+            }
+        }
+
+        ProjectIdentity.SaveProjectId(cwd, customGuid);
+        Console.WriteLine($"Project identity set to: {setGuid}");
+
+        if (json)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                project_id = setGuid,
+                source = "manual",
+            }));
+        }
+        return;
+    }
+
+    // ─── Regenerate path ────────────────────────────────────────────────
+    if (regen)
+    {
+        if (computedGuid is null)
+        {
+            Console.Error.WriteLine("error: Cannot regenerate — no git remote or no commits in this directory.");
+            Environment.Exit(1);
+            return;
+        }
+
+        if (!assumeYes)
+        {
+            Console.Write($"Regenerate project identity? This will overwrite .engram-id with {computed}. [y/N] ");
+            var answer = Console.ReadLine()?.Trim().ToLowerInvariant();
+            if (answer != "y" && answer != "yes")
+            {
+                Console.WriteLine("Cancelled.");
+                return;
+            }
+        }
+
+        ProjectIdentity.SaveProjectId(cwd, computedGuid.Value);
+        Console.WriteLine($"Project identity regenerated: {computed}");
+
+        if (json)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                project_id = computed,
+                source     = "computed",
+                computed   = computed,
+            }));
+        }
+        return;
+    }
+
+    // ─── Default show path ──────────────────────────────────────────────
+    var source = fileGuid is not null ? "file" : (computed is not null ? "computed" : "none");
+
+    if (json)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            project_id = fileGuid,
+            source,
+            computed,
+        }));
+        return;
+    }
+
+    // Text output
+    if (fileGuid is not null)
+    {
+        Console.WriteLine($"project_id: {fileGuid}");
+    }
+    else if (computed is not null)
+    {
+        Console.WriteLine($"project_id: {computed} (computed, not saved)");
+    }
+    else
+    {
+        Console.WriteLine("No project identity found.");
+    }
+}, projectIdJsonOpt, projectIdRegenOpt, projectIdSetOpt, projectIdYesOpt);
+
+projectCmd.AddCommand(projectIdCmd);
+
+// ─── project migrate (ENG-435) ────────────────────────────────────────────
+
+var migrateCmd = new Command("migrate", "Migrate project data to a new identity");
+var migrateToOpt    = new Option<string>("--to", "Target project (GUID or name) - required");
+var migrateFromOpt   = new Option<string?>("--from", "Source project (defaults to .engram-id)");
+var migrateYesOpt   = new Option<bool>("-y", () => false, "Skip confirmation prompt");
+var migrateDryRunOpt = new Option<bool>("--dry-run", "Preview without making changes");
+migrateCmd.AddOption(migrateToOpt);
+migrateCmd.AddOption(migrateFromOpt);
+migrateCmd.AddOption(migrateYesOpt);
+migrateCmd.AddOption(migrateDryRunOpt);
+migrateCmd.SetHandler(async (string to, string? from, bool assumeYes, bool dryRun) =>
+{
+    // Auto-detect source from .engram-id if --from not provided
+    var source = from;
+    if (string.IsNullOrEmpty(source))
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        var existingId = ProjectIdentity.GetProjectId(cwd);
+        if (existingId is null)
+        {
+            Console.Error.WriteLine("error: No source project. Either specify --from or ensure .engram-id exists.");
+            Environment.Exit(1);
+            return;
+        }
+        source = existingId;
+    }
+
+    // Validate target GUID format
+    if (!Guid.TryParse(to, out var targetGuid))
+    {
+        Console.Error.WriteLine("error: invalid target GUID format");
+        Environment.Exit(1);
+        return;
+    }
+
+    var target = targetGuid.ToString("D");
+
+    // Confirmation prompt (skip with -y)
+    if (!assumeYes)
+    {
+        Console.Write($"Migrate from '{source}' to '{target}'? This will update all associated data. [y/N] ");
+        var answer = Console.ReadLine()?.Trim().ToLowerInvariant();
+        if (answer != "y" && answer != "yes")
+        {
+            Console.WriteLine("Cancelled.");
+            return;
+        }
+    }
+
+    // Dry-run preview — use COUNT queries without modifying data
+    if (dryRun)
+    {
+        using var store = OpenStore();
+        var conn = ((dynamic)store)._dataSource.OpenConnection();
+        try
+        {
+            // Count observations
+            using var cmdObs = conn.CreateCommand();
+            cmdObs.CommandText = "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL";
+            cmdObs.Parameters.AddWithValue("@proj", source);
+            var obsCount = Convert.ToInt64(cmdObs.ExecuteScalar());
+
+            // Count sessions
+            using var cmdSess = conn.CreateCommand();
+            cmdSess.CommandText = "SELECT COUNT(*) FROM sessions WHERE project = @proj";
+            cmdSess.Parameters.AddWithValue("@proj", source);
+            var sessCount = Convert.ToInt64(cmdSess.ExecuteScalar());
+
+            // Count prompts
+            using var cmdPrompt = conn.CreateCommand();
+            cmdPrompt.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE project = @proj AND deleted_at IS NULL";
+            cmdPrompt.Parameters.AddWithValue("@proj", source);
+            var promptCount = Convert.ToInt64(cmdPrompt.ExecuteScalar());
+
+            Console.WriteLine($"Would migrate {obsCount} observations, {sessCount} sessions, {promptCount} prompts");
+        }
+        finally
+        {
+            conn.Close();
+        }
+        return;
+    }
+
+    // Execute migration
+    try
+    {
+        using var store = OpenStore();
+        var result = await store.MigrateProjectAsync(source, target);
+        Console.WriteLine($"Migrated {result.ObservationsMigrated} observations, {result.SessionsMigrated} sessions, {result.PromptsMigrated} prompts");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Migration failed: {ex.Message}. Rolled back.");
+        Environment.Exit(1);
+    }
+}, migrateToOpt, migrateFromOpt, migrateYesOpt, migrateDryRunOpt);
+
+projectCmd.AddCommand(migrateCmd);
 
 // ─── promote ─────────────────────────────────────────────────────────────────
 
@@ -1003,6 +1241,7 @@ root.AddCommand(statsCmd);
 root.AddCommand(exportCmd);
 root.AddCommand(importCmd);
 root.AddCommand(syncCmd);
+root.AddCommand(projectCmd);
 root.AddCommand(promoteCmd);
 root.AddCommand(projectsCmd);
 root.AddCommand(retentionCmd);

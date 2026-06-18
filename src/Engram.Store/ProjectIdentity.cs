@@ -31,6 +31,47 @@ public static class ProjectIdentity
     }
 
     /// <summary>
+    /// ENG-431: Valida que el GUID en .engram-id coincida con el cálculo determinista.
+    /// Retorna null si no se puede calcular (no hay git, no hay commit, etc.) —
+    /// en ese caso, el caller usa el GUID del archivo sin validar.
+    /// </summary>
+    /// <remarks>
+    /// En caso de mismatch, loguea warning a stderr. Si la env var
+    /// <c>ENGRAM_STRICT_PROJECT_ID=true</c> está seteada, throw
+    /// <see cref="ProjectIdMismatchException"/> para que CI/pre-commit aborten.
+    /// </remarks>
+    public static ValidationResult? Validate(string repoPath, string guidFromFile)
+    {
+        // 1. Necesitamos remote URL + first commit para recalcular
+        var remoteUrl = GetFullRemoteUrlFromRepo(repoPath);
+        if (string.IsNullOrEmpty(remoteUrl))
+            return null;
+
+        var firstCommitSha = GetFirstCommitSha(repoPath);
+        if (string.IsNullOrEmpty(firstCommitSha))
+            return null;
+
+        // 2. Calcular GUID determinista
+        var computed = ComputeProjectId(remoteUrl, firstCommitSha);
+        var fromFile = Guid.Parse(guidFromFile);
+
+        // 3. Comparar
+        if (computed == fromFile)
+            return new ValidationResult(Match: true, FileGuid: guidFromFile, ComputedGuid: computed.ToString("D"));
+
+        // Mismatch — log warning
+        var result = new ValidationResult(Match: false, FileGuid: guidFromFile, ComputedGuid: computed.ToString("D"));
+        Console.Error.WriteLine($"[engram] project_id mismatch: file has {guidFromFile}, computed {computed:D}");
+
+        // Strict mode (CI/pre-commit): fatal
+        var strict = Environment.GetEnvironmentVariable("ENGRAM_STRICT_PROJECT_ID");
+        if (string.Equals(strict, "true", StringComparison.OrdinalIgnoreCase))
+            throw new ProjectIdMismatchException(guidFromFile, computed.ToString("D"));
+
+        return result;
+    }
+
+    /// <summary>
     /// Calcula UUID v5 determinista desde la URL del remote + hash del primer commit.
     /// </summary>
     public static Guid ComputeProjectId(string originUrl, string firstCommitSha)
@@ -38,6 +79,46 @@ public static class ProjectIdentity
         var normalizedUrl = NormalizeUrl(originUrl);
         var fingerprint = $"{normalizedUrl}|{firstCommitSha}";
         return CreateGuidV5(GuidNamespaces.Url, fingerprint);
+    }
+
+    /// <summary>
+    /// ENG-433: Intenta calcular el GUID determinista directamente desde un repo path.
+    /// Retorna null si no hay git remote o no hay commits.
+    /// </summary>
+    public static Guid? TryComputeDeterministicGuid(string repoPath)
+    {
+        var remoteUrl = GetFullRemoteUrlFromRepo(repoPath);
+        if (string.IsNullOrEmpty(remoteUrl))
+            return null;
+
+        var firstCommitSha = GetFirstCommitSha(repoPath);
+        if (string.IsNullOrEmpty(firstCommitSha))
+            return null;
+
+        return ComputeProjectId(remoteUrl, firstCommitSha);
+    }
+
+    /// <summary>
+    /// ENG-433: Intenta auto-generar .engram-id si no existe y hay git repo.
+    /// Retorna true si generó el archivo, false si ya existía o no se pudo calcular.
+    /// </summary>
+    public static bool TryAutoEnroll(string repoPath, out string? generatedId)
+    {
+        generatedId = null;
+
+        // Si ya existe .engram-id, no hacer nada
+        if (GetProjectId(repoPath) is not null)
+            return false;
+
+        // Intentar calcular GUID determinista
+        var computed = TryComputeDeterministicGuid(repoPath);
+        if (computed is null)
+            return false;
+
+        // Guardar .engram-id
+        SaveProjectId(repoPath, computed.Value);
+        generatedId = computed.Value.ToString("D");
+        return true;
     }
 
     /// <summary>
@@ -120,6 +201,43 @@ public static class ProjectIdentity
     }
 
     /// <summary>
+    /// Obtiene la URL completa del remote origin (e.g. "git@github.com:user/repo.git").
+    /// Helper interno para Validate. Retorna null si no hay git remote.
+    /// </summary>
+    private static string? GetFullRemoteUrlFromRepo(string repoPath)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"-C \"{repoPath}\" config --get remote.origin.url",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            if (!process.WaitForExit(2000))
+            {
+                try { process.Kill(); } catch { /* best effort */ }
+                return null;
+            }
+            if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
+                return null;
+            return output;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Creates a UUID v5 (SHA-1 based) using the given namespace and name.
     /// </summary>
     private static Guid CreateGuidV5(Guid namespaceId, string name)
@@ -146,6 +264,35 @@ public static class ProjectIdentity
         hash[8] |= 0x80;
 
         return new Guid(hash[..16]);
+    }
+}
+
+/// <summary>
+/// Resultado de la validación de consistencia del GUID (ENG-431).
+/// </summary>
+/// <param name="Match">true si el GUID del archivo coincide con el cálculo determinista.</param>
+/// <param name="FileGuid">GUID leído desde .engram-id.</param>
+/// <param name="ComputedGuid">GUID calculado desde URL + first commit.</param>
+public record ValidationResult(bool Match, string FileGuid, string ComputedGuid);
+
+/// <summary>
+/// Excepción thrown por <see cref="ProjectIdentity.Validate"/> cuando
+/// <c>ENGRAM_STRICT_PROJECT_ID=true</c> y el GUID en .engram-id no coincide
+/// con el cálculo determinista (ENG-431). Diseñada para CI/pre-commit hooks.
+/// </summary>
+public class ProjectIdMismatchException : Exception
+{
+    /// <summary>GUID leído desde .engram-id.</summary>
+    public string FileGuid { get; }
+
+    /// <summary>GUID calculado determinísticamente.</summary>
+    public string ComputedGuid { get; }
+
+    public ProjectIdMismatchException(string fileGuid, string computedGuid)
+        : base($"project_id mismatch: file has {fileGuid}, computed {computedGuid}")
+    {
+        FileGuid = fileGuid;
+        ComputedGuid = computedGuid;
     }
 }
 

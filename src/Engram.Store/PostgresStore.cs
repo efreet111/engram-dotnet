@@ -1590,6 +1590,58 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         });
     }
 
+    public Task<MigrationResult> MigrateProjectAsync(string fromProject, string toProject)
+    {
+        fromProject = Normalizers.NormalizeProject(fromProject);
+        toProject = Normalizers.NormalizeProject(toProject);
+        if (string.IsNullOrEmpty(fromProject))
+            throw new ArgumentException("from project name must not be empty");
+        if (string.IsNullOrEmpty(toProject))
+            throw new ArgumentException("to project name must not be empty");
+        if (fromProject == toProject)
+            throw new ArgumentException("from and to project names must be different");
+
+        var result = new MigrationResult { FromProject = fromProject, ToProject = toProject };
+
+        using var conn = _dataSource.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            using var cmdObs = conn.CreateCommand();
+            cmdObs.Transaction = tx;
+            cmdObs.CommandText = "UPDATE observations SET project = @to WHERE project = @from";
+            cmdObs.Parameters.AddWithValue("@to", toProject);
+            cmdObs.Parameters.AddWithValue("@from", fromProject);
+            result.ObservationsMigrated = cmdObs.ExecuteNonQuery();
+
+            using var cmdSess = conn.CreateCommand();
+            cmdSess.Transaction = tx;
+            cmdSess.CommandText = "UPDATE sessions SET project = @to WHERE project = @from";
+            cmdSess.Parameters.AddWithValue("@to", toProject);
+            cmdSess.Parameters.AddWithValue("@from", fromProject);
+            result.SessionsMigrated = cmdSess.ExecuteNonQuery();
+
+            using var cmdPrompt = conn.CreateCommand();
+            cmdPrompt.Transaction = tx;
+            cmdPrompt.CommandText = "UPDATE user_prompts SET project = @to WHERE project = @from";
+            cmdPrompt.Parameters.AddWithValue("@to", toProject);
+            cmdPrompt.Parameters.AddWithValue("@from", fromProject);
+            result.PromptsMigrated = cmdPrompt.ExecuteNonQuery();
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+
+        // Record the migration for audit trail
+        AddProjectMigrationAsync(fromProject, toProject).GetAwaiter().GetResult();
+
+        return Task.FromResult(result);
+    }
+
     public Task<IList<string>> ListProjectNamesAsync()
     {
         var results = new List<string>();
