@@ -316,11 +316,11 @@ capability_matrix:
 
 | ID | Case / Flow | Steps (Summary) | Expected Result | [x] |
 |----|-------------|-----------------|-----------------|-----|
-| PM-1 | Add relation via MCP tool | 1. Create two observations via `mem_save`<br>2. Call `mem_relations(action="add", observation_id=<1>, target_observation_id=<2>, type="depends_on")`<br>3. Call `mem_relations(action="get", observation_id=<1>)` | Relation appears in get output | [ ] |
-| PM-2 | Lineage traversal | 1. Create chain: obs3→depends_on→obs2→supersedes→obs1<br>2. Call `mem_lineage_obs(observation_id=<obs3>)` | Ancestors show obs2 then obs1; hops=2 | [ ] |
-| PM-3 | Cycle detection | 1. Create cycle: obs1→depends_on→obs2, obs2→supersedes→obs1<br>2. Call `mem_lineage_obs(observation_id=<obs1>)` | `cycle_detected` flag is true in output | [ ] |
-| PM-4 | Delete relation | 1. Add two relations to obs1<br>2. Delete one via `mem_relations(action="delete", ...)`<br>3. Call `mem_relations(action="get", observation_id=<obs1>)` | Only the non-deleted relation remains | [ ] |
-| PM-5 | Duplicate idempotency | 1. Add same `depends_on` relation twice<br>2. Call `mem_relations(action="get", ...)` | Only one relation stored | [ ] |
+| PM-1 | Add relation via MCP tool | 1. Create two observations via `mem_save`<br>2. Call `mem_relations(action="add", observation_id=<1>, target_observation_id=<2>, type="depends_on")`<br>3. Call `mem_relations(action="get", observation_id=<1>)` | Relation appears in get output | [x] |
+| PM-2 | Lineage traversal | 1. Create chain: obs3→depends_on→obs2→supersedes→obs1<br>2. Call `mem_lineage_obs(observation_id=<obs3>)` | Ancestors show obs2 then obs1; hops=2 | [x] |
+| PM-3 | Cycle detection | 1. Create cycle: obs1→depends_on→obs2, obs2→supersedes→obs1<br>2. Call `mem_lineage_obs(observation_id=<obs1>)` | `cycle_detected` flag is true in output | [x] |
+| PM-4 | Delete relation | 1. Add two relations to obs1<br>2. Delete one via `mem_relations(action="delete", ...)`<br>3. Call `mem_relations(action="get", observation_id=<obs1>)` | Only the non-deleted relation remains | [x] |
+| PM-5 | Duplicate idempotency | 1. Add same `depends_on` relation twice<br>2. Call `mem_relations(action="get", ...)` | Only one relation stored | [x] |
 
 ---
 
