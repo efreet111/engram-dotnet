@@ -119,10 +119,10 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
+| 19 | ENG-404 | P1 | Feature | Phase 4 — memory relations (grafo de observaciones) | Ready | M | ← ENG-410 + spike 55bdbf8 | [spike learnings](../.ai-work/eng-404-spike/learnings.md) |
 | — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
 | — | ENG-403 | P2 | Feature | Phase 3 — breaking (quitar `project` de writes) | Icebox | L | Requiere guía migración |
-| — | ENG-404 | P2 | Feature | Phase 4 — memory relations | Icebox | XL | — |
 | — | ENG-405 | P2 | Feature | Authentication & access control | Icebox | L | Sin proposal aún |
 | — | ENG-406 | P2 | Feature | Tool deferral MCP | Icebox | — | Blocked: SDK .NET |
 
@@ -578,11 +578,13 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 ---
 
-### ENG-404 — Memory relations (P2)
+### ENG-404 — Memory relations (P1)
 
 **Problema:** Las memorias son nodos aislados. No hay forma de decir "esta memoria corrige esta otra" o "depende de".
-**Para qué sirve:** Phase 4 del upstream: grafo de memorias con relaciones tipadas (corrects, depends-on, supersedes). Permite queries estructurales.
-**Bloqueo:** No hay spec todavía. XL de effort.
+**Para qué sirve:** Grafo de memorias con relaciones tipadas (`depends_on`, `supersedes`, `conflicts_with`, `related_to`). Permite queries estructurales (lineage, cycle detection, contradiction surfacing).
+**Evidence del spike (2026-06-18):** 291 líneas de código clonando el patrón de `Engram.Verification` (TraceRepository + LineageBuilder). 6/6 tests pasan en 216ms. Cero cambios de schema. Effort re-estimado: **XL → M**.
+**Diseño decisions pendientes:** inverse traversal (follow-up M), MCP tool API shape, sync semantics, validation rules on insert, retention budget. Ver [spike learnings](../.ai-work/eng-404-spike/learnings.md).
+**Código existente:** `src/Engram.Verification/MemoryRelation*.cs` (spike code, punto de partida para la feature real).
 
 ---
 
