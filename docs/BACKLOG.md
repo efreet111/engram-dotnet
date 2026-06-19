@@ -578,13 +578,18 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 ---
 
-### ENG-404 — Memory relations (P1)
+### ENG-404 — Memory relations (P1) — ✅ DONE 2026-06-18
 
 **Problema:** Las memorias son nodos aislados. No hay forma de decir "esta memoria corrige esta otra" o "depende de".
 **Para qué sirve:** Grafo de memorias con relaciones tipadas (`depends_on`, `supersedes`, `conflicts_with`, `related_to`). Permite queries estructurales (lineage, cycle detection, contradiction surfacing).
-**Evidence del spike (2026-06-18):** 291 líneas de código clonando el patrón de `Engram.Verification` (TraceRepository + LineageBuilder). 6/6 tests pasan en 216ms. Cero cambios de schema. Effort re-estimado: **XL → M**.
-**Diseño decisions pendientes:** inverse traversal (follow-up M), MCP tool API shape, sync semantics, validation rules on insert, retention budget. Ver [spike learnings](../.ai-work/eng-404-spike/learnings.md).
-**Código existente:** `src/Engram.Verification/MemoryRelation*.cs` (spike code, punto de partida para la feature real).
+**Qué se implementó:**
+- MCP tools: `mem_relations` (add/get/delete) y `mem_lineage_obs` (BFS lineage con cycle detection, max_hops default 5, max 10)
+- CLI commands: `engram relations` y `engram lineage`
+- 14 escenarios de spec cubiertos, 13 tests unitarios (291ms), suite completa 644/644 pass
+- Rework resuelto (dead `max_hops` parameter — cycle 2/3)
+- Zero schema changes — relations como observaciones `memrel/{project}/{observationId}`
+**Ver:** [spec](../.ai-work/eng-404-memory-relations/spec.md) | [plan](../.ai-work/eng-404-memory-relations/plan.md) | [verify report](../.ai-work/eng-404-memory-relations/verify-report.md) | [summary](../.ai-work/eng-404-memory-relations/summary.md)
+**Follow-up:** Inverse traversal (inbound edges) — estimado M, sin ENG asignado aún.
 
 ---
 

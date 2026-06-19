@@ -152,8 +152,8 @@
 | 24 | `mem_current_project` | 🔲 | Requiere cliente MCP |
 | 25 | `mem_session_summary` | 🔲 | Requiere cliente MCP |
 | 26 | `mem_session_start` (duplicate?) | 🔲 | Requiere cliente MCP — verificar duplicado |
-| 27 | `mem_relations` | 🔲 | Requiere cliente MCP (ENG-404) |
-| 28 | `mem_lineage_obs` | 🔲 | Requiere cliente MCP (ENG-404) |
+| 27 | `mem_relations` | 🔲 | Implementado en ENG-404, pendiente test manual |
+| 28 | `mem_lineage_obs` | 🔲 | Implementado en ENG-404, pendiente test manual |
 
 ---
 
