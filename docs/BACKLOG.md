@@ -119,7 +119,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
-| 19 | ENG-404 | P1 | Feature | Phase 4 — memory relations (grafo de observaciones) | Ready | M | ← ENG-410 + spike 55bdbf8 | [spike learnings](../.ai-work/eng-404-spike/learnings.md) |
+| ✓ | ENG-404 | P1 | Feature | Phase 4 — memory relations (grafo de observaciones) | Done | M | ← ENG-410 + spike 55bdbf8 | [spike learnings](../.ai-work/eng-404-spike/learnings.md) + MCP tools + CLI |
 | — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
 | — | ENG-403 | P2 | Feature | Phase 3 — breaking (quitar `project` de writes) | Icebox | L | Requiere guía migración |

@@ -49,13 +49,15 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
     private readonly Verification.TraceRepository _traceRepo = traceRepo;
     private readonly Verification.LineageBuilder _lineageBuilder = lineageBuilder;
     private readonly IDiagnosticService _diagnosticService = diagnosticService;
+    private readonly Verification.MemoryRelationRepository _memRelRepo = memRelRepo;
+    private readonly Verification.MemoryLineageBuilder _memLineageBuilder = memLineageBuilder;
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -991,6 +993,135 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         });
         
         return json;
+    }
+
+    // ─── mem_relations ────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_relations", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Add, retrieve, or delete typed relations between memory observations. Relation types: depends_on, supersedes, conflicts_with, related_to.")]
+    public async Task<string> MemRelations(
+        [Description("Source observation ID")] long observation_id,
+        [Description("Action: add, get, or delete")] string action,
+        [Description("Target observation ID (required for add/delete)")] long? target_observation_id = null,
+        [Description("Relation type: depends_on, supersedes, conflicts_with, related_to (required for add/delete)")] string? type = null,
+        [Description("Project name")] string? project = null)
+    {
+        if (observation_id == 0) return "Error: observation_id is required";
+        if (string.IsNullOrEmpty(action)) return "Error: action is required";
+
+        var resolvedProject = ResolveProject(project);
+        var sessionId = DefaultSessionId(resolvedProject);
+
+        return action.ToLowerInvariant() switch
+        {
+            "get" => await HandleGetRelationsAsync(resolvedProject, observation_id),
+            "add" => await HandleAddRelationAsync(resolvedProject, observation_id, target_observation_id, type, sessionId),
+            "delete" => await HandleDeleteRelationAsync(resolvedProject, observation_id, target_observation_id, type, sessionId),
+            _ => $"Error: Invalid action '{action}'. Valid actions: add, get, delete"
+        };
+    }
+
+    private async Task<string> HandleGetRelationsAsync(string project, long observationId)
+    {
+        var relations = await _memRelRepo.GetRelationsAsync(project, observationId);
+        if (relations.Count == 0) return $"No relations found for obs#{observationId}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Relations for obs#{observationId}:");
+        foreach (var rel in relations)
+            sb.AppendLine($"- {rel.Type}: {rel.TargetObservationId}");
+        return sb.ToString().TrimEnd();
+    }
+
+    private async Task<string> HandleAddRelationAsync(string project, long obsId, long? targetId, string? relType, string sessionId)
+    {
+        if (targetId is null) return "Error: target_observation_id is required for add action";
+        if (string.IsNullOrEmpty(relType)) return "Error: type is required for add action";
+
+        if (!Verification.RelationValidator.IsValidType(relType))
+            return $"Error: Invalid relation type '{relType}'. Valid types: {string.Join(", ", Verification.RelationValidator.ValidRelationTypes)}";
+
+        // FR-001D: supersedes validation - same topic_key required
+        if (relType == "supersedes")
+        {
+            var sourceObs = await store.GetObservationAsync(obsId);
+            var targetObs = await store.GetObservationAsync(targetId.Value);
+            if (sourceObs is null || targetObs is null)
+                return "Error: Both observations must exist";
+
+            var sourceKey = sourceObs.TopicKey?.Split('/').FirstOrDefault() ?? "";
+            var targetKey = targetObs.TopicKey?.Split('/').FirstOrDefault() ?? "";
+            if (sourceKey != targetKey)
+                return "Error: supersedes requires same topic_key prefix";
+        }
+
+        var rel = new Verification.MemoryRelation { Type = relType, TargetObservationId = targetId.Value };
+        await _memRelRepo.SaveRelationAsync(project, obsId, rel, sessionId);
+        return $"Relation {relType}:{targetId} added to observation {obsId}.";
+    }
+
+    private async Task<string> HandleDeleteRelationAsync(string project, long obsId, long? targetId, string? relType, string sessionId)
+    {
+        if (targetId is null) return "Error: target_observation_id is required for delete action";
+        if (string.IsNullOrEmpty(relType)) return "Error: type is required for delete action";
+
+        var deleted = await _memRelRepo.DeleteRelationAsync(project, obsId, targetId.Value, relType, sessionId);
+        return deleted
+            ? $"Relation {relType}:{targetId} removed from observation {obsId}."
+            : "No matching relation found.";
+    }
+
+    // ─── mem_lineage_obs ──────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_lineage_obs", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("Build a lineage tree for a memory observation using BFS traversal. Shows ancestors (depends_on/supersedes) and descendants (related_to).")]
+    public async Task<string> MemLineageObs(
+        [Description("Root observation ID")] long observation_id,
+        [Description("Max traversal depth (default: 5, max: 10)")] int max_hops = 5,
+        [Description("Project name")] string? project = null)
+    {
+        if (observation_id == 0) return "Error: observation_id is required";
+
+        var clampedHops = Math.Clamp(max_hops, 1, 10);
+        var resolvedProject = ResolveProject(project);
+
+        var result = await _memLineageBuilder.BuildLineageAsync(resolvedProject, observation_id, clampedHops);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Lineage: obs#{observation_id}");
+        sb.AppendLine();
+
+        if (result.Ancestors.Count > 0)
+        {
+            sb.AppendLine("### Ancestors (↑)");
+            foreach (var a in result.Ancestors)
+            {
+                var title = string.IsNullOrEmpty(a.Title) ? "(untraced)" : $"\"{Truncate(a.Title, 40)}\"";
+                var lineage = a.Lineage.Count > 0 ? $" ({string.Join(", ", a.Lineage)})" : "";
+                sb.AppendLine($"- obs#{a.ObservationId}: {title}{lineage}");
+            }
+            sb.AppendLine();
+        }
+
+        if (result.Descendants.Count > 0)
+        {
+            sb.AppendLine("### Descendants (↓)");
+            foreach (var d in result.Descendants)
+            {
+                var title = string.IsNullOrEmpty(d.Title) ? "(untraced)" : $"\"{Truncate(d.Title, 40)}\"";
+                var lineage = d.Lineage.Count > 0 ? $" ({string.Join(", ", d.Lineage)})" : "";
+                sb.AppendLine($"- obs#{d.ObservationId}: {title}{lineage}");
+            }
+            sb.AppendLine();
+        }
+
+        if (result.Ancestors.Count == 0 && result.Descendants.Count == 0)
+            sb.AppendLine("No lineage relationships found.");
+
+        sb.AppendLine($"Hops: {result.Hops}");
+        if (result.CycleDetected) sb.AppendLine("⚠️ Cycle detected!");
+
+        return sb.ToString().TrimEnd();
     }
 
     // ─── mem_project_redirects ───────────────────────────────────────────────

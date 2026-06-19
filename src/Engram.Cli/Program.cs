@@ -130,6 +130,10 @@ mcpCmd.SetHandler(async (string? project, bool autoEnroll) =>
     mcpBuilder.Services.AddSingleton<Engram.Verification.TraceRepository>();
     mcpBuilder.Services.AddSingleton<Engram.Verification.LineageBuilder>();
 
+    // Register memory relation services (ENG-404)
+    mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryRelationRepository>();
+    mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryLineageBuilder>();
+
     // Register diagnostic service
     mcpBuilder.Services.AddSingleton<IDiagnosticService>(sp =>
     {
@@ -1230,6 +1234,117 @@ doctorCmd.SetHandler(async (string? serverUrl) =>
     }
 }, doctorServerOpt);
 
+// ─── relations (ENG-404) ──────────────────────────────────────────────────
+
+var relationsCmd = new Command("relations", "Manage memory observation relations");
+
+var relActionOpt = new Option<string>("--action", "Action: add, get, or delete (required)");
+var relObsIdOpt = new Option<long>("--observation-id", "Source observation ID (required)");
+var relTargetIdOpt = new Option<long>("--target-id", "Target observation ID (required for add/delete)");
+var relTypeOpt = new Option<string>("--type", "Relation type: depends_on, supersedes, conflicts_with, related_to (required for add/delete)");
+var relProjOpt = new Option<string?>("--project", "Project name");
+relationsCmd.AddOption(relActionOpt);
+relationsCmd.AddOption(relObsIdOpt);
+relationsCmd.AddOption(relTargetIdOpt);
+relationsCmd.AddOption(relTypeOpt);
+relationsCmd.AddOption(relProjOpt);
+relationsCmd.SetHandler(async (string action, long obsId, long targetId, string? relType, string? proj) =>
+{
+    using var store = OpenStore();
+    var project = proj ?? Normalizers.NormalizeProject(ProjectDetector.DetectProject(Directory.GetCurrentDirectory()));
+    var sessionId = $"rel-cli-{DateTime.UtcNow:yyyyMMdd}";
+    var repo = new Engram.Verification.MemoryRelationRepository(store);
+
+    switch (action.ToLowerInvariant())
+    {
+        case "get":
+            var relations = await repo.GetRelationsAsync(project, obsId);
+            if (relations.Count == 0) { Console.WriteLine($"No relations for obs#{obsId}"); return; }
+            foreach (var r in relations)
+                Console.WriteLine($"- {r.Type}: {r.TargetObservationId}");
+            return;
+
+        case "add":
+            if (targetId == 0) { Console.Error.WriteLine("error: --target-id required for add"); return; }
+            if (string.IsNullOrEmpty(relType)) { Console.Error.WriteLine("error: --type required for add"); return; }
+            if (!Engram.Verification.RelationValidator.IsValidType(relType))
+            {
+                Console.Error.WriteLine($"error: invalid type '{relType}'. Valid: {string.Join(", ", Engram.Verification.RelationValidator.ValidRelationTypes)}");
+                return;
+            }
+            await repo.SaveRelationAsync(project, obsId, new Engram.Verification.MemoryRelation { Type = relType, TargetObservationId = targetId }, sessionId);
+            Console.WriteLine($"Relation {relType}:{targetId} added to obs#{obsId}");
+            return;
+
+        case "delete":
+            if (targetId == 0) { Console.Error.WriteLine("error: --target-id required for delete"); return; }
+            if (string.IsNullOrEmpty(relType)) { Console.Error.WriteLine("error: --type required for delete"); return; }
+            var deleted = await repo.DeleteRelationAsync(project, obsId, targetId, relType, sessionId);
+            Console.WriteLine(deleted ? $"Relation removed." : "No matching relation found.");
+            return;
+
+        default:
+            Console.Error.WriteLine($"error: invalid action '{action}'. Valid: add, get, delete");
+            return;
+    }
+}, relActionOpt, relObsIdOpt, relTargetIdOpt, relTypeOpt, relProjOpt);
+
+// ──�� lineage (ENG-404) ────────────────────────────────────────────────────
+
+var lineageCmd = new Command("lineage", "Build lineage tree for a memory observation");
+
+var linObsIdOpt = new Option<long>("--observation-id", "Root observation ID (required)");
+var linMaxHopsOpt = new Option<int>("--max-hops", () => 5, "Max traversal depth (default: 5, max: 10)");
+var linProjOpt = new Option<string?>("--project", "Project name");
+lineageCmd.AddOption(linObsIdOpt);
+lineageCmd.AddOption(linMaxHopsOpt);
+lineageCmd.AddOption(linProjOpt);
+lineageCmd.SetHandler(async (long obsId, int maxHops, string? proj) =>
+{
+    if (obsId == 0) { Console.Error.WriteLine("error: --observation-id required"); return; }
+
+    var clampedHops = Math.Clamp(maxHops, 1, 10);
+    using var store = OpenStore();
+    var project = proj ?? Normalizers.NormalizeProject(ProjectDetector.DetectProject(Directory.GetCurrentDirectory()));
+    var repo = new Engram.Verification.MemoryRelationRepository(store);
+    var builder = new Engram.Verification.MemoryLineageBuilder(repo, store);
+
+    var result = await builder.BuildLineageAsync(project, obsId, clampedHops);
+
+    Console.WriteLine($"## Lineage: obs#{obsId}");
+    Console.WriteLine();
+
+    if (result.Ancestors.Count > 0)
+    {
+        Console.WriteLine("### Ancestors (↑)");
+        foreach (var a in result.Ancestors)
+        {
+            var title = string.IsNullOrEmpty(a.Title) ? "(untraced)" : $"\"{a.Title}\"";
+            var lineage = a.Lineage.Count > 0 ? $" ({string.Join(", ", a.Lineage)})" : "";
+            Console.WriteLine($"- obs#{a.ObservationId}: {title}{lineage}");
+        }
+        Console.WriteLine();
+    }
+
+    if (result.Descendants.Count > 0)
+    {
+        Console.WriteLine("### Descendants (↓)");
+        foreach (var d in result.Descendants)
+        {
+            var title = string.IsNullOrEmpty(d.Title) ? "(untraced)" : $"\"{d.Title}\"";
+            var lineage = d.Lineage.Count > 0 ? $" ({string.Join(", ", d.Lineage)})" : "";
+            Console.WriteLine($"- obs#{d.ObservationId}: {title}{lineage}");
+        }
+        Console.WriteLine();
+    }
+
+    if (result.Ancestors.Count == 0 && result.Descendants.Count == 0)
+        Console.WriteLine("No lineage relationships found.");
+
+    Console.WriteLine($"Hops: {result.Hops}");
+    if (result.CycleDetected) Console.WriteLine("⚠️ Cycle detected!");
+}, linObsIdOpt, linMaxHopsOpt, linProjOpt);
+
 // ─── Assemble ────────────────────────────────────────────────────────────────
 
 root.AddCommand(serveCmd);
@@ -1248,6 +1363,8 @@ root.AddCommand(retentionCmd);
 root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);
 root.AddCommand(doctorCmd);
+root.AddCommand(relationsCmd);
+root.AddCommand(lineageCmd);
 
 return await root.InvokeAsync(args);
 

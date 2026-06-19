@@ -58,8 +58,11 @@ public sealed class MemoryLineageBuilder
     /// </summary>
     /// <param name="project">Project name for scoping relation lookups.</param>
     /// <param name="rootObservationId">The root observation ID.</param>
-    public async Task<MemoryLineageResult> BuildLineageAsync(string project, long rootObservationId)
+    /// <param name="maxHops">Maximum traversal depth (default: 5, max: 10).</param>
+    public async Task<MemoryLineageResult> BuildLineageAsync(string project, long rootObservationId, int maxHops = 5)
     {
+        var effectiveMaxHops = Math.Clamp(maxHops, 1, MaxHops);
+
         var visited = new HashSet<long> { rootObservationId };
         var ancestors = new List<MemoryTraceNode>();
         var descendants = new List<MemoryTraceNode>();
@@ -71,10 +74,14 @@ public sealed class MemoryLineageBuilder
         var queue = new Queue<(long id, int depth, bool isAncestor)>();
         queue.Enqueue((rootObservationId, 0, true));
 
-        while (queue.Count > 0 && hops < MaxHops)
+        while (queue.Count > 0)
         {
             var (current, depth, isAncestor) = queue.Dequeue();
+            // Track max depth reached before checking limit
             hops = Math.Max(hops, depth);
+            // Stop if we've reached max depth (depth is the hop count from root)
+            if (depth >= effectiveMaxHops)
+                continue;
 
             var relations = await _repo.GetRelationsAsync(project, current);
 

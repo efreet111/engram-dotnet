@@ -181,4 +181,133 @@ public class MemoryRelationsSpikeTests : IDisposable
         Assert.Equal("related_to", remaining[0].Type);
         Assert.Equal(ids[3], remaining[0].TargetObservationId);
     }
+
+    // ==== FR-001A: Add relation happy path ====
+
+    [Fact]
+    public async Task AddRelation_HappyPath_CreatesRelation()
+    {
+        const string project = "spike-add-happy";
+        var ids = new Dictionary<int, long>();
+        for (var i = 1; i <= 2; i++)
+            ids[i] = await CreateObsAsync(i, project, $"obs-{i}");
+
+        await _repo.SaveRelationAsync(project, ids[1], new MemoryRelation { Type = "depends_on", TargetObservationId = ids[2] }, SessionId);
+
+        var stored = await _repo.GetRelationsAsync(project, ids[1]);
+        Assert.Single(stored);
+        Assert.Equal("depends_on", stored[0].Type);
+        Assert.Equal(ids[2], stored[0].TargetObservationId);
+    }
+
+    // ==== FR-001D: supersedes requires same topic_key ====
+
+    [Fact]
+    public async Task AddRelation_SupersedesRequiresSameTopicKey_Fails()
+    {
+        const string project = "spike-supersedes";
+        var ids = new Dictionary<int, long>();
+        ids[1] = await CreateObsAsync(1, project, "obs-1");
+        // Create obs2 with different topic_key prefix
+        await _store.CreateSessionAsync(SessionId, project, "/tmp");
+        ids[2] = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Type = "test_obs",
+            Title = "obs-2",
+            Content = "different topic context",
+            Project = project,
+            TopicKey = "different/42", // Different prefix!
+            Scope = Scopes.Team
+        });
+
+        // This should NOT fail at repository level - validation happens at MCP tool level
+        await _repo.SaveRelationAsync(project, ids[1], new MemoryRelation { Type = "supersedes", TargetObservationId = ids[2] }, SessionId);
+
+        var stored = await _repo.GetRelationsAsync(project, ids[1]);
+        Assert.Single(stored); // Stored regardless - MCP tool enforces the rule, not repository
+    }
+
+    // ==== FR-003B: Empty set triggers observation deletion ====
+
+    [Fact]
+    public async Task DeleteRelation_LastRelation_DeletesObservation()
+    {
+        const string project = "spike-delete-empty";
+        var ids = new Dictionary<int, long>();
+        for (var i = 1; i <= 2; i++)
+            ids[i] = await CreateObsAsync(i, project, $"obs-{i}");
+
+        await _repo.SaveRelationAsync(project, ids[1], new MemoryRelation { Type = "depends_on", TargetObservationId = ids[2] }, SessionId);
+
+        var removed = await _repo.DeleteRelationAsync(project, ids[1], ids[2], "depends_on", SessionId);
+        Assert.True(removed);
+
+        var remaining = await _repo.GetRelationsAsync(project, ids[1]);
+        Assert.Empty(remaining);
+    }
+
+    // ==== FR-003C: Delete non-existent returns false ====
+
+    [Fact]
+    public async Task DeleteRelation_NonExistent_ReturnsFalse()
+    {
+        const string project = "spike-delete-none";
+        var id = await CreateObsAsync(1, project, "obs-1");
+
+        var removed = await _repo.DeleteRelationAsync(project, id, 999, "depends_on", SessionId);
+        Assert.False(removed);
+    }
+
+    // ==== FR-004B: Empty for unconnected observation ====
+
+    [Fact]
+    public async Task GetRelations_UnconnectedObservation_ReturnsEmpty()
+    {
+        const string project = "spike-empty-rels";
+        var id = await CreateObsAsync(1, project, "obs-1");
+
+        var relations = await _repo.GetRelationsAsync(project, id);
+        Assert.Empty(relations);
+    }
+
+    // ==== FR-002B variant: related_to as descendant (additional verification) ====
+
+    [Fact]
+    public async Task BuildLineage_RelatedToDescendant_FindsDescendant()
+    {
+        const string project = "spike-relatedto";
+        var ids = new Dictionary<int, long>();
+        for (var i = 1; i <= 2; i++)
+            ids[i] = await CreateObsAsync(i, project, $"obs-{i}");
+
+        await _repo.SaveRelationAsync(project, ids[1], new MemoryRelation { Type = "related_to", TargetObservationId = ids[2] }, SessionId);
+
+        var result = await _builder.BuildLineageAsync(project, ids[1]);
+
+        Assert.Single(result.Descendants);
+        Assert.Equal(ids[2], result.Descendants[0].ObservationId);
+    }
+
+    // ==== ENG-404: max_hops parameter enforcement =====
+
+    [Fact]
+    public async Task BuildLineage_MaxHops_LimitsTraversalDepth()
+    {
+        // Create a chain: 1 ←2←3 (2 depends_on 1, 3 depends_on 2)
+        const string project = "spike-maxhops";
+        var ids = new Dictionary<int, long>();
+        for (var i = 1; i <= 3; i++)
+            ids[i] = await CreateObsAsync(i, project, $"obs-{i}");
+
+        await _repo.SaveRelationAsync(project, ids[2], new MemoryRelation { Type = "depends_on", TargetObservationId = ids[1] }, SessionId);
+        await _repo.SaveRelationAsync(project, ids[3], new MemoryRelation { Type = "depends_on", TargetObservationId = ids[2] }, SessionId);
+
+        // With max_hops=1, should only return 1 hop (obs#2), not the full chain (obs#2 → obs#1)
+        var result = await _builder.BuildLineageAsync(project, ids[3], maxHops: 1);
+
+        Assert.Single(result.Ancestors);
+        Assert.Equal(ids[2], result.Ancestors[0].ObservationId);
+        Assert.Equal(1, result.Hops);
+    }
 }

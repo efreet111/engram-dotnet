@@ -25,6 +25,8 @@ public class StructuredErrorMigrationTests : IDisposable
     private readonly TraceRepository _traceRepo;
     private readonly LineageBuilder _lineageBuilder;
     private readonly IDiagnosticService _diagnosticService;
+    private readonly MemoryRelationRepository _memRelRepo;
+    private readonly MemoryLineageBuilder _memLineageBuilder;
     private const string SessionId = "error-test-session";
 
     public StructuredErrorMigrationTests()
@@ -40,7 +42,9 @@ public class StructuredErrorMigrationTests : IDisposable
         _traceRepo = new TraceRepository(_store);
         _lineageBuilder = new LineageBuilder(_traceRepo);
         _diagnosticService = new DiagnosticService(_store);
-        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "test-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, _traceRepo, _lineageBuilder, _diagnosticService);
+        _memRelRepo = new MemoryRelationRepository(_store);
+        _memLineageBuilder = new MemoryLineageBuilder(_memRelRepo, _store);
+        _tools = new EngramTools(_store, new McpConfig { DefaultProject = "test-project" }, _writeQueue, _sessionActivity, _verifier, _cycleTracker, promotionService, _traceRepo, _lineageBuilder, _diagnosticService, _memRelRepo, _memLineageBuilder);
     }
 
     public void Dispose()
