@@ -95,10 +95,10 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
-| 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-429-project-id-mcp/spec.md) |
+| 12 | ENG-429 | P1 | Feature | Exponer `project_id` en `mem_current_project` MCP tool | Done | S | ← ENG-410 | `EngramTools.cs:1160` project_id en respuesta JSON |
 | 13 | ENG-430 | P0 | Doc | Documentar `.engram-id` en `.gitignore` + check de instalación | Done | S | ← ENG-410 | `680dd1a` — doctor check + .gitignore docs + CONTRIBUTING |
-| 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-431-guid-validation/spec.md) |
-| 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
+| 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Done | S | ← ENG-410 | `ProjectIdentity.cs:43` Validate() + ENGRAM_STRICT_PROJECT_ID |
+| 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Done | S | ← ENG-410 | `Program.cs:485` project id --json --regenerate --set -y |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Done | S | ← ENG-410 | `src/Engram.Store/ProjectIdentity.cs:105` TryAutoEnroll + `--auto-enroll` CLI flag + 5 tests |
 | 17 | ENG-434 | P2 | Feature | Migración `project` string → GUID canónico (v1.1) | Icebox | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — solo 3 usuarios internos; ENG-435 cubre el caso de uso |
 | 18 | ENG-435 | P1 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Done | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) |
