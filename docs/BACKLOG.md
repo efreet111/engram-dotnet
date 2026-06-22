@@ -100,7 +100,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 14 | ENG-431 | P2 | Feature | Validación de consistencia del GUID | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-431-guid-validation/spec.md) |
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-432-cli-project-id/spec.md) |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Ready | S | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-433) |
-| 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | L | ← ENG-410 | [spec](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434) |
+| 17 | ENG-434 | P1 | Feature | Migración `project` string → GUID canónico (v1.1) | Ready | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — 1259 líneas, sub-features propuestos |
 | 18 | ENG-435 | P1 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Done | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
@@ -336,18 +336,38 @@ curl http://server:7437/search?q=Offline
 
 ---
 
-### ENG-434 — Migración `project` string → GUID canónico (P1, L, v1.1)
+### ENG-434 — Migración `project` string → GUID canónico (P1, XL, v1.1)
 
 **Problema:** `project` string (nombre de carpeta) es la key del store hoy. Renombrar carpeta = perder memorias. El GUID existe pero no se usa en storage.
 
 **Valor:** Identidad inmune a renames, clones y moves. Fundación para sync multi-dispositivo confiable.
 
-**Depende de:** ENG-404 (memory relations).
+**Spike evidence (2026-06-21):**
+- 1259 líneas tocan `project` en todas las capas (Store: 522, Tests: 491, Mcp: 101, Server: 76, Cli: 69)
+- 36+ firmas de método en IStore aceptan `project` string
+- Columna `scope` es ambigua: mezcla access level con project identifier
+- **ADD COLUMN** mejor que RENAME COLUMN (backward compat)
+- Migración LAZY (dual-read) más segura que ONCE
+- Performance: sin diferencia entre string y GUID (<5%)
 
-**Criterios:**
-- [ ] Store acepta `project_id` GUID como parámetro
-- [ ] Search/save/context con GUID canónico
-- [ ] Migración automática de memorias existentes
+**Depende de:** ENG-410 (project identity) + ENG-435 (legacy migration toolkit).
+
+**Sub-features propuestos:**
+
+| ID | Fase | Scope | Effort | Prioridad |
+|----|------|-------|--------|-----------|
+| ENG-434a | Schema + Store API | Agregar `project_id` columna, actualizar IStore | M | P1 |
+| ENG-434b | Dual-read + MCP + CLI | Backward compat pattern, tools, commands | M | P2 |
+| ENG-434c | Migration tooling | CLI command para migración LAZY | S | P3 |
+
+**Ver:** [spike learnings](../.ai-work/eng-434-spike/learnings.md) | [spec original](../.ai-work/eng-433-434-auto-migrate/spec.md#eng-434)
+
+**Criterios (por fase):**
+- [ ] 434a: Store acepta `project_id` GUID como parámetro (dual: string + GUID)
+- [ ] 434a: `ALTER TABLE ADD COLUMN project_id TEXT` sin romper queries existentes
+- [ ] 434b: Search/save/context con GUID como canonical, string como fallback
+- [ ] 434b: MCP tools y CLI aceptan `--project-id` opcional
+- [ ] 434c: Migración LAZY automática de memorias existentes
 - [ ] Guía de migración para equipos
 - [ ] Deprecation period para `project` string
 
