@@ -44,7 +44,7 @@ public sealed class McpConfig
 }
 
 /// <summary>
-/// All 26 Engram MCP tools, port-faithful to the Go implementation.
+/// All 28 Engram MCP tools, port-faithful to the Go implementation.
 /// Registered via [McpServerToolType] / [McpServerTool] attributes.
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>

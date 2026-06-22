@@ -1618,7 +1618,7 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(observationId);
     }
 
-    public Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
+    public async Task<int> SyncMdToRepoAsync(string mdDir, bool dryRun)
     {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
@@ -1631,16 +1631,16 @@ CREATE TABLE IF NOT EXISTS observations (
         while (r.Read()) ids.Add(r.GetInt64(0));
         r.Close();
 
-        if (dryRun) return Task.FromResult(ids.Count);
+        if (dryRun) return ids.Count;
 
         int promoted = 0;
         foreach (var id in ids)
         {
-            var result = PromoteToMdAsync(id, mdDir).Result;
+            var result = await PromoteToMdAsync(id, mdDir);
             if (result > 0) promoted++;
         }
 
-        return Task.FromResult(promoted);
+        return promoted;
     }
 
     public Task<string> GenerateIndexAsync(string mdDir)

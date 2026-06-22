@@ -28,7 +28,7 @@ src/
 ├── Engram.Sync/         ← Offline-first sync engine
 │   ├── SyncManager.cs   ← BackgroundService
 │   └── Transport/       ← HTTP transport (IMutationTransport)
-├── Engram.Mcp/          ← MCP server (26 tools, stdio transport)
+├── Engram.Mcp/          ← MCP server (28 tools, stdio transport)
 ├── Engram.Cli/          ← CLI entry point (System.CommandLine)
 ├── Engram.Diagnostics/  ← Doctor diagnostic tools
 ├── Engram.Obsidian/     ← Obsidian vault export
@@ -173,7 +173,7 @@ app.MapGet("/search", async (ctx, store) => await HandleSearch(ctx, store));
 
 ## MCP Server
 
-26 tools registered via `McpServerTool` attribute:
+28 tools registered via `McpServerTool` attribute:
 
 ```
 Production (create/read):
@@ -183,6 +183,7 @@ Production (create/read):
 Read-only (query):
   mem_search, mem_get_observation, mem_context, mem_session_summary
   mem_stats, mem_timeline, mem_suggest_topic_key
+  mem_relations, mem_lineage_obs
 
 Diagnostics:
   mem_doctor
@@ -266,5 +267,5 @@ if (v scope == "personal")
 | PostgreSQL | Npgsql + tsvector + GIN indexes |
 | MCP | ModelContextProtocol NuGet (Microsoft oficial) |
 | CLI | System.CommandLine |
-| Auth | JWT (optional, via `ENGRAM_JWT_SECRET`) |
+| Auth | JWT [planned, optional via `ENGRAM_JWT_SECRET`] |
 | Testing | xUnit, WebApplicationFactory, Testcontainers |

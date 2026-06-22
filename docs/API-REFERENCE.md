@@ -18,7 +18,7 @@ curl http://192.168.0.178:7437/health
 ```
 
 ```json
-{"status":"ok","service":"engram","version":"0.3.0","backend":"postgres"}
+{"status":"ok","service":"engram","version":"1.1.0","backend":"postgres"}
 ```
 
 ### `GET /stats`
@@ -388,14 +388,6 @@ engram doctor --server http://192.168.0.178:7437
 |--------|----------|-------------|
 | GET | `/retention/stats` | Get retention statistics by age bucket |
 | POST | `/retention/prune` | Delete observations past their TTL |
-
----
-
-## 🧪 Debug
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/debug-test` | Debug endpoint (returns request details) |
 
 ---
 

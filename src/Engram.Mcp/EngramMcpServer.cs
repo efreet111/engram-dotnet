@@ -7,7 +7,7 @@ namespace Engram.Mcp;
 
 /// <summary>
 /// Configures and runs the Engram MCP server over stdio transport.
-/// The 19 tools are declared in EngramTools.cs with [McpServerTool] attributes.
+/// The 28 tools are declared in EngramTools.cs with [McpServerTool] attributes.
 /// </summary>
 public static class EngramMcpServer
 {
