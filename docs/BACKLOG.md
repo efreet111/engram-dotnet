@@ -16,7 +16,7 @@
 | **Feature = entregable** | Cada fila es una **Feature** (épica pequeña) con criterio de "hecho" claro. Las tareas grandes se descomponen en **Stories** dentro de la feature. |
 | **Estados** | `Done` · `Ready` (sin spec o spec listo) · `In Progress` · `Blocked` · `Icebox` |
 | **Tipos** | `Feature` · `Bug` · `Doc` · `Chore` · `Test` |
-| **Specs** | Features `Ready` con spec en `sdd/` o `docs/rfcs/` — enlazado en la columna Spec. |
+| **Specs** | Features `Ready` con spec en `sdd/` o `docs/architecture/rfc/` — enlazado en la columna Spec. |
 | **Trazabilidad** | `Origen` indica de dónde nace (HU, ENG padre, bug report). `←` = nace de, `→` = depende de. |
 | **No duplicar** | Deuda técnica detallada vive en [TECHNICAL-DEBT.md](TECHNICAL-DEBT.md); aquí solo el **orden** y el **por qué**. |
 | **Docs al cerrar** | Al marcar `Done`, seguir [`.cursor/skills/engram-docs-on-done/SKILL.md`](../.cursor/skills/engram-docs-on-done/SKILL.md) y regla `config/cursor/rules/engram-docs-on-done.mdc`. |
