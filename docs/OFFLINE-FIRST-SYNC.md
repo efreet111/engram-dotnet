@@ -140,4 +140,4 @@ dotnet test --filter "Category!=RequiresDocker"
 - [`docs/API-REFERENCE.md`](API-REFERENCE.md) — REST endpoints
 - [`docs/AGENT-PROTOCOL.md`](AGENT-PROTOCOL.md) — Agent protocol
 - [`docs/MULTI-USER.md`](MULTI-USER.md) — User isolation
-- [`docs/rfcs/RFC-003-offline-first-sync-architecture.md`](rfcs/RFC-003-offline-first-sync-architecture.md) — Technical RFC
+- [`docs/architecture/rfc/RFC-003-offline-first-sync-architecture.md`](architecture/rfc/RFC-003-offline-first-sync-architecture.md) — Technical RFC
