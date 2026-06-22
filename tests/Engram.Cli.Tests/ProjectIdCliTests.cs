@@ -269,15 +269,14 @@ public sealed class ProjectIdCliTests : IDisposable
         Assert.DoesNotContain("(computed, not saved)", stdout.ToString());
     }
 
-    // ─── ENG-433: Auto-enroll tests ─────────────────────────────────────
+    // ─── ENG-433: Auto-enroll tests (default ON, opt-out via --no-auto-enroll) ──
 
     [Fact]
-    public async Task McpCommand_AutoEnroll_GeneratesEngramId()
+    public async Task McpCommand_NoFlag_AutoEnrollsByDefault()
     {
-        var repo = InitGitRepo("cli-auto-enroll");
+        var repo = InitGitRepo("cli-auto-enroll-default");
         using var scope = CwdScope.New(repo);
 
-        // Capture stderr (logs go there)
         var stderr = new StringWriter();
         var originalErr = Console.Error;
         Console.SetError(stderr);
@@ -286,11 +285,11 @@ public sealed class ProjectIdCliTests : IDisposable
         {
             var root = new RootCommand();
             var mcpCmd = new Command("mcp", "Start the MCP server");
-            var autoEnrollOpt = new Option<bool>("--auto-enroll");
-            mcpCmd.AddOption(autoEnrollOpt);
-            mcpCmd.SetHandler(async (bool autoEnroll) =>
+            var noAutoEnrollOpt = new Option<bool>("--no-auto-enroll");
+            mcpCmd.AddOption(noAutoEnrollOpt);
+            mcpCmd.SetHandler(async (bool noAutoEnroll) =>
             {
-                if (autoEnroll)
+                if (!noAutoEnroll)
                 {
                     var cwd = Directory.GetCurrentDirectory();
                     if (ProjectIdentity.TryAutoEnroll(cwd, out var generatedId))
@@ -298,30 +297,27 @@ public sealed class ProjectIdCliTests : IDisposable
                         await Console.Error.WriteLineAsync($"[engram] Generated project identity: {generatedId}");
                     }
                 }
-                // Don't actually start the server in tests
                 await Task.CompletedTask;
-            }, autoEnrollOpt);
+            }, noAutoEnrollOpt);
             root.AddCommand(mcpCmd);
 
-            await root.InvokeAsync("mcp --auto-enroll");
+            // No flag → auto-enroll ON by default
+            await root.InvokeAsync("mcp");
         }
         finally
         {
             Console.SetError(originalErr);
         }
 
-        // .engram-id should be created
         var idFile = Path.Combine(repo, ".engram-id");
         Assert.True(File.Exists(idFile));
         var generatedId = File.ReadAllText(idFile).Trim();
         Assert.True(Guid.TryParse(generatedId, out _));
-
-        // Log should mention the generation
         Assert.Contains("Generated project identity", stderr.ToString());
     }
 
     [Fact]
-    public async Task McpCommand_WithoutAutoEnroll_DoesNotGenerate()
+    public async Task McpCommand_NoAutoEnroll_DoesNotGenerate()
     {
         var repo = InitGitRepo("cli-no-auto-enroll");
         using var scope = CwdScope.New(repo);
@@ -334,11 +330,11 @@ public sealed class ProjectIdCliTests : IDisposable
         {
             var root = new RootCommand();
             var mcpCmd = new Command("mcp", "Start the MCP server");
-            var autoEnrollOpt = new Option<bool>("--auto-enroll");
-            mcpCmd.AddOption(autoEnrollOpt);
-            mcpCmd.SetHandler(async (bool autoEnroll) =>
+            var noAutoEnrollOpt = new Option<bool>("--no-auto-enroll");
+            mcpCmd.AddOption(noAutoEnrollOpt);
+            mcpCmd.SetHandler(async (bool noAutoEnroll) =>
             {
-                if (autoEnroll)
+                if (!noAutoEnroll)
                 {
                     var cwd = Directory.GetCurrentDirectory();
                     if (ProjectIdentity.TryAutoEnroll(cwd, out var generatedId))
@@ -347,10 +343,10 @@ public sealed class ProjectIdCliTests : IDisposable
                     }
                 }
                 await Task.CompletedTask;
-            }, autoEnrollOpt);
+            }, noAutoEnrollOpt);
             root.AddCommand(mcpCmd);
 
-            await root.InvokeAsync("mcp");
+            await root.InvokeAsync("mcp --no-auto-enroll");
         }
         finally
         {

@@ -42,8 +42,10 @@ var root = new RootCommand("Engram — persistent memory for AI coding agents");
 
 var serveCmd  = new Command("serve", "Start the HTTP API server");
 var portOpt   = new Option<int>("--port", () => 7437, "Port to listen on (env: ENGRAM_PORT)");
+var serveNoAutoEnrollOpt = new Option<bool>("--no-auto-enroll", "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)");
 serveCmd.AddOption(portOpt);
-serveCmd.SetHandler(async (int port) =>
+serveCmd.AddOption(serveNoAutoEnrollOpt);
+serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
 {
     var envPort = Environment.GetEnvironmentVariable("ENGRAM_PORT");
     if (!string.IsNullOrEmpty(envPort) && int.TryParse(envPort, out var p)) port = p;
@@ -51,22 +53,34 @@ serveCmd.SetHandler(async (int port) =>
     var cfg   = StoreConfig.FromEnvironment();
     using var store = OpenStore(cfg);
 
+    // Auto-enroll .engram-id by default (opt-out via --no-auto-enroll, ENGRAM_AUTO_ENROLL=false, or ~/.engram/config.json auto_enroll: false)
+    var serveEnvAutoEnroll = Environment.GetEnvironmentVariable("ENGRAM_AUTO_ENROLL");
+    var serveEnvDisabled = string.Equals(serveEnvAutoEnroll, "false", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(serveEnvAutoEnroll, "0", StringComparison.OrdinalIgnoreCase);
+    var serveConfigDisabled = IsAutoEnrollDisabledInConfig();
+    if (!noAutoEnroll && !serveEnvDisabled && !serveConfigDisabled)
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        if (ProjectIdentity.TryAutoEnroll(cwd, out var generatedId))
+            Console.Error.WriteLine($"[engram] Generated project identity: {generatedId}");
+    }
+
     var backendLabel = cfg.IsPostgres ? "PostgreSQL" : "SQLite";
     Console.Error.WriteLine($"[engram] starting HTTP server on :{port} ({backendLabel})");
     var app = EngramServer.Build(store, cfg);
     app.Urls.Clear();
     app.Urls.Add($"http://0.0.0.0:{port}");
     await app.RunAsync();
-}, portOpt);
+}, portOpt, serveNoAutoEnrollOpt);
 
 // ─── mcp ─────────────────────────────────────────────────────────────────────
 
 var mcpCmd       = new Command("mcp", "Start the MCP server (stdio transport)");
 var mcpProjectOpt = new Option<string?>("--project", "Override detected project name");
-var mcpAutoEnrollOpt = new Option<bool>("--auto-enroll", "Auto-generate .engram-id if missing (also via ENGRAM_AUTO_ENROLL=true)");
+var mcpAutoEnrollOpt = new Option<bool>("--no-auto-enroll", "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)");
 mcpCmd.AddOption(mcpProjectOpt);
 mcpCmd.AddOption(mcpAutoEnrollOpt);
-mcpCmd.SetHandler(async (string? project, bool autoEnroll) =>
+mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
 {
     var storeCfg = StoreConfig.FromEnvironment();
 
@@ -76,9 +90,12 @@ mcpCmd.SetHandler(async (string? project, bool autoEnroll) =>
         ?? ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
     defaultProject = Normalizers.NormalizeProject(defaultProject);
 
-    // ENG-433: Auto-enroll .engram-id if flag is set
-    var shouldAutoEnroll = autoEnroll
-        || string.Equals(Environment.GetEnvironmentVariable("ENGRAM_AUTO_ENROLL"), "true", StringComparison.OrdinalIgnoreCase);
+    // ENG-433: Auto-enroll .engram-id by default (opt-out via --no-auto-enroll, ENGRAM_AUTO_ENROLL=false, or ~/.engram/config.json auto_enroll: false)
+    var envAutoEnroll = Environment.GetEnvironmentVariable("ENGRAM_AUTO_ENROLL");
+    var envDisabled = string.Equals(envAutoEnroll, "false", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(envAutoEnroll, "0", StringComparison.OrdinalIgnoreCase);
+    var configDisabled = IsAutoEnrollDisabledInConfig();
+    var shouldAutoEnroll = !noAutoEnroll && !envDisabled && !configDisabled;
 
     if (shouldAutoEnroll)
     {
@@ -1390,6 +1407,33 @@ static IStore OpenStore(StoreConfig? cfg = null)
         StoreDbType.Postgres => new PostgresStore(cfg),
         _ => new SqliteStore(cfg),
     };
+}
+
+/// <summary>
+/// Lee ~/.engram/config.json y devuelve true si auto_enroll está explícitamente deshabilitado.
+/// </summary>
+static bool IsAutoEnrollDisabledInConfig()
+{
+    try
+    {
+        var configPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".engram", "config.json");
+        if (!File.Exists(configPath)) return false;
+
+        var json = File.ReadAllText(configPath);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("auto_enroll", out var autoEnrollProp))
+        {
+            if (autoEnrollProp.ValueKind == System.Text.Json.JsonValueKind.False)
+                return true;
+            if (autoEnrollProp.ValueKind == System.Text.Json.JsonValueKind.Number
+                && autoEnrollProp.GetInt32() == 0)
+                return true;
+        }
+        return false;
+    }
+    catch { return false; }
 }
 
 static string Truncate(string s, int max)
