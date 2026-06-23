@@ -89,7 +89,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Done | S | descubierto en sesión ENG-209/210 2026-06-15 | `628be52`. Fix: SnakeCaseLower en JsonPullOpts |
 | ✓ | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix en PostgresStore.cs:1814 (post-commit 781e9fe) |
 | — | **Siguiente** |
-| 5 | ENG-301 | P1 | Feature | Instalador Windows (MSI o script) + `engram` en PATH | Ready | L | roadmap | Evolución de `scripts/setup.ps1` |
+| 5 | ENG-301 | P1 | Feature | Stack installer (engram + FlowForge + FlowDocs, multi-platform) | Ready | L | roadmap | [spike learnings](../.ai-work/eng-301-spike/learnings.md) — installer único en FlowForge repo |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
 | — | **Estabilidad inmediata (v1.0.0)** |
@@ -408,29 +408,50 @@ curl http://server:7437/search?q=Offline
 
 ---
 
-### ENG-301 — Instalador (P1, junio)
+### ENG-301 — Stack Installer (engram + FlowForge + FlowDocs) (P1, L)
 
-**Problema:** Hoy para probar Engram necesitás tener .NET SDK, clonar el repo, compilar, y configurar MCP a mano. Eso es una barrera enorme para cualquiera que quiera probarlo.
+**Problema:** Hoy para probar el stack completo (engram-dotnet + FlowForge + FlowDocs) necesitás tener .NET SDK, clonar 3 repos, compilar, configurar MCP a mano y copiar skills a cada IDE. Eso es una barrera enorme para cualquiera que quiera probar el stack.
 
-**Para qué sirve:** Que un usuario sin conocimientos de .NET pueda instalar Engram en 5 minutos y tenerlo funcionando con su editor.
+**Para qué sirve:** Un usuario sin conocimientos técnicos puede instalar el stack completo en 5 minutos y tener todo funcionando con su editor.
 
-**Stories:**
-- [ ] Publicar `engram.exe` estable (win-x64 / linux-x64) en release GitHub
-- [ ] Script/MSI que instale en PATH
-- [ ] Ejecutar wizard post-install (local vs sync)
-- [ ] Escribir configs en `config/mcp/generated/` + opción copiar a Cursor
+**Spike evidence (2026-06-22):**
+- Pipeline `release.yml` ya publica binarios self-contained (linux-x64, win-x64) — base reutilizable
+- `scripts/setup.sh` + `setup.ps1` ya cubren el wizard core para engram-dotnet
+- 5 editores soportados con paths documentados
+- Effort re-estimado: **L** (3 installers en uno)
 
-**Cómo probar:**
-```bash
-# En una máquina SIN .NET SDK:
-# 1. Descargar release de GitHub
-# 2. Ejecutar instalador
-# 3. Correr wizard
-# 4. Verificar que `engram --version` funciona
-# 5. Verificar que el MCP se conecta al editor
-```
+**Scope v1:**
+- 1 installer único en `FlowForge/install/` (accesible vía curl-pipe o GitHub Releases)
+- Wizard multi-componente: engram-dotnet + FlowForge + FlowDocs (multi-select)
+- engram-dotnet: modo local vs local+sync
+- FlowDocs: opt-in via pregunta en installer + config file + AGENTS.md toggle
+- FlowForge: placement en IDEs elegidos (OpenCode, Cursor, Antigravity, VS Code)
+- Uninstall desde el inicio
+- Soporta Linux/macOS (bash) + Windows (PowerShell)
 
-**Hecho cuando:** usuario sin .NET SDK puede instalar y conectar MCP en &lt;10 min.
+**Out of scope v1:**
+- FlowForge como Service/systemd/Windows Service (manual con Docker)
+- Paquetes nativos (apt/brew/scoop/choco/winget) — post-launch
+- Auto-update check
+
+**Decisiones tomadas (2026-06-22):**
+- Installer vive en **FlowForge** repo (no en engram-dotnet)
+- Instalable vía curl-pipe (`curl ... | bash`) o GitHub Releases
+- FlowDoc opt-in: config file + pregunta en installer + toggle en AGENTS.md (default ON)
+- Uninstall desde el inicio
+
+**Ver:** [spike learnings](../.ai-work/eng-301-spike/learnings.md)
+
+**Criterios:**
+- [ ] `install.sh` descarga FlowForge installer y corre el wizard
+- [ ] `install.ps1` equivalente Windows
+- [ ] Wizard pregunta: qué componentes, modo engram, FlowDoc opt-in, IDEs
+- [ ] Config file global para FlowDoc opt-in (`~/.engram/config.json` o similar)
+- [ ] AGENTS.md template con sección FlowDoc opt-in/ opt-out
+- [ ] `uninstall.sh` / `uninstall.ps1` remueven todo limpiamente
+- [ ] Curl-pipe URLs públicas (flowforge.dev/install.sh)
+- [ ] Primer release FlowForge `v0.1.0` publica binarios
+- [ ] Smoke test end-to-end documentado
 
 ---
 
