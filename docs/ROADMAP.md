@@ -235,7 +235,7 @@ Add user/password authentication to protect the server from unauthorized access.
 |---|-----------|---------------|----------|--------|
 | 1 | **Pull entre 2 clientes** | Dev1 crea memoria local → SyncManager push → Dev2 hace pull → Dev2 ve la memoria | 2 developers | 🔲 |
 | 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart | 🔲 |
-| 3 | **MCP Tools (26 tools)** | Ver [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) | curl / MCP | 🔲 Sin trazabilidad |
+| 3 | **MCP Tools (28 tools)** | Ver [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) | curl / MCP | 🔲 Sin trazabilidad |
 | 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | 🔲 Sin trazabilidad |
 | 5 | **REST API smoke test** | 33 core + 8 sync endpoints | ✅ | 🔲 Sin trazabilidad — ver checklist detallado |
 | 6 | **Sync endpoints** | enroll, status, push/pull, pause/resume | curl | 🔲 Sin probar |

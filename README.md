@@ -35,7 +35,7 @@ AI AGENT                       ENGRAM-DOTNET                STORAGE
        │                          ┌──────────┴──────────┐    
        │                          │  EngramServer (.NET) │    
        └── HTTP REST ────────────►│  30 REST endpoints   │    
-                                  │  24 MCP tools        │    
+                                  │  28 MCP tools        │    
                                   └──────────┬──────────┘    
                                              │                
                           ┌──────────────────┼──────────────────┐

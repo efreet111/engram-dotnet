@@ -116,7 +116,7 @@ cmd.Parameters.Add(new NpgsqlParameter("@param", NpgsqlDbType.Text) { Value = (o
 
 ---
 
-### TD-009 — EngramTools.cs: Separar por categoría (1034 líneas, 26 tools)
+### TD-009 — EngramTools.cs: Separar por categoría (1034 líneas, 28 tools)
 
 **Problema**: Las **26** herramientas MCP están en una sola clase (1034 LOC; audit 2026-06).
 

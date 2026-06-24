@@ -5,7 +5,7 @@
 > **Última verificación**: 2026-06-04 (smoke test + 5 regression tests, todos OK)
 > **Verificación anterior**: 2026-06-01 (post-deploy `e1a9cf9`, regression bugs #1–#3)
 > **Deploy commit**: `e1a9cf9` — ver [SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md](SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md)
-> **Conteo verificado desde código**: 33 REST core + 8 REST sync + 26 MCP tools = **41 REST endpoints**
+> **Conteo verificado desde código**: 33 REST core + 8 REST sync = **41 REST endpoints** · 28 MCP tools (stdio transport, separado)
 
 ---
 
@@ -118,7 +118,7 @@
 
 ---
 
-## 🛠️ MCP Tools (26 tools)
+## 🛠️ MCP Tools (28 tools)
 
 > **Nota**: MCP tools requieren cliente MCP (ModelContextProtocol). No accesible vía curl REST directo.
 > Para probar, usar un cliente MCP como Cursor/VS Code/Antigravity con el servidor configurado.

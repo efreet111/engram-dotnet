@@ -24,7 +24,7 @@ src/
 ├── Engram.Sync/         ← Offline-first sync engine
 │   ├── SyncManager.cs   ← Background sync service
 │   └── Transport/       ← HTTP transport for sync
-├── Engram.Mcp/          ← MCP server (stdio transport, 26 tools)
+├── Engram.Mcp/          ← MCP server (stdio transport, 28 tools)
 ├── Engram.Diagnostics/  ← Doctor diagnostic tools
 ├── Engram.Obsidian/     ← Obsidian vault export
 ├── Engram.MdGeneration/ ← Markdown promotion tools
