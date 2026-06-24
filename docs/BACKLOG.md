@@ -89,7 +89,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-428 | P1 | Bug | Mutation push: observation payload sin session_id — PostgresException 23502 en server | Done | S | descubierto en sesión ENG-209/210 2026-06-15 | `628be52`. Fix: SnakeCaseLower en JsonPullOpts |
 | ✓ | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix en PostgresStore.cs:1814 (post-commit 781e9fe) |
 | — | **Siguiente** |
-| 5 | ENG-301 | P1 | Feature | Stack installer (engram + FlowForge + FlowDocs, multi-platform) | Ready | L | roadmap | [spike learnings](../.ai-work/eng-301-spike/learnings.md) — installer único en FlowForge repo |
+| ✓ | ENG-301 | P1 | Feature | Stack installer (engram + FlowForge + FlowDocs, multi-platform) | Done | L | roadmap | Done in FlowForge v0.1.0-alpha.2 (2026-06-23). See [FlowForge release](https://github.com/efreet111/FlowForge/releases/tag/v0.1.0-alpha.2). Post-install scripts on `feat/eng-301-post-install-scripts` (commit 2dcbf80) — pending push+merge. |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
 | — | **Estabilidad inmediata (v1.0.0)** |

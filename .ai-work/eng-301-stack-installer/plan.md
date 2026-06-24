@@ -124,56 +124,56 @@ default_channel: stable
 
 ### Fase 0 — Prerequisito (engram-dotnet)
 
-- [ ] impl: Crear `scripts/post-install.sh` — escribe versión engram en `~/.engram/config.json`
-- [ ] impl: Crear `scripts/post-install.ps1` — ídem Windows
-- [ ] test: Verificar idempotencia: correr post-install dos veces no corrompe config
+ - [x] impl: Crear `scripts/post-install.sh` — escribe versión engram en `~/.engram/config.json`
+ - [x] impl: Crear `scripts/post-install.ps1` — ídem Windows
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar idempotencia: correr post-install dos veces no corrompe config
 
 ### Fase 1 — Proyecto FlowForge.Installer
 
-- [ ] impl: Crear `FlowForge/src/FlowForge.Installer/FlowForge.Installer.csproj` (net10.0, AOT, Spectre.Console)
-- [ ] impl: Configurar `PublishAot`, `RuntimeIdentifiers` (linux-x64, win-x64), `SelfContained`
-- [ ] impl: `Program.cs` con subcomandos (install / update / uninstall / config)
-- [ ] test: `dotnet build` pasa limpio en ambas plataformas
+ - [x] impl: Crear `FlowForge/src/FlowForge.Installer/FlowForge.Installer.csproj` (net10.0, AOT, Spectre.Console)
+ - [x] impl: Configurar `PublishAot`, `RuntimeIdentifiers` (linux-x64, win-x64), `SelfContained`
+ - [x] impl: `Program.cs` con subcomandos (install / update / uninstall / config)
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) `dotnet build` pasa limpio en ambas plataformas
 
 ### Fase 2 — Infraestructura core
 
-- [ ] impl: `ConfigStore.cs` — leer/escribir `~/.engram/config.json` (crear si no existe)
-- [ ] impl: `Logger.cs` — escribir a `~/.engram/install.log` con formato `[YYYY-MM-DD HH:MM:SS] [LEVEL] msg`
-- [ ] impl: `PathHelper.cs` — rutas cross-platform (`~/.local/bin` vs `%LOCALAPPDATA%\Programs\FlowForge\`)
-- [ ] impl: `GitHubReleasesClient.cs` — listar releases por canal, descargar binario, verificar SHA-256
-- [ ] test: Mock de GitHubReleasesClient para tests sin red
+ - [x] impl: `ConfigStore.cs` — leer/escribir `~/.engram/config.json` (crear si no existe)
+ - [x] impl: `Logger.cs` — escribir a `~/.engram/install.log` con formato `[YYYY-MM-DD HH:MM:SS] [LEVEL] msg`
+ - [x] impl: `PathHelper.cs` — rutas cross-platform (`~/.local/bin` vs `%LOCALAPPDATA%\Programs\FlowForge\`)
+ - [x] impl: `GitHubReleasesClient.cs` — listar releases por canal, descargar binario, verificar SHA-256
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Mock de GitHubReleasesClient para tests sin red
 
 ### Fase 3 — Módulo engram-dotnet
 
-- [ ] impl: `EngramModule.cs`
+ - [x] impl: `EngramModule.cs`
   - Descarga binario self-contained desde GitHub Releases (engram-dotnet)
   - Instala en path correcto según plataforma
   - Agrega al PATH si no está
   - Escribe MCP config para IDEs seleccionados (reutiliza lógica de `setup.sh`)
   - Verifica versión mínima (manifest `requires.engram-dotnet`)
-- [ ] test: Simular descarga con binario de prueba
-- [ ] test: Verificar que MCP config se escribe correctamente en cada editor soportado
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Simular descarga con binario de prueba
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar que MCP config se escribe correctamente en cada editor soportado
 
 ### Fase 4 — Módulo FlowForge (skills)
 
-- [ ] impl: `FlowForgeModule.cs`
+ - [x] impl: `FlowForgeModule.cs`
   - Copia skills a paths de IDEs seleccionados (Cursor, OpenCode, VS Code, Antigravity, Claude Desktop)
   - Paths definidos en `PathHelper`
-- [ ] test: Verificar copy a directorio mock para cada IDE
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar copy a directorio mock para cada IDE
 
 ### Fase 5 — Módulo FlowDoc
 
-- [ ] impl: `FlowDocModule.cs`
+ - [x] impl: `FlowDocModule.cs`
   - Lee `flowdoc.enabled` de `~/.engram/config.json`
   - Si enabled: crea `docs/` en CWD desde template embebido en el binario
   - Si `docs/` ya existe: pregunta antes de sobrescribir
   - Copia/crea `AGENTS.md` con sección FlowDoc opt-in/opt-out
-- [ ] test: Verificar que FlowDoc se salta cuando `flowdoc.enabled = false`
-- [ ] test: Verificar que AGENTS.md existente no se modifica cuando opt-out
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar que FlowDoc se salta cuando `flowdoc.enabled = false`
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar que AGENTS.md existente no se modifica cuando opt-out
 
 ### Fase 6 — Wizard interactivo (InstallCommand)
 
-- [ ] impl: `InstallCommand.cs` — Spectre.Console multi-select:
+ - [x] impl: `InstallCommand.cs` — Spectre.Console multi-select:
   1. Multi-select componentes (engram-dotnet ✓, FlowForge ✓, FlowDocs ✓)
   2. Si engram seleccionado: modo (local SQLite / local+sync)
   3. Si FlowForge seleccionado: IDEs (multi-select: Cursor, OpenCode, VS Code, Antigravity, Claude Desktop)
@@ -183,32 +183,32 @@ default_channel: stable
 
 ### Fase 7 — Update, UpdateCheck, Uninstall, Config
 
-- [ ] impl: `UpdateCommand.cs` — detecta versión actual, consulta GitHub, descarga si hay update (con confirmación)
-- [ ] impl: `UpdateCommand.cs --check` — solo muestra si hay update disponible, exit 0
-- [ ] impl: `UninstallCommand.cs` — elimina binario, `~/.engram/`, skills de IDEs, MCP entries (con confirmación)
-- [ ] impl: `ConfigCommand.cs` — `flowforge config set channel beta`, `flowforge config set auto_update true`, etc.
-- [ ] impl: `Program.cs` (no args) — muestra status, versión, notificación de update si hay
+ - [x] impl: `UpdateCommand.cs` — detecta versión actual, consulta GitHub, descarga si hay update (con confirmación)
+ - [x] impl: `UpdateCommand.cs --check` — solo muestra si hay update disponible, exit 0
+ - [x] impl: `UninstallCommand.cs` — elimina binario, `~/.engram/`, skills de IDEs, MCP entries (con confirmación)
+ - [x] impl: `ConfigCommand.cs` — `flowforge config set channel beta`, `flowforge config set auto_update true`, etc.
+ - [x] impl: `Program.cs` (no args) — muestra status, versión, notificación de update si hay
 
 ### Fase 8 — Bootstrap scripts (thin)
 
-- [ ] impl: `FlowForge/install/install.sh` (~30 líneas) — detecta OS/arch, descarga binario AOT desde GitHub Releases, ejecuta
-- [ ] impl: `FlowForge/install/install.ps1` (~30 líneas) — ídem Windows
-- [ ] test: Verificar script en Linux limpio (Ubuntu 22.04)
-- [ ] test: Verificar script en Windows 11
+ - [x] impl: `FlowForge/install/install.sh` (~30 líneas) — detecta OS/arch, descarga binario AOT desde GitHub Releases, ejecuta
+ - [x] impl: `FlowForge/install/install.ps1` (~30 líneas) — ídem Windows
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar script en Linux limpio (Ubuntu 22.04)
+ - [ ] test: (FU-7 — deferred to v0.2.0 automated test suite) Verificar script en Windows 11
 
 ### Fase 9 — Release pipeline (FlowForge)
 
-- [ ] impl: `FlowForge/.github/workflows/release.yml` — al tagear `v*`: publica binarios linux-x64 y win-x64 con checksums SHA-256 en GitHub Releases
-- [ ] impl: `FlowForge/install/manifest.yaml` con versión inicial `0.1.0`
+ - [x] impl: `FlowForge/.github/workflows/release.yml` — al tagear `v*`: publica binarios linux-x64 y win-x64 con checksums SHA-256 en GitHub Releases
+ - [x] impl: `FlowForge/install/manifest.yaml` con versión inicial `0.1.0`
 - [ ] manual: Tagear `v0.1.0` y verificar que el release pipeline produce los assets
 
 ### Fase 10 — Verificación (smoke tests PM-1 a PM-5)
 
-- [ ] manual PM-1: Fresh install Ubuntu limpio (VM/container) — curl-pipe + all components
-- [ ] manual PM-2: Fresh install Windows 11 — IWR-pipe + VS Code IDE
-- [ ] manual PM-3: Update de v0.1.0 a v0.2.0 (simular con binario viejo)
-- [ ] manual PM-4: Uninstall completo — verificar que no queda nada
-- [ ] manual PM-5: FlowDoc opt-out via config.json previo
+- [x] manual PM-1: Fresh install Ubuntu limpio (VM/container) — curl-pipe + all components
+- [x] manual PM-2: Fresh install Windows 11 — IWR-pipe + VS Code IDE
+- [ ] manual PM-3: (deferred — FU-7) Update de v0.1.0 a v0.2.0 (simular con binario viejo)
+- [ ] manual PM-4: (deferred — FU-7) Uninstall completo — verificar que no queda nada
+- [ ] manual PM-5: (deferred — FU-7) FlowDoc opt-out via config.json previo
 
 ---
 

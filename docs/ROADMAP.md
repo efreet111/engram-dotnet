@@ -254,4 +254,4 @@ Resumen P0/P1 (mayo–junio 2026):
 3. ✅  ~~Pinear MCP SDK + auditoría docs (ENG-204–205)~~
 4. ✅  ~~PostgreSQL tests (ENG-206)~~  
 5. 🔲 Logging infrastructure (ENG-207)
-6. 🔲 Instalador + wizard junio (ENG-301–303)
+6. ✅ Instalador (ENG-301 — done in FlowForge v0.1.0-alpha.2); 🔲 wizard/unified-guide (ENG-302, ENG-303 pending)
