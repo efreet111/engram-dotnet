@@ -101,7 +101,12 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Done | S | ← ENG-410 | `Program.cs:485` project id --json --regenerate --set -y |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Done | S | ← ENG-410 | `src/Engram.Store/ProjectIdentity.cs:105` TryAutoEnroll + `--auto-enroll` CLI flag + 5 tests |
 | 17 | ENG-434 | P2 | Feature | Migración `project` string → GUID canónico (v1.1) | Icebox | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — solo 3 usuarios internos; ENG-435 cubre el caso de uso |
-| 18 | ENG-435 | P1 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Done | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) |
+| 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Rework | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) · [rework_ticket](../../rework_ticket.md) cycle 1/3 |
+| — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
+| 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Ready | M | ← TD-013 audit 2026-06-23 | Ver sección detallada abajo |
+| 20 | ENG-437 | P0 | Chore | Release v0.4.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Ready | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
+| 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | Ready | XS | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
+| 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | Ready | XS | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
@@ -370,6 +375,104 @@ curl http://server:7437/search?q=Offline
 - [ ] 434c: Migración LAZY automática de memorias existentes
 - [ ] Guía de migración para equipos
 - [ ] Deprecation period para `project` string
+
+---
+
+### ENG-435 — Legacy Identity Migration Toolkit (P0, Rework — cycle 1/3)
+
+**Estado:** Rework abierto. Ver [`rework_ticket.md`](../../rework_ticket.md) para instrucciones exactas de corrección.
+
+**Dos bugs críticos encontrados en forge-verify (2026-06-23):**
+
+**CRITICAL-1 — Transacción vacía en PostgresStore (`PostgresStore.cs:1610-1626`):**
+Los tres `NpgsqlCommand` del bloque de migración no asignan `cmd.Transaction = tx`. En Npgsql la asignación es obligatoria — sin ella cada UPDATE se ejecuta en su propio auto-commit. Si `sessions` falla después de que `observations` ya se commitó, no hay rollback. Viola REQ-435-004 ("all three tables SHALL be updated in a single transaction").
+
+**CRITICAL-2 — `--dry-run` ejecuta la migración real (`Program.cs:641`):**
+El path dry-run llama `MigrateProjectAsync()` (UPDATEs reales), luego imprime "Would migrate". El propio dev dejó el comentario `// Note: dry-run still migrates`. Viola REQ-435-003 ("AND no data SHALL be modified").
+
+**Fix requerido (ya especificado en rework_ticket.md):**
+1. Agregar `cmdObs.Transaction = tx`, `cmdSess.Transaction = tx`, `cmdPrompt.Transaction = tx` siguiendo el patrón de `DeleteSessionAsync` (líneas 421, 432, 443, 456).
+2. Reemplazar la llamada `MigrateProjectAsync` en el path dry-run con queries `SELECT COUNT(*)` sin modificar datos.
+
+**Hecho cuando:**
+- [ ] `--dry-run` no modifica ningún registro (verificable con SELECT antes/después)
+- [ ] Un UPDATE que falla en mitad de la migración hace rollback completo (test de integración)
+- [ ] Test añadido: seed data → trigger fallo mid-migration → verificar rollback
+
+---
+
+### ENG-436 — `ApplyPulledMutationAsync` stub: sync pull silently broken (P0, Bug)
+
+**Problema:** `SqliteStore.cs:1910-1916` — `ApplyPulledMutationAsync` retorna `Task.CompletedTask` sin procesar el payload. `SyncManager.PullAsync` (L271) lo llama; el cursor seq avanza pero las observaciones/sesiones pulled nunca se persisten localmente. Sin error, sin warning.
+
+**Impacto:** Cualquier usuario con `ENGRAM_SYNC_ENABLED=true` y SQLite como backend local pierde silenciosamente todo el contenido que el servidor envía. Datos del equipo no llegan al local.
+
+**Contexto histórico:** ENG-421 cerró este ítem como "Done como parte de ENG-425 (server-side apply)". Pero ENG-425 implementó el apply en el servidor (PostgresStore). El cliente SQLite sigue sin aplicar los mutations que recibe del servidor. Son dos lados distintos del sync.
+
+**Referencia:** `TECHNICAL-DEBT.md` TD-013.
+
+**Criterios de aceptación:**
+- [ ] `ApplyPulledMutationAsync` deserializa `SyncMutation.Payload` y ejecuta upsert de session/observation/prompt según `mutation_type`
+- [ ] Test de integración: Client-A salva obs en PostgreSQL → Client-B con SQLite hace pull → obs visible localmente en B
+- [ ] `bash scripts/test-2client-pull.sh` con Client-B usando SQLite pasa end-to-end
+
+**Esfuerzo estimado:** M (3-4h). Patrón: ver `PostgresStore.ApplyPulledMutationAsync` que sí implementa el upsert.
+
+---
+
+### ENG-437 — Release v0.4.0 + fix version string chaos (P0, Chore)
+
+**Problema (dos issues relacionados):**
+
+1. **[Unreleased] sin tag**: El CHANGELOG tiene meses de trabajo (ENG-410, 411, 208, 211, 428, 429, 430, 431, 432, 433 y más) sin release tag. Último tag: `v0.3.0`. Usuarios que clonan `main` reciben código no versionado.
+
+2. **Version string inconsistente**: El commit `84e0712` fijó la versión a `1.2.0` en algún lugar, pero CHANGELOG declara `0.3.0` como último release. Lo que imprime `engram --version` no coincide con la documentación.
+
+**Criterios de aceptación:**
+- [ ] Verificar qué imprime `engram --version` actualmente
+- [ ] Decidir el número de versión correcto para el [Unreleased] block (propuesta: `v0.4.0`)
+- [ ] Unificar versión en: `Program.cs`, `Directory.Build.props`, `CHANGELOG.md`, `README.md`
+- [ ] Mover el block `[Unreleased]` a `[0.4.0] — 2026-06-XX` en CHANGELOG
+- [ ] Crear git tag `v0.4.0` y push
+- [ ] GitHub Release notes a partir del CHANGELOG
+
+**Esfuerzo estimado:** S (1h)
+
+---
+
+### ENG-438 — OSS hygiene: mover `rework_ticket.md` fuera de la raíz (P1, Chore)
+
+**Problema:** `rework_ticket.md` vive en la raíz del repo. Un contribuidor OSS que clona el proyecto ve como primer artifact (después de README.md) un documento que dice "CRITICAL-1: PostgresStore transaction is empty". Pésima primera impresión.
+
+**Propuesta:**
+- Mover a `.ai-work/eng-435-legacy-migration/rework_ticket.md` (donde pertenece)
+- Agregar `rework_ticket.md` al `.gitignore` para que futuros rework tickets no lleguen a la raíz
+- Actualizar referencias en BACKLOG.md y spec.md de ENG-435
+
+**Criterios de aceptación:**
+- [ ] `rework_ticket.md` no existe en la raíz del repo
+- [ ] `.gitignore` tiene entrada para `rework_ticket.md` (o `/*.md` para archivos sueltos en raíz)
+- [ ] BACKLOG.md row de ENG-435 apunta a la nueva ubicación
+
+**Esfuerzo estimado:** XS (10min)
+
+---
+
+### ENG-439 — Fix conteo de MCP tools en README (P1, Doc)
+
+**Problema:** El README menciona tres números distintos para el total de MCP tools:
+- Diagrama de arquitectura: "24 MCP tools"
+- Tabla de features: "28 tools"
+- Un commit anterior (`fbd995f`) lo corrigió a "26" en algunas partes
+
+**Audit necesario:** Contar las tools en `EngramTools.cs` (incluye partial classes si existen) y en `CHANGELOG.md` para determinar el número real.
+
+**Criterios de aceptación:**
+- [ ] Número real de MCP tools contado en el código fuente
+- [ ] README.md, README.es.md, ARCHITECTURE.md y cualquier otro doc con el número incorrecto corregidos a un solo valor
+- [ ] Test opcional: grep CI que valide que solo un número aparece en docs de tools
+
+**Esfuerzo estimado:** XS (15min)
 
 ---
 
@@ -654,6 +757,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v0.4.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
 | 2026-06-16 | **ENG-210 Done**: Validado `scripts/test-offline-reconnect.sh` end-to-end (3/3 memorias offline recuperadas). Backlog consolidado: eliminadas 3 filas duplicadas (ENG-209/210/427), notación de salud de sync actualizada. |
 | 2026-06-15 | **ENG-428 Done**: Fix JsonPullOpts SnakeCaseLower — session_id ≠ sessionId rompía push. Test 2-client pasa end-to-end. |
 | 2026-06-15 | **ENG-211 Done**: AddColumnIfNotExists para sync_apply_deferred. |
