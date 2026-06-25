@@ -107,6 +107,13 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 20 | ENG-437 | P0 | Chore | Release v0.4.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Ready | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
 | 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — movido a `.ai-work/eng-435-legacy-migration/`, `.gitignore` actualizado |
 | 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — número real: 28 tools. Fix en README, DEVELOPMENT, MANUAL-TESTING-CHECKLIST, MCP-TEST-CASES, MIGRATION, ROADMAP, TECHNICAL-DEBT |
+| 23 | ENG-440 | P0 | Bug | PostgresStore empty transactions: `PostgresStore.cs:1610-1626` — data integrity risk | Ready | M | ← audit OSS 2026-06-23 | Companion to ENG-436 — both surfaces of the same data-loss vector |
+| 24 | ENG-441 | P0 | Bug | `--dry-run` executes migration: migration subcommand ignores `--dry-run` flag | Ready | M | ← audit OSS 2026-06-23 | Dangerous: user expects no-op but DB is modified |
+| 25 | ENG-442 | P0 | Chore | Push `feat/eng-301-post-install-scripts` to remote + verify CI | ✅ Done | XS | ← audit OSS 2026-06-23 | `7f16ca5` — rama mergeada a main y push'eada |
+| 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | Ready | M | ← audit OSS 2026-06-23 | Bloqueado por ENG-436 (sync pull roto) |
+| 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
+| 28 | ENG-445 | P0 | Chore | **Docker version pin:** `docker/Dockerfile:6` `v1.2.0` → `v0.3.0` | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` |
+| 29 | ENG-446 | P1 | Chore | **Untracked files:** ADR-002, ADR-003, sync-test.sh, SqliteStoreApplyPulledTests.cs gitignore'd | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — gitignore con explicación (contienen deuda conocida) |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
