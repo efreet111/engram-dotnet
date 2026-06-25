@@ -76,7 +76,7 @@ Dev 3 (ENGRAM_USER=ana)     ─┘           (user isolation)
 
 ```sql
 CREATE DATABASE engram;
-CREATE USER engram WITH PASSWORD 'supersecret';
+CREATE USER engram WITH PASSWORD 'REPLACE_ME';
 GRANT ALL PRIVILEGES ON DATABASE engram TO engram;
 ```
 
@@ -90,7 +90,7 @@ dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
 # Start with PostgreSQL
 ENGRAM_DB_TYPE=postgres \
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=supersecret" \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
 ./dist/engram serve
 ```
 
@@ -106,7 +106,7 @@ Each dev adds to their `opencode.json`:
       "args": ["mcp"],
       "env": {
         "ENGRAM_URL": "http://192.168.1.100:7437",
-        "ENGRAM_USER": "victor.silgado"  // ← UNIQUE per developer
+        "ENGRAM_USER": "your-username"  // ← UNIQUE per developer
       }
     }
   }
@@ -164,7 +164,7 @@ CREATE DATABASE engram;
 
 ```bash
 ENGRAM_DB_TYPE=postgres \
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=postgres;Password=NoAdmin.210725" \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=postgres;Password=REPLACE_ME" \
 ENGRAM_SYNC_ENABLED=true \
 ENGRAM_SYNC_TARGET=cloud \
 ENGRAM_SYNC_POLL_SECONDS=30 \
@@ -180,8 +180,8 @@ ENGRAM_SYNC_POLL_SECONDS=30 \
       "command": "engram",
       "args": ["mcp"],
       "env": {
-        "ENGRAM_SERVER_URL": "http://192.168.0.178:7437",
-        "ENGRAM_USER": "victor.silgado",
+        "ENGRAM_SERVER_URL": "http://localhost:7437",
+        "ENGRAM_USER": "your-username",
         "ENGRAM_SYNC_ENABLED": "true",
         "ENGRAM_SYNC_TARGET": "cloud",
         "ENGRAM_DATA_DIR": "~/.engram"
@@ -194,8 +194,8 @@ ENGRAM_SYNC_POLL_SECONDS=30 \
 ### 4. Enroll Projects
 
 ```bash
-curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "X-Engram-User: victor.silgado" \
+curl -X POST http://localhost:7437/sync/enroll \
+  -H "X-Engram-User: your-username" \
   -d '{"project":"team/mi-api"}'
 ```
 
@@ -206,22 +206,22 @@ curl -X POST http://192.168.0.178:7437/sync/enroll \
 engram sync status
 
 # Check enrolled projects
-curl -H "X-Engram-User: victor" http://192.168.0.178:7437/sync/enroll
+curl -H "X-Engram-User: victor" http://localhost:7437/sync/enroll
 
 # Check general health
-curl http://192.168.0.178:7437/sync/status
+curl http://localhost:7437/sync/status
 ```
 
 ### Pause Sync (Admin)
 
 ```bash
 # Pause (maintenance)
-curl -X POST http://192.168.0.178:7437/sync/pause \
+curl -X POST http://localhost:7437/sync/pause \
   -H "X-Engram-User: admin" \
   -d '{"project":"team/mi-api","reason":"DB migration"}'
 
 # Resume
-curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
+curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 ```
 

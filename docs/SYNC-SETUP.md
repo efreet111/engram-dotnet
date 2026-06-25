@@ -165,7 +165,7 @@ systemctl enable --now engram
 ```bash
 ENGRAM_DATA_DIR=~/.engram \
 ENGRAM_SERVER_URL=http://server:7437 \
-ENGRAM_USER=victor.silgado \
+ENGRAM_USER=your-username \
 ENGRAM_SYNC_ENABLED=true \
 ENGRAM_SYNC_TARGET=cloud \
 ./engram serve --port 7442
@@ -175,7 +175,7 @@ ENGRAM_SYNC_TARGET=cloud \
 
 ```bash
 curl -X POST http://localhost:7442/sync/enroll \
-  -H "X-Engram-User: victor.silgado" \
+  -H "X-Engram-User: your-username" \
   -d '{"project":"team/mi-api"}'
 ```
 

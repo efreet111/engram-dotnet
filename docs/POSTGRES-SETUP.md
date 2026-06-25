@@ -42,7 +42,7 @@ services:
     environment:
       POSTGRES_DB: engram
       POSTGRES_USER: engram
-      POSTGRES_PASSWORD: supersecret
+      POSTGRES_PASSWORD: REPLACE_ME
     ports:
       - "5432:5432"
     volumes:
@@ -59,7 +59,7 @@ services:
       - "7437:7437"
     environment:
       ENGRAM_DB_TYPE: postgres
-      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=supersecret"
+      ENGRAM_PG_CONNECTION: "Host=postgres;Database=engram;Username=engram;Password=REPLACE_ME"
       # Sync push/pull: API en este servicio; SyncManager en cada cliente MCP (ver SYNC-SETUP.md).
     depends_on:
       postgres:
@@ -92,7 +92,7 @@ sudo -u postgres psql
 
 ```sql
 CREATE DATABASE engram;
-CREATE USER engram WITH PASSWORD 'supersecret';
+CREATE USER engram WITH PASSWORD 'REPLACE_ME';
 GRANT ALL PRIVILEGES ON DATABASE engram TO engram;
 \q
 ```
@@ -101,7 +101,7 @@ GRANT ALL PRIVILEGES ON DATABASE engram TO engram;
 
 ```bash
 # From local machine
-PGPASSWORD=supersecret psql -h 192.168.0.178 -U engram -d engram -c "SELECT 1;"
+PGPASSWORD=REPLACE_ME psql -h localhost -U engram -d engram -c "SELECT 1;"
 # → ?column?
 # →        1
 ```
@@ -110,7 +110,7 @@ PGPASSWORD=supersecret psql -h 192.168.0.178 -U engram -d engram -c "SELECT 1;"
 
 ```bash
 ENGRAM_DB_TYPE=postgres \
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=supersecret" \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
 ./engram serve
 ```
 

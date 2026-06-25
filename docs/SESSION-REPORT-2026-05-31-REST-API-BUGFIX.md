@@ -42,7 +42,7 @@ Fix 3 bugs críticos en la API REST de Engram descubiertos durante testing manua
 - `.ai-work/critical-rest-api-bugfix/rework_ticket.md`
 - `.ai-work/critical-rest-api-bugfix/verify-report.md`
 
-### 2. Testing Manual — antes del fix (servidor 192.168.0.178)
+### 2. Testing Manual — antes del fix (servidor your-server)
 
 | Test | Resultado |
 |------|-----------|
@@ -157,7 +157,7 @@ sudo docker compose up -d --build --force-recreate
 
 ## Verificación post-deploy
 
-Ejecutado contra `http://192.168.0.178:7437` el **2026-06-01** (commit `e1a9cf9`).
+Ejecutado contra `http://your-server:7437` el **2026-06-01** (commit `e1a9cf9`).
 
 ### Health
 
@@ -226,7 +226,7 @@ Ya no hay HTTP 500 / NRE.
 
 - Checklist manual: [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md)
 - Artefactos FlowForge: `.ai-work/critical-rest-api-bugfix/`
-- Servidor: TrueNAS `192.168.0.178:7437`
+- Servidor: TrueNAS `your-server:7437`
 - Repo: `efreet111/engram-dotnet`
 
 ---

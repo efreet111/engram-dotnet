@@ -1,7 +1,7 @@
 # Manual Testing Checklist
 
 > **Propósito**: Trazabilidad real de pruebas manuales sobre el servidor en producción.
-> **Servidor**: `http://192.168.0.178:7437` (PostgreSQL)
+> **Servidor**: `http://localhost:7437` (PostgreSQL)
 > **Última verificación**: 2026-06-04 (smoke test + 5 regression tests, todos OK)
 > **Verificación anterior**: 2026-06-01 (post-deploy `e1a9cf9`, regression bugs #1–#3)
 > **Deploy commit**: `e1a9cf9` — ver [SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md](SESSION-REPORT-2026-05-31-REST-API-BUGFIX.md)
@@ -206,10 +206,10 @@
 ## 🔄 Regression tests — bugfixes críticos (2026-06-01)
 
 > Ejecutar **después de cada deploy** en TrueNAS. Requiere commit **`e1a9cf9`** o posterior.
-> Servidor: `http://192.168.0.178:7437`
+> Servidor: `http://localhost:7437`
 
 ```bash
-BASE="http://192.168.0.178:7437"
+BASE="http://localhost:7437"
 TS=$(date +%s)
 PROJECT="team/manual-verify-$TS"
 SESSION="sess-verify-$TS"
@@ -422,7 +422,7 @@ grep -c 'Console.WriteLine' src/Engram.Cli/Program.cs
 ### Smoke test rápido post-deploy
 
 ```bash
-BASE="http://192.168.0.178:7437"
+BASE="http://localhost:7437"
 
 # 1. Health + backend
 curl -s "$BASE/health" | jq .

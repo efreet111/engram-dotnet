@@ -1,7 +1,7 @@
 # MCP Tools — Test Cases
 
 > **Purpose**: Verify all 28 MCP tools work correctly.  
-> **Server**: `http://192.168.0.178:7437` (PostgreSQL)  
+> **Server**: `http://localhost:7437` (PostgreSQL)  
 > **Requires**: `engram mcp` running locally OR direct curl to REST API.
 
 ---
@@ -10,16 +10,16 @@
 
 ```bash
 # 1. Server must be running
-curl http://192.168.0.178:7437/health
+curl http://localhost:7437/health
 # → {"status":"ok","backend":"postgres"}
 
 # 2. Enroll a test project
-curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "X-Engram-User: victor.silgado" \
+curl -X POST http://localhost:7437/sync/enroll \
+  -H "X-Engram-User: your-username" \
   -d '{"project":"team/mcp-test"}'
 
 # 3. Create a test session
-curl -X POST http://192.168.0.178:7437/sessions \
+curl -X POST http://localhost:7437/sessions \
   -H "Content-Type: application/json" \
   -d '{"id":"mcp-test-session","project":"team/mcp-test","directory":"/tmp"}'
 ```
@@ -31,9 +31,9 @@ curl -X POST http://192.168.0.178:7437/sessions \
 **Endpoint**: POST /observations
 
 ```bash
-curl -X POST http://192.168.0.178:7437/observations \
+curl -X POST http://localhost:7437/observations \
   -H "Content-Type: application/json" \
-  -H "X-Engram-User: victor.silgado" \
+  -H "X-Engram-User: your-username" \
   -d '{
     "session_id":"mcp-test-session",
     "title":"MCP Test - Technical Decision",
@@ -56,14 +56,14 @@ curl -X POST http://192.168.0.178:7437/observations \
 
 ```bash
 # Simple search
-curl "http://192.168.0.178:7437/search?q=MCP+Test&limit=5" \
-  -H "X-Engram-User: victor.silgado" | jq '.[] | {id: .observation.id, title: .observation.title, rank: .rank}'
+curl "http://localhost:7437/search?q=MCP+Test&limit=5" \
+  -H "X-Engram-User: your-username" | jq '.[] | {id: .observation.id, title: .observation.title, rank: .rank}'
 
 # Search by project
-curl "http://192.168.0.178:7437/search?q=MCP+Test&project=team/mcp-test" | jq '. | length'
+curl "http://localhost:7437/search?q=MCP+Test&project=team/mcp-test" | jq '. | length'
 
 # Search by type
-curl "http://192.168.0.178:7437/search?q=decision&type=decision" | jq '. | length'
+curl "http://localhost:7437/search?q=decision&type=decision" | jq '. | length'
 ```
 
 **Expected**: Results with `observation.id`, `observation.title`, `rank` > 0
@@ -76,7 +76,7 @@ curl "http://192.168.0.178:7437/search?q=decision&type=decision" | jq '. | lengt
 
 ```bash
 # Use the ID from CASE 1
-curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq
+curl http://localhost:7437/observations/ID_FROM_CASE1 | jq
 ```
 
 **Expected**: Full JSON with `title`, `content`, `type`, `project`, etc.
@@ -88,7 +88,7 @@ curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq
 **Endpoint**: PATCH /observations/{id}
 
 ```bash
-curl -X PATCH http://192.168.0.178:7437/observations/ID_FROM_CASE1 \
+curl -X PATCH http://localhost:7437/observations/ID_FROM_CASE1 \
   -H "Content-Type: application/json" \
   -d '{"title":"MCP Test - UPDATED","content":"**What**: Updated version"}'
 ```
@@ -97,7 +97,7 @@ curl -X PATCH http://192.168.0.178:7437/observations/ID_FROM_CASE1 \
 
 **Verify**:
 ```bash
-curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq '.title'
+curl http://localhost:7437/observations/ID_FROM_CASE1 | jq '.title'
 # → "MCP Test - UPDATED"
 ```
 
@@ -109,19 +109,19 @@ curl http://192.168.0.178:7437/observations/ID_FROM_CASE1 | jq '.title'
 
 ```bash
 # Create temp memory
-curl -X POST http://192.168.0.178:7437/observations \
+curl -X POST http://localhost:7437/observations \
   -H "Content-Type: application/json" \
   -d '{"session_id":"mcp-test-session","title":"Temp","content":"To delete","type":"manual","project":"team/mcp-test"}'
 
 # Soft-delete
-curl -X DELETE http://192.168.0.178:7437/observations/ID_TO_DELETE
+curl -X DELETE http://localhost:7437/observations/ID_TO_DELETE
 ```
 
 **Expected**: 200 + `{"status":"deleted"}`
 
 **Verify**:
 ```bash
-curl http://192.168.0.178:7437/observations/ID_TO_DELETE | jq '.deleted_at'
+curl http://localhost:7437/observations/ID_TO_DELETE | jq '.deleted_at'
 # → Date (not null)
 ```
 
@@ -132,7 +132,7 @@ curl http://192.168.0.178:7437/observations/ID_TO_DELETE | jq '.deleted_at'
 **Endpoint**: GET /context
 
 ```bash
-curl "http://192.168.0.178:7437/context?session_id=mcp-test-session&limit=5" | jq
+curl "http://localhost:7437/context?session_id=mcp-test-session&limit=5" | jq
 ```
 
 **Expected**: Observations from the session ordered by date
@@ -145,17 +145,17 @@ curl "http://192.168.0.178:7437/context?session_id=mcp-test-session&limit=5" | j
 
 ```bash
 # Start session
-curl -X POST http://192.168.0.178:7437/sessions \
+curl -X POST http://localhost:7437/sessions \
   -H "Content-Type: application/json" \
   -d '{"id":"mcp-flow-test","project":"team/mcp-test","directory":"/tmp"}'
 
 # End session
-curl -X POST http://192.168.0.178:7437/sessions/mcp-flow-test/end \
+curl -X POST http://localhost:7437/sessions/mcp-flow-test/end \
   -H "Content-Type: application/json" \
   -d '{"summary":"MCP test session completed successfully"}'
 
 # Verify ended session
-curl http://192.168.0.178:7437/sessions/mcp-flow-test | jq '{id, summary, started_at, ended_at}'
+curl http://localhost:7437/sessions/mcp-flow-test | jq '{id, summary, started_at, ended_at}'
 ```
 
 **Expected**: Session with `ended_at` and `summary` set
@@ -167,7 +167,7 @@ curl http://192.168.0.178:7437/sessions/mcp-flow-test | jq '{id, summary, starte
 **Endpoint**: GET /stats
 
 ```bash
-curl http://192.168.0.178:7437/stats | jq
+curl http://localhost:7437/stats | jq
 ```
 
 **Expected**: JSON with `total_observations`, `total_sessions`, `total_prompts`, etc.
@@ -179,7 +179,7 @@ curl http://192.168.0.178:7437/stats | jq
 **Endpoint**: GET /timeline
 
 ```bash
-curl "http://192.168.0.178:7437/timeline?observation_id=ID_FROM_CASE1&window=5" | jq
+curl "http://localhost:7437/timeline?observation_id=ID_FROM_CASE1&window=5" | jq
 ```
 
 **Expected**: Observations surrounding the specified one
@@ -191,7 +191,7 @@ curl "http://192.168.0.178:7437/timeline?observation_id=ID_FROM_CASE1&window=5" 
 **Endpoint**: POST /prompts
 
 ```bash
-curl -X POST http://192.168.0.178:7437/prompts \
+curl -X POST http://localhost:7437/prompts \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
@@ -209,7 +209,7 @@ curl -X POST http://192.168.0.178:7437/prompts \
 **Endpoint**: CLI `engram doctor`
 
 ```bash
-engram doctor --server http://192.168.0.178:7437
+engram doctor --server http://localhost:7437
 ```
 
 **Expected**: 
@@ -230,7 +230,7 @@ Engram Diagnostic Report
 **Verify upsert**:
 ```bash
 # Save with same topic_key
-curl -X POST http://192.168.0.178:7437/observations \
+curl -X POST http://localhost:7437/observations \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
@@ -242,7 +242,7 @@ curl -X POST http://192.168.0.178:7437/observations \
   }'
 
 # Verify it updated (same topic_key = upsert)
-curl "http://192.168.0.178:7437/search?q=testing/mcp-save&project=team/mcp-test" | jq '.[0].observation.title'
+curl "http://localhost:7437/search?q=testing/mcp-save&project=team/mcp-test" | jq '.[0].observation.title'
 # → "Upsert test - V2"
 ```
 
@@ -253,7 +253,7 @@ curl "http://192.168.0.178:7437/search?q=testing/mcp-save&project=team/mcp-test"
 **Endpoint**: POST /observations/passive
 
 ```bash
-curl -X POST http://192.168.0.178:7437/observations/passive \
+curl -X POST http://localhost:7437/observations/passive \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"mcp-test-session",
@@ -271,13 +271,13 @@ curl -X POST http://192.168.0.178:7437/observations/passive \
 ### `mem_retention_stats`
 
 ```bash
-curl http://192.168.0.178:7437/retention/stats | jq
+curl http://localhost:7437/retention/stats | jq
 ```
 
 ### `mem_retention_prune`
 
 ```bash
-curl -X POST http://192.168.0.178:7437/retention/prune \
+curl -X POST http://localhost:7437/retention/prune \
   -H "Content-Type: application/json" \
   -d '{"ttl_days":90}'
 ```
@@ -289,7 +289,7 @@ curl -X POST http://192.168.0.178:7437/retention/prune \
 **Endpoint**: POST /projects/migrate
 
 ```bash
-curl -X POST http://192.168.0.178:7437/projects/migrate \
+curl -X POST http://localhost:7437/projects/migrate \
   -H "Content-Type: application/json" \
   -d '{"source":["team/mcp-test-old"],"target":"team/mcp-test"}'
 ```
@@ -301,7 +301,7 @@ curl -X POST http://192.168.0.178:7437/projects/migrate \
 **Endpoint**: POST /md/promote/{id}
 
 ```bash
-curl -X POST http://192.168.0.178:7437/md/promote/ID_FROM_CASE1 \
+curl -X POST http://localhost:7437/md/promote/ID_FROM_CASE1 \
   -H "Content-Type: application/json" \
   -d '{"md_dir":"docs/decisions"}'
 ```
@@ -313,7 +313,7 @@ curl -X POST http://192.168.0.178:7437/md/promote/ID_FROM_CASE1 \
 **Endpoint**: POST /md/sync
 
 ```bash
-curl -X POST http://192.168.0.178:7437/md/sync \
+curl -X POST http://localhost:7437/md/sync \
   -H "Content-Type: application/json" \
   -d '{}'
 ```

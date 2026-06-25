@@ -22,7 +22,7 @@ Each developer has:
 | Scope | Visibility | Storage | Example |
 |-------|-----------|---------|---------|
 | `team` | Everyone on the server | `team/{project}` | `team/mi-api`, `team/frontend` |
-| `personal` | Only the creator | `personal:{user}/{project}` | `personal:victor.silgado/debug` |
+| `personal` | Only the creator | `personal:{user}/{project}` | `personal:your-username/debug` |
 
 ### User identity
 
@@ -51,8 +51,8 @@ The server automatically handles namespacing. No special config required.
       "command": "engram",
       "args": ["mcp"],
       "env": {
-        "ENGRAM_URL": "http://192.168.0.178:7437",
-        "ENGRAM_USER": "victor.silgado"  // ← YOUR unique identity
+        "ENGRAM_URL": "http://localhost:7437",
+        "ENGRAM_USER": "your-username"  // ← YOUR unique identity
       }
     }
   }
@@ -95,8 +95,8 @@ var pausedBy = ctx.Request.Headers["X-Engram-User"].FirstOrDefault() ?? "admin";
 
 ```bash
 # Each developer sets their identity
-export ENGRAM_USER=victor.silgado
-export ENGRAM_URL=http://192.168.0.178:7437
+export ENGRAM_USER=your-username
+export ENGRAM_URL=http://localhost:7437
 ```
 
 ### 2. Personal memories don't leak

@@ -236,10 +236,10 @@ Every request is logged with:
 ### Identity Flow
 
 ```
-1. Agent sets ENGRAM_USER=victor.silgado
+1. Agent sets ENGRAM_USER=your-username
 2. MCP client sends X-Engram-User HTTP header
 3. Server detects header → namespaces personal scope
-4. personal → personal:victor.silgado/{project}
+4. personal → personal:your-username/{project}
 5. team → team/{project} (no namespacing, shared)
 ```
 

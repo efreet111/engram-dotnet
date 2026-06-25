@@ -192,7 +192,7 @@ curl http://localhost:7437/health
 **Cómo probar:**
 ```bash
 # Dev1 (Victor)
-export ENGRAM_USER=victor.silgado
+export ENGRAM_USER=your-username
 engram mem_save "Mi decision" --project team/mi-api
 
 # Dev2 (Juan)

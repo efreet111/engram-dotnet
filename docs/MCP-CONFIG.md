@@ -46,7 +46,7 @@ El cliente solo necesita lanzar `engram mcp` por stdio:
     "ENGRAM_DATA_DIR": "~/.engram",
     "ENGRAM_USER": "tu.email@ejemplo.com",
     "ENGRAM_SYNC_ENABLED": "true",
-    "ENGRAM_SERVER_URL": "http://192.168.0.178:7437"
+    "ENGRAM_SERVER_URL": "http://localhost:7437"
   }
 }
 ```
@@ -155,7 +155,7 @@ Probar MCP en terminal (debe quedar esperando, sin salir):
 $env:ENGRAM_DATA_DIR = "$env:USERPROFILE\.engram"
 $env:ENGRAM_USER = "tu@ejemplo.com"
 $env:ENGRAM_SYNC_ENABLED = "true"
-$env:ENGRAM_SERVER_URL = "http://192.168.0.178:7437"
+$env:ENGRAM_SERVER_URL = "http://localhost:7437"
 & "RUTA\engram.exe" mcp
 ```
 

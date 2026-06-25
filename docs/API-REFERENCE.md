@@ -1,7 +1,7 @@
 # Engram API Reference
 
 > **Purpose**: Complete REST API reference for humans.  
-> **Server**: `http://192.168.0.178:7437`  
+> **Server**: `http://localhost:7437`  
 > **Format**: JSON with `snake_case`  
 > **Auth**: Header `X-Engram-User: {identity}` (required for sync endpoints)
 
@@ -14,7 +14,7 @@
 Returns server status and active backend.
 
 ```bash
-curl http://192.168.0.178:7437/health
+curl http://localhost:7437/health
 ```
 
 ```json
@@ -26,7 +26,7 @@ curl http://192.168.0.178:7437/health
 Returns usage statistics: total observations, sessions, prompts.
 
 ```bash
-curl http://192.168.0.178:7437/stats
+curl http://localhost:7437/stats
 ```
 
 ---
@@ -44,7 +44,7 @@ curl http://192.168.0.178:7437/stats
 ### POST /sessions
 
 ```bash
-curl -X POST http://192.168.0.178:7437/sessions \
+curl -X POST http://localhost:7437/sessions \
   -H "Content-Type: application/json" \
   -d '{"id":"session-1","project":"team/mi-api","directory":"/tmp"}'
 ```
@@ -56,7 +56,7 @@ curl -X POST http://192.168.0.178:7437/sessions \
 ### DELETE /sessions/{id}
 
 ```bash
-curl -X DELETE http://192.168.0.178:7437/sessions/session-1
+curl -X DELETE http://localhost:7437/sessions/session-1
 ```
 
 | Status | Response |
@@ -81,7 +81,7 @@ curl -X DELETE http://192.168.0.178:7437/sessions/session-1
 ### POST /observations
 
 ```bash
-curl -X POST http://192.168.0.178:7437/observations \
+curl -X POST http://localhost:7437/observations \
   -H "Content-Type: application/json" \
   -d '{
     "session_id":"session-1",
@@ -108,7 +108,7 @@ Key parameters:
 | GET | `/search` | `q`, `project`, `type`, `limit` |
 
 ```bash
-curl "http://192.168.0.178:7437/search?q=architecture+sync&project=team/mi-api&limit=10"
+curl "http://localhost:7437/search?q=architecture+sync&project=team/mi-api&limit=10"
 ```
 
 ```json
@@ -132,13 +132,13 @@ curl "http://192.168.0.178:7437/search?q=architecture+sync&project=team/mi-api&l
 ### `GET /context`
 
 ```bash
-curl "http://192.168.0.178:7437/context?session_id=session-1&limit=5"
+curl "http://localhost:7437/context?session_id=session-1&limit=5"
 ```
 
 ### `GET /timeline`
 
 ```bash
-curl "http://192.168.0.178:7437/timeline?observation_id=123&window=5"
+curl "http://localhost:7437/timeline?observation_id=123&window=5"
 ```
 
 ---
@@ -155,7 +155,7 @@ curl "http://192.168.0.178:7437/timeline?observation_id=123&window=5"
 Export all data, optionally filtered by project.
 
 ```bash
-curl "http://192.168.0.178:7437/export?project=team/mi-api"
+curl "http://localhost:7437/export?project=team/mi-api"
 ```
 
 ### `GET /export/since`
@@ -163,7 +163,7 @@ curl "http://192.168.0.178:7437/export?project=team/mi-api"
 Export mutations after a specific sequence cursor (for incremental sync).
 
 ```bash
-curl "http://192.168.0.178:7437/export/since?project=team/mi-api&after_seq=0&limit=100"
+curl "http://localhost:7437/export/since?project=team/mi-api&after_seq=0&limit=100"
 ```
 
 ```json
@@ -179,7 +179,7 @@ curl "http://192.168.0.178:7437/export/since?project=team/mi-api&after_seq=0&lim
 ### `POST /import`
 
 ```bash
-curl -X POST http://192.168.0.178:7437/import \
+curl -X POST http://localhost:7437/import \
   -H "Content-Type: application/json" \
   -d '{"observations":[],"sessions":[],"prompts":[]}'
 ```
@@ -198,7 +198,7 @@ curl -X POST http://192.168.0.178:7437/import \
 ### DELETE /prompts/{id}
 
 ```bash
-curl -X DELETE http://192.168.0.178:7437/prompts/42
+curl -X DELETE http://localhost:7437/prompts/42
 ```
 
 | Status | Response |
@@ -228,14 +228,14 @@ curl -X DELETE http://192.168.0.178:7437/prompts/42
 Registers a project for synchronization. Without this, the project won't sync.
 
 ```bash
-curl -X POST http://192.168.0.178:7437/sync/enroll \
+curl -X POST http://localhost:7437/sync/enroll \
   -H "Content-Type: application/json" \
-  -H "X-Engram-User: victor.silgado" \
+  -H "X-Engram-User: your-username" \
   -d '{"project":"team/mi-api"}'
 ```
 
 ```json
-{"project":"team/mi-api","enrolled_at":"2026-05-20 16:39:25.064291","enrolled_by":"victor.silgado"}
+{"project":"team/mi-api","enrolled_at":"2026-05-20 16:39:25.064291","enrolled_by":"your-username"}
 ```
 
 | Code | Meaning |
@@ -247,18 +247,18 @@ curl -X POST http://192.168.0.178:7437/sync/enroll \
 ### GET /sync/enroll — List enrolled projects
 
 ```bash
-curl -H "X-Engram-User: victor.silgado" http://192.168.0.178:7437/sync/enroll
+curl -H "X-Engram-User: your-username" http://localhost:7437/sync/enroll
 ```
 
 ```json
-{"projects":[{"project":"team/mi-api","enrolled_at":"...","enrolled_by":"victor.silgado"}],"count":1}
+{"projects":[{"project":"team/mi-api","enrolled_at":"...","enrolled_by":"your-username"}],"count":1}
 ```
 
 ### DELETE /sync/enroll — Unenroll a project
 
 ```bash
-curl -X DELETE "http://192.168.0.178:7437/sync/enroll?project=team/mi-api" \
-  -H "X-Engram-User: victor.silgado"
+curl -X DELETE "http://localhost:7437/sync/enroll?project=team/mi-api" \
+  -H "X-Engram-User: your-username"
 ```
 
 ```json
@@ -270,7 +270,7 @@ curl -X DELETE "http://192.168.0.178:7437/sync/enroll?project=team/mi-api" \
 Temporarily stops sync for a project (useful for maintenance).
 
 ```bash
-curl -X POST http://192.168.0.178:7437/sync/pause \
+curl -X POST http://localhost:7437/sync/pause \
   -H "Content-Type: application/json" \
   -H "X-Engram-User: admin" \
   -d '{"project":"team/mi-api","reason":"Scheduled maintenance"}'
@@ -283,7 +283,7 @@ curl -X POST http://192.168.0.178:7437/sync/pause \
 ### DELETE /sync/pause — Resume sync
 
 ```bash
-curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
+curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 ```
 
@@ -294,7 +294,7 @@ curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
 ### GET /sync/status — Full sync status
 
 ```bash
-curl http://192.168.0.178:7437/sync/status
+curl http://localhost:7437/sync/status
 ```
 
 ```json
@@ -323,9 +323,9 @@ curl http://192.168.0.178:7437/sync/status
 Sends local mutations to the server.
 
 ```bash
-curl -X POST http://192.168.0.178:7437/sync/mutations/push \
+curl -X POST http://localhost:7437/sync/mutations/push \
   -H "Content-Type: application/json" \
-  -H "X-Engram-User: victor.silgado" \
+  -H "X-Engram-User: your-username" \
   -d '{"entries":[{"project":"team/mi-api","entity":"observation","entity_key":"obs_123","op":"upsert","payload":"{}"}]}'
 ```
 
@@ -334,7 +334,7 @@ curl -X POST http://192.168.0.178:7437/sync/mutations/push \
 Fetches mutations from the server starting from a specific seq.
 
 ```bash
-curl "http://192.168.0.178:7437/sync/mutations/pull?since_seq=0&project=team/mi-api&limit=100"
+curl "http://localhost:7437/sync/mutations/pull?since_seq=0&project=team/mi-api&limit=100"
 ```
 
 ---
@@ -361,7 +361,7 @@ engram sync status --json | jq
 ### engram doctor
 
 ```bash
-engram doctor --server http://192.168.0.178:7437
+engram doctor --server http://localhost:7437
 
 # Diagnostic Report
 # ========================

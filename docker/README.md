@@ -60,7 +60,7 @@ Este contenedor con `ENGRAM_DB_TYPE=postgres` expone la API `/sync/*` para que l
 
 Cada desarrollador debe configurar en su MCP:
 
-- `ENGRAM_SERVER_URL` — URL de este servidor (ej. `http://192.168.0.178:7437`)
+- `ENGRAM_SERVER_URL` — URL de este servidor (ej. `http://localhost:7437`)
 - `ENGRAM_SYNC_ENABLED=true`
 - **`ENGRAM_USER`** — identidad única (si falta, se usa el usuario del SO y varias personas pueden pisarse)
 

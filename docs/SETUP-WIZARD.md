@@ -81,7 +81,7 @@ Variables generadas:
 ENGRAM_DATA_DIR=~/.engram
 ENGRAM_USER=tu@ejemplo.com
 ENGRAM_SYNC_ENABLED=true
-ENGRAM_SERVER_URL=http://192.168.0.178:7437
+ENGRAM_SERVER_URL=http://localhost:7437
 ```
 
 > No uses `ENGRAM_URL` en este modo: activa cliente HTTP puro y **no** el journal de sync local. Ver [MCP-CONFIG.md](MCP-CONFIG.md).
@@ -98,7 +98,7 @@ El **servidor** Docker/TrueNAS solo necesita PostgreSQL (`ENGRAM_DB_TYPE`, `ENGR
 $env:ENGRAM_DATA_DIR = "$env:USERPROFILE\.engram"
 $env:ENGRAM_USER = "tu@ejemplo.com"
 $env:ENGRAM_SYNC_ENABLED = "true"
-$env:ENGRAM_SERVER_URL = "http://192.168.0.178:7437"
+$env:ENGRAM_SERVER_URL = "http://localhost:7437"
 & "E:\ruta\al\repo\dist\win-x64-fixed\engram.exe" mcp
 ```
 
@@ -107,7 +107,7 @@ Debe quedar esperando (sin crash). `Ctrl+C` para salir.
 **Health del servidor:**
 
 ```bash
-curl http://192.168.0.178:7437/health
+curl http://localhost:7437/health
 ```
 
 ---

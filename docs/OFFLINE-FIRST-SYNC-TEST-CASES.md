@@ -1,7 +1,7 @@
 # Offline-First Sync — Test Cases & Validation
 
 **Feature**: Offline-First Sync (Phases 1-4 ✅ Complete)  
-**Server**: TrueNAS PostgreSQL at `192.168.0.178:7437`  
+**Server**: PostgreSQL at `localhost:7437`  
 **Client**: Local SQLite + SyncManager background service
 
 ---
@@ -13,8 +13,8 @@
 ```bash
 # Client (local)
 export ENGRAM_DATA_DIR=~/.engram
-export ENGRAM_SERVER_URL=http://192.168.0.178:7437
-export ENGRAM_USER=victor.silgado
+export ENGRAM_SERVER_URL=http://localhost:7437
+export ENGRAM_USER=your-username
 export ENGRAM_SYNC_ENABLED=true
 export ENGRAM_SYNC_TARGET=cloud
 export ENGRAM_SYNC_POLL_SECONDS=30
@@ -26,14 +26,14 @@ export ENGRAM_SYNC_MAX_FAILURES=10
 
 ```bash
 # 1. Server is running
-curl http://192.168.0.178:7437/health
+curl http://localhost:7437/health
 # Expected: {"status":"ok","backend":"PostgreSQL"}
 
 # 2. Check sync status
 engram sync status
 
 # 3. Check enrolled projects
-curl http://192.168.0.178:7437/sync/enroll
+curl http://localhost:7437/sync/enroll
 # Expected: {"projects":[],"count":0}
 ```
 
@@ -47,12 +47,12 @@ curl http://192.168.0.178:7437/sync/enroll
 
 ```bash
 # 1. Enroll
-curl -X POST http://192.168.0.178:7437/sync/enroll \
-  -H "X-Engram-User: victor.silgado" \
+curl -X POST http://localhost:7437/sync/enroll \
+  -H "X-Engram-User: your-username" \
   -d '{"project":"team/mi-api"}'
 
 # 2. Verify
-curl http://192.168.0.178:7437/sync/enroll -H "X-Engram-User: victor.silgado"
+curl http://localhost:7437/sync/enroll -H "X-Engram-User: your-username"
 ```
 
 **Acceptance**: ✅ Project appears in enrolled list
@@ -74,7 +74,7 @@ engram mem_save "Test sync observation" \
 sleep 35
 
 # 3. Verify on server
-curl http://192.168.0.178:7437/search?q=Offline-First+Test
+curl http://localhost:7437/search?q=Offline-First+Test
 
 # 4. Check sync status
 engram sync status
@@ -93,7 +93,7 @@ engram sync status
 export ENGRAM_USER=juan.perez
 
 # 1. Enroll same project
-curl -X POST http://192.168.0.178:7437/sync/enroll \
+curl -X POST http://localhost:7437/sync/enroll \
   -H "X-Engram-User: juan.perez" \
   -d '{"project":"team/mi-api"}'
 
@@ -114,7 +114,7 @@ engram search "Offline-First Test"
 
 ```bash
 # 1. Stop server (simulate offline)
-ssh root@192.168.0.178 "systemctl stop engram-server"
+ssh root@your-server "systemctl stop engram-server"
 
 # 2. Create memories offline
 engram mem_save "Offline observation 1" --project team/mi-api
@@ -125,13 +125,13 @@ engram sync status --json | jq '.counts.pending_push'
 # Expected: 2
 
 # 4. Restart server
-ssh root@192.168.0.178 "systemctl start engram-server"
+ssh root@your-server "systemctl start engram-server"
 sleep 35
 
 # 5. Verify sync completed
 engram sync status --json | jq '.counts.pending_push'
 # Expected: 0
-curl http://192.168.0.178:7437/search?q=Offline+observation
+curl http://localhost:7437/search?q=Offline+observation
 ```
 
 **Acceptance**: ✅ Offline: no errors, pending_push increments. Reconnect: auto-sync.
@@ -144,23 +144,23 @@ curl http://192.168.0.178:7437/search?q=Offline+observation
 
 ```bash
 # 1. Pause
-curl -X POST http://192.168.0.178:7437/sync/pause \
+curl -X POST http://localhost:7437/sync/pause \
   -H "X-Engram-User: admin" \
   -d '{"project":"team/mi-api","reason":"Database maintenance"}'
 
 # 2. Push should fail with 409
-curl -X POST http://192.168.0.178:7437/sync/mutations/push \
+curl -X POST http://localhost:7437/sync/mutations/push \
   -H "Content-Type: application/json" \
   -H "X-Engram-User: victor" \
   -d '{"entries":[{"project":"team/mi-api","entity":"observation","entity_key":"test","op":"upsert","payload":"{}"}]}'
 # Expected: HTTP 409 Conflict
 
 # 3. Resume
-curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
+curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 
 # 4. Verify resumed
-curl http://192.168.0.178:7437/sync/status | jq '.paused_projects'
+curl http://localhost:7437/sync/status | jq '.paused_projects'
 # Expected: []
 ```
 
@@ -197,7 +197,7 @@ sqlite3 ~/.engram/engram.db "SELECT COUNT(*) FROM sync_apply_deferred;"
 
 ```bash
 # 1. Full status
-curl http://192.168.0.178:7437/sync/status | jq
+curl http://localhost:7437/sync/status | jq
 
 # Expected structure:
 {
@@ -227,7 +227,7 @@ engram sync status --json | jq
 
 ```bash
 # User 1: victor
-export ENGRAM_USER=victor.silgado
+export ENGRAM_USER=your-username
 engram mem_save "Victor's personal" --scope personal --project mi-api
 
 # User 2: juan
@@ -235,7 +235,7 @@ export ENGRAM_USER=juan.perez
 engram mem_save "Juan's personal" --scope personal --project mi-api
 
 # Victor searches
-export ENGRAM_USER=victor.silgado
+export ENGRAM_USER=your-username
 engram search "personal"
 # Expected: Only "Victor's personal"
 
@@ -279,10 +279,10 @@ systemctl restart engram
 
 ```bash
 # Check paused projects
-curl http://192.168.0.178:7437/sync/status | jq '.paused_projects'
+curl http://localhost:7437/sync/status | jq '.paused_projects'
 
 # Resume
-curl -X DELETE "http://192.168.0.178:7437/sync/pause?project=team/mi-api" \
+curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 ```
 
