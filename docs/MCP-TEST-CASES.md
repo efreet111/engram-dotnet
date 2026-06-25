@@ -1,6 +1,6 @@
 # MCP Tools — Test Cases
 
-> **Purpose**: Verify all 26 MCP tools work correctly.  
+> **Purpose**: Verify all 28 MCP tools work correctly.  
 > **Server**: `http://192.168.0.178:7437` (PostgreSQL)  
 > **Requires**: `engram mcp` running locally OR direct curl to REST API.
 

@@ -55,3 +55,6 @@ dist-cli/
 
 # Engram MCP local memory (per-user runtime state, not project source)
 /.engram/
+
+# FlowForge rework tickets live in .ai-work/{slug}/, not at repo root
+/rework_ticket.md
