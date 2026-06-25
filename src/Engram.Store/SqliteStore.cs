@@ -5,6 +5,7 @@ using Polly;
 using Polly.Retry;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Engram.Store;
 
@@ -17,6 +18,7 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
 {
     private readonly SqliteConnection _db;
     private readonly StoreConfig _cfg;
+    private readonly ILogger<SqliteStore>? _logger;
 
     // Retry policy for SQLITE_BUSY (error code 5).
     // Works alongside PRAGMA busy_timeout=5000 — catches cases where
@@ -40,9 +42,12 @@ public sealed class SqliteStore : IStore, ILocalSyncStore
 
     // ─── Construction ──────────────────────────────────────────────────────────
 
-    public SqliteStore(StoreConfig cfg)
+    public SqliteStore(StoreConfig cfg) : this(cfg, null) { }
+
+    public SqliteStore(StoreConfig cfg, ILogger<SqliteStore>? logger)
     {
         _cfg = cfg;
+        _logger = logger;
 
         if (!Path.IsPathRooted(cfg.DataDir))
             throw new ArgumentException(
@@ -2167,8 +2172,21 @@ CREATE TABLE IF NOT EXISTS observations (
 
     private void ApplySessionUpsert(SyncMutation mutation)
     {
-        var payload = JsonSerializer.Deserialize<SessionPullPayload>(mutation.Payload, JsonPullOpts);
-        if (payload is null) return;
+        SessionPullPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<SessionPullPayload>(mutation.Payload, JsonPullOpts);
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Failed to deserialize session payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize session payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
 
         WithTx(tx =>
         {
@@ -2188,12 +2206,28 @@ CREATE TABLE IF NOT EXISTS observations (
                 Param("@endedAt",  payload.EndedAt),
                 Param("@summary",  payload.Summary));
         });
+
+        _logger?.LogInformation("Applied mutation session/upsert for entity_key={EntityKey} in project={Project}",
+            mutation.EntityKey, payload.Project ?? "");
     }
 
     private void ApplyObservationUpsert(SyncMutation mutation)
     {
-        var payload = JsonSerializer.Deserialize<ObservationPullPayload>(mutation.Payload, JsonPullOpts);
-        if (payload is null) return;
+        ObservationPullPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<ObservationPullPayload>(mutation.Payload, JsonPullOpts);
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Failed to deserialize observation payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize observation payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
 
         WithTx(tx =>
         {
@@ -2252,12 +2286,28 @@ CREATE TABLE IF NOT EXISTS observations (
                 InsertDeferred(tx, mutation);
             }
         });
+
+        _logger?.LogInformation("Applied mutation observation/upsert for entity_key={EntityKey} in project={Project}",
+            mutation.EntityKey, payload.Project ?? "");
     }
 
     private void ApplyObservationDelete(SyncMutation mutation)
     {
-        var payload = JsonSerializer.Deserialize<ObservationDeletePayload>(mutation.Payload, JsonPullOpts);
-        if (payload is null) return;
+        ObservationDeletePayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<ObservationDeletePayload>(mutation.Payload, JsonPullOpts);
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Failed to deserialize observation delete payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize observation delete payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
 
         WithTx(tx =>
         {
@@ -2267,12 +2317,27 @@ CREATE TABLE IF NOT EXISTS observations (
                   WHERE sync_id = @syncId AND deleted_at IS NULL",
                 Param("@syncId", mutation.EntityKey));
         });
+
+        _logger?.LogInformation("Applied mutation observation/delete for entity_key={EntityKey}", mutation.EntityKey);
     }
 
     private void ApplyPromptUpsert(SyncMutation mutation)
     {
-        var payload = JsonSerializer.Deserialize<PromptPullPayload>(mutation.Payload, JsonPullOpts);
-        if (payload is null) return;
+        PromptPullPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<PromptPullPayload>(mutation.Payload, JsonPullOpts);
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Failed to deserialize prompt payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize prompt payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
 
         WithTx(tx =>
         {
@@ -2313,12 +2378,28 @@ CREATE TABLE IF NOT EXISTS observations (
                 InsertDeferred(tx, mutation);
             }
         });
+
+        _logger?.LogInformation("Applied mutation prompt/upsert for entity_key={EntityKey} in project={Project}",
+            mutation.EntityKey, payload.Project ?? "");
     }
 
     private void ApplyPromptDelete(SyncMutation mutation)
     {
-        var payload = JsonSerializer.Deserialize<PromptDeletePayload>(mutation.Payload, JsonPullOpts);
-        if (payload is null) return;
+        PromptDeletePayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<PromptDeletePayload>(mutation.Payload, JsonPullOpts);
+        }
+        catch (JsonException)
+        {
+            _logger?.LogWarning("Failed to deserialize prompt delete payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
+        if (payload is null)
+        {
+            _logger?.LogWarning("Failed to deserialize prompt delete payload for entity_key={EntityKey}", mutation.EntityKey);
+            return;
+        }
 
         WithTx(tx =>
         {
@@ -2327,6 +2408,8 @@ CREATE TABLE IF NOT EXISTS observations (
                   WHERE sync_id = @syncId AND deleted_at IS NULL",
                 Param("@syncId", mutation.EntityKey));
         });
+
+        _logger?.LogInformation("Applied mutation prompt/delete for entity_key={EntityKey}", mutation.EntityKey);
     }
 
     private void InsertDeferred(SqliteTransaction tx, SyncMutation mutation)

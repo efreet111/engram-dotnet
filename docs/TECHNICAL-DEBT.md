@@ -176,6 +176,8 @@ File.Move(tmp, path, overwrite: true);
 
 **Origen**: AUD-013 — [`.ai-work/code-audit/`](../../.ai-work/code-audit/)
 
+**Estado**: **RESOLVED** (ENG-436) — Unit tests + logging implemented. Pending: PM-7 e2e Docker test.
+
 ---
 
 ### TD-014 — SqliteStore: Métodos Async sincrónicos (14 ocurrencias)

@@ -61,11 +61,9 @@ dist-cli/
 
 # ENG-446 (backlog): Untracked files referenced in BACKLOG but not yet committed.
 # Reason: contain known issues or are pending formal review.
-# - SqliteStoreApplyPulledTests.cs: 2 tests skipped [TBD: FK insert issue]
 # - sync-test.sh: pending validation
 # - ADR-002-sync-mutation-application.md: pending formal ADR review
 # - ADR-003-xml-doc-comment-policy.md: pending formal ADR review
-tests/Engram.Store.Tests/SqliteStoreApplyPulledTests.cs
 scripts/sync-test.sh
 docs/architecture/adr/ADR-002-sync-mutation-application.md
 docs/architecture/adr/ADR-003-xml-doc-comment-policy.md

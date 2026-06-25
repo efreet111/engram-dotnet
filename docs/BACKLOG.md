@@ -103,7 +103,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 17 | ENG-434 | P2 | Feature | Migración `project` string → GUID canónico (v1.1) | Icebox | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — solo 3 usuarios internos; ENG-435 cubre el caso de uso |
 | 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Rework | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) · [rework_ticket](../.ai-work/eng-435-legacy-migration/rework_ticket.md) cycle 1/3 |
 | — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
-| 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Ready | M | ← TD-013 audit 2026-06-23 | Ver sección detallada abajo |
+| 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging done, PM-7 pending |
 | 20 | ENG-437 | P0 | Chore | Release v0.4.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Ready | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
 | 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — movido a `.ai-work/eng-435-legacy-migration/`, `.gitignore` actualizado |
 | 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — número real: 28 tools. Fix en README, DEVELOPMENT, MANUAL-TESTING-CHECKLIST, MCP-TEST-CASES, MIGRATION, ROADMAP, TECHNICAL-DEBT |
@@ -419,11 +419,16 @@ El path dry-run llama `MigrateProjectAsync()` (UPDATEs reales), luego imprime "W
 **Referencia:** `TECHNICAL-DEBT.md` TD-013.
 
 **Criterios de aceptación:**
-- [ ] `ApplyPulledMutationAsync` deserializa `SyncMutation.Payload` y ejecuta upsert de session/observation/prompt según `mutation_type`
+- [x] `ApplyPulledMutationAsync` deserializa `SyncMutation.Payload` y ejecuta upsert de session/observation/prompt según `mutation_type`
+- [x] Unit tests para todos los 5 métodos Apply* (FR-001 a FR-005)
+- [x] Logging parity con PostgresStore (FR-006)
+- [x] FK insert issue verification: SnakeCaseLower fix (FR-007)
 - [ ] Test de integración: Client-A salva obs en PostgreSQL → Client-B con SQLite hace pull → obs visible localmente en B
 - [ ] `bash scripts/test-2client-pull.sh` con Client-B usando SQLite pasa end-to-end
 
 **Esfuerzo estimado:** M (3-4h). Patrón: ver `PostgresStore.ApplyPulledMutationAsync` que sí implementa el upsert.
+
+**Estado:** Done (unit tests + logging). PM-7 pending (e2e Docker test).
 
 ---
 
