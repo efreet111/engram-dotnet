@@ -46,6 +46,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public void Dispose() => _dataSource.Dispose();
 
+    /// <summary>Exposes a raw <see cref="NpgsqlConnection"/> for administrative queries like dry-run previews.</summary>
+    public NpgsqlConnection OpenRawConnection() => _dataSource.OpenConnection();
+
     // ─── Migrations ────────────────────────────────────────────────────────────
 
     private void Migrate()

@@ -659,7 +659,7 @@ migrateCmd.SetHandler(async (string to, string? from, bool assumeYes, bool dryRu
     if (dryRun)
     {
         using var store = OpenStore();
-        var conn = ((dynamic)store)._dataSource.OpenConnection();
+        var conn = (store is PostgresStore pg) ? pg.OpenRawConnection() : throw new NotSupportedException("Dry-run preview requires PostgreSQL backend");
         try
         {
             // Count observations
