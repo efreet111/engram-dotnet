@@ -36,6 +36,10 @@ jobs:
             -p:PublishSingleFile=true \
             -p:DebugType=none \
             -o out/linux-x64
+          # Verify native SQLite lib is present (PublishSingleFile leaves native deps loose)
+          echo "=== Native libs in linux-x64 output ==="
+          ls -la out/linux-x64/*.so 2>/dev/null || echo "WARNING: no .so files found"
+          test -f out/linux-x64/e_sqlite3.so || echo "WARNING: e_sqlite3.so not found — SQLite may fail at runtime"
 
       - name: Publish win-x64
         run: |
@@ -46,11 +50,27 @@ jobs:
             -p:PublishSingleFile=true \
             -p:DebugType=none \
             -o out/win-x64
+          # Verify native SQLite lib is present
+          echo "=== Native libs in win-x64 output ==="
+          ls -la out/win-x64/*.dll 2>/dev/null || echo "WARNING: no .dll files found"
+          test -f out/win-x64/e_sqlite3.dll || echo "WARNING: e_sqlite3.dll not found — SQLite may fail at runtime"
 
-      - name: Rename binaries
+      - name: Collect release assets
         run: |
+          # Rename main binaries
           mv out/linux-x64/engram   out/engram-linux-x64
           mv out/win-x64/engram.exe out/engram-win-x64.exe
+          # Copy native SQLite libs (PublishSingleFile leaves them loose)
+          cp out/linux-x64/e_sqlite3.so out/ 2>/dev/null || echo "WARNING: e_sqlite3.so missing from publish output"
+          cp out/win-x64/e_sqlite3.dll  out/ 2>/dev/null || echo "WARNING: e_sqlite3.dll missing from publish output"
+          # Generate SHA-256 checksums
+          cd out
+          sha256sum engram-linux-x64 > engram-linux-x64.sha256
+          sha256sum engram-win-x64.exe > engram-win-x64.exe.sha256
+          test -f e_sqlite3.so && sha256sum e_sqlite3.so > e_sqlite3.so.sha256 || true
+          test -f e_sqlite3.dll && sha256sum e_sqlite3.dll > e_sqlite3.dll.sha256 || true
+          echo "=== Release assets ==="
+          ls -la out/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -64,19 +84,29 @@ jobs:
             ### Instalación rápida (Linux)
 
             ```bash
-            curl -L https://github.com/efreet111/engram-dotnet/releases/download/${{ github.ref_name }}/engram-linux-x64 -o engram
-            chmod +x engram
-            ./engram serve
+            curl -L https://github.com/efreet111/engram-dotnet/releases/download/${{ github.ref_name }}/engram-linux-x64 -o ~/.local/bin/engram
+            curl -L https://github.com/efreet111/engram-dotnet/releases/download/${{ github.ref_name }}/e_sqlite3.so -o ~/.local/bin/e_sqlite3.so
+            chmod +x ~/.local/bin/engram
+            ~/.local/bin/engram serve
             ```
 
             ### Binarios
 
-            | Plataforma | Archivo |
-            |---|---|
-            | Linux x64 | `engram-linux-x64` |
-            | Windows x64 | `engram-win-x64.exe` |
+            | Plataforma | Archivo | SHA-256 |
+            |---|---|---|
+            | Linux x64 | `engram-linux-x64` | `engram-linux-x64.sha256` |
+            | Linux x64 | `e_sqlite3.so` (native lib) | `e_sqlite3.so.sha256` |
+            | Windows x64 | `engram-win-x64.exe` | `engram-win-x64.exe.sha256` |
+            | Windows x64 | `e_sqlite3.dll` (native lib) | `e_sqlite3.dll.sha256` |
 
+            > **Importante**: `e_sqlite3.so` / `e_sqlite3.dll` debe estar en el mismo directorio que el binario.
             > Binarios self-contained — no requieren .NET instalado.
           files: |
             out/engram-linux-x64
+            out/engram-linux-x64.sha256
             out/engram-win-x64.exe
+            out/engram-win-x64.exe.sha256
+            out/e_sqlite3.so
+            out/e_sqlite3.so.sha256
+            out/e_sqlite3.dll
+            out/e_sqlite3.dll.sha256
