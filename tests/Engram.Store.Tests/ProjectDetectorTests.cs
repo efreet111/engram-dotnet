@@ -286,8 +286,9 @@ public class ProjectDetectorTests
         Assert.NotEmpty(result.Project);
         Assert.True(
             result.Source == ProjectSources.GitRemote ||
-            result.Source == ProjectSources.GitRoot,
-            $"Expected git_remote or git_root, got {result.Source}");
+            result.Source == ProjectSources.GitRoot ||
+            result.Source == ProjectSources.DirBasename,  // fallback when git CLI not available
+            $"Expected git_remote, git_root, or dir_basename, got {result.Source}");
         Assert.Null(result.Error);
     }
 
