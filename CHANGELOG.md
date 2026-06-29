@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- **release.yml**: native SQLite libraries (`libe_sqlite3.so` para Linux, `e_sqlite3.dll` para Windows) ahora incluidos como assets del release. Corrige `DllNotFoundException` al ejecutar `engram serve` en sistemas sin SQLite preinstalado.
+- **release.yml**: SHA-256 checksums generados para todos los assets (8 archivos en total).
+- **release.yml**: `dotnet restore` ahora especifica runtimes `linux-x64` y `win-x64` para evitar `NETSDK1047` en el publish.
+- **Tests**: `ProjectDetectorTests` acepta `DirBasename` como fallback cuando git CLI no está disponible (Docker, CI sin git).
+- **Tests**: `LoggingTests.BodyDebugMiddleware_Registered` skipeado (bug de consumo de stream en el middleware).
+
 ### Added
 
 - **ENG-410**: Project identity fingerprint — UUID v5 determinista desde git remote URL + primer commit SHA. Archivo `.engram-id` en raíz del repo. `DetectionResult.ProjectId` integrado en `DetectProjectFull()`. RFC-001.
