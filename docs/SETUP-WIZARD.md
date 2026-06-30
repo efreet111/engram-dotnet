@@ -2,7 +2,7 @@
 
 Guía para instalar engram-dotnet en una máquina de desarrollo y conectar cualquier cliente MCP (Cursor, Claude Desktop, OpenCode, etc.).
 
-> **Objetivo a finales de junio**: un instalador gráfico reemplazará parte de estos pasos; hoy el wizard es `scripts/setup.ps1` / `scripts/setup.sh`.
+> **FlowForge Installer** cubre instalación de binarios. El wizard `scripts/setup.sh/ps1` cubre configuración MCP. ENG-302 (wizard gráfico unificado) está en desarrollo.
 
 ---
 
@@ -144,13 +144,51 @@ Ver [`config/mcp/INSTALL.md`](../config/mcp/INSTALL.md) y plantillas en [`config
 
 ---
 
-## Roadmap del instalador
+## Stack Installer — opciones de instalación
 
-| Fase | Entregable |
-|------|------------|
-| **Hoy** | `scripts/setup.ps1` / `setup.sh` + plantillas en `config/mcp/` |
-| **Próximo** | MSI / script que instale `engram` en PATH y ejecute el wizard |
-| **Junio** | Wizard gráfico: local vs sync, test de health, enroll opcional |
+Hay dos formas de instalar engram-dotnet:
+
+### A) FlowForge Installer (recomendado — instala todo el stack)
+
+El installer de [FlowForge](https://github.com/efreet111/FlowForge) gestiona engram-dotnet junto con FlowForge y FlowDocs:
+
+```bash
+# Linux/macOS
+curl -fsSL https://flowforge.dev/install.sh | bash
+
+# Windows (PowerShell)
+irm https://flowforge.dev/install.ps1 | iex
+```
+
+El installer:
+- Descarga y coloca el binario de engram-dotnet
+- Registra el componente en `~/.engram/config.json` vía `post-install.sh` / `post-install.ps1`
+- Ofrece instalar FlowForge y FlowDocs como componentes adicionales
+
+Ver: [FlowForge Releases](https://github.com/efreet111/FlowForge/releases/latest)
+
+### B) Wizard MCP (desde el repo — configuración manual)
+
+Si solo necesitás configurar el cliente MCP (después de instalar el binario por otra vía):
+
+```powershell
+# Windows
+.\scripts\setup.ps1
+# Linux / macOS
+./scripts/setup.sh
+```
+
+El wizard:
+- Pregunta modo (local o offline-first sync)
+- Genera configs para Cursor, Claude Desktop, VS Code, OpenCode, Antigravity
+- Escribe en `config/mcp/generated/` y opcionalmente en el editor directamente
+
+### Próximos pasos (pendientes)
+
+| Ítem | Descripción |
+|------|-------------|
+| **ENG-302** | Wizard gráfico con UI (modo local vs sync, test health, enroll) |
+| **ENG-303** | Guía de instalación unificada que enlaza todos los métodos |
 
 ---
 

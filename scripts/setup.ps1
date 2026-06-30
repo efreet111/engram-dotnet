@@ -43,7 +43,8 @@ function New-EditorWrapper {
             return @{
                 mcp = @{
                     engram = @{
-                        type        = "stdio"
+                        type        = "local"
+                        enabled     = $true
                         command     = @($EngramServer.command, "mcp")
                         environment = $EngramServer.env
                     }

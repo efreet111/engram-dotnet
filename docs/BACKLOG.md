@@ -562,15 +562,15 @@ El path dry-run llama `MigrateProjectAsync()` (UPDATEs reales), luego imprime "W
 **Ver:** [spike learnings](../.ai-work/eng-301-spike/learnings.md)
 
 **Criterios:**
-- [ ] `install.sh` descarga FlowForge installer y corre el wizard
-- [ ] `install.ps1` equivalente Windows
-- [ ] Wizard pregunta: qué componentes, modo engram, FlowDoc opt-in, IDEs
-- [ ] Config file global para FlowDoc opt-in (`~/.engram/config.json` o similar)
-- [ ] AGENTS.md template con sección FlowDoc opt-in/ opt-out
-- [ ] `uninstall.sh` / `uninstall.ps1` remueven todo limpiamente
-- [ ] Curl-pipe URLs públicas (flowforge.dev/install.sh)
-- [ ] Primer release FlowForge `v0.1.0` publica binarios
-- [ ] Smoke test end-to-end documentado
+- [x] `install.sh` descarga FlowForge installer y corre el wizard
+- [x] `install.ps1` equivalente Windows
+- [x] Wizard pregunta: qué componentes, modo engram, FlowDoc opt-in, IDEs
+- [x] Config file global para FlowDoc opt-in (`~/.engram/config.json` o similar)
+- [x] AGENTS.md template con sección FlowDoc opt-in/ opt-out
+- [x] `uninstall.sh` / `uninstall.ps1` remueven todo limpiamente
+- [x] Curl-pipe URLs públicas (flowforge.dev/install.sh)
+- [x] Primer release FlowForge `v0.1.0` publica binarios (v0.1.0-alpha.2 ✅)
+- [x] Smoke test end-to-end documentado
 
 ---
 

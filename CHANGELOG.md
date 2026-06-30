@@ -32,6 +32,7 @@
 - **ENG-432**: CLI `engram project id` with `--json` output (project_id, source, computed) and `--regenerate` to recompute and overwrite `.engram-id`.
 - **ENG-433**: Auto-generate `.engram-id` on startup via `--auto-enroll` flag or `ENGRAM_AUTO_ENROLL=true` env var. No auto-commit. Deterministic UUID v5 from remote URL + first commit SHA.
 - **ENG-435**: Legacy identity migration toolkit — `engram project id --set <guid>` to force a custom GUID, `engram project migrate --to <guid>` to migrate all observations/sessions/prompts from legacy project name to new identity. Supports `--from`, `--dry-run`, `-y`, and automatic rollback on failure.
+- **ENG-301**: Stack Installer — FlowForge installer manages engram-dotnet lifecycle (install/update/uninstall). Post-install registration scripts (`scripts/post-install.sh`, `scripts/post-install.ps1`) write `~/.engram/config.json` with component entry (`engram_dotnet`, version, binary path, registered_at). `config/mcp/` templates support local-only and offline-first sync modes for multiple editors (Cursor, Claude Desktop, VS Code, OpenCode, Antigravity).
 - **Sync enroll/unenroll**: New CLI commands `engram sync enroll --project X` and `engram sync unenroll --project X` for local sync_enrolled_projects table management.
 
 ### Fixed

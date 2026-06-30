@@ -92,7 +92,8 @@ write("vscode.mcp.json", {"servers": {"engram": block}})
 write("opencode.mcp.json", {
     "mcp": {
         "engram": {
-            "type": "stdio",
+            "type": "local",
+            "enabled": True,
             "command": [cmd, "mcp"],
             "environment": env,
         }
@@ -144,11 +145,25 @@ PY
 
 echo ""
 echo "¿Instalar también en un editor ahora?"
-echo "  [1] No — solo config/mcp/generated/"
-echo "  [2] Sí — Cursor (~/.cursor/mcp.json)"
-read -r -p "Elegí 1-2 (default 1): " editor
+echo "  [1] No — solo config/mcp/generated/ (varios editores, copiar a mano)"
+echo "  [2] Sí — Cursor  (~/.cursor/mcp.json)"
+echo "  [3] Sí — Claude Desktop  (~/.config/Claude/claude_desktop_config.json)"
+echo "  [4] Mostrar JSON en pantalla"
+read -r -p "Elegí 1-4 (default 1): " editor
 editor="${editor:-1}"
-[[ "$editor" == "2" ]] && write_mcp "${HOME}/.cursor/mcp.json"
+
+if [[ "$editor" == "2" ]]; then
+  write_mcp "${HOME}/.cursor/mcp.json"
+elif [[ "$editor" == "3" ]]; then
+  CLAUDE_DIR="${HOME}/.config/Claude"
+  mkdir -p "$CLAUDE_DIR"
+  write_mcp "${CLAUDE_DIR}/claude_desktop_config.json"
+elif [[ "$editor" == "4" ]]; then
+  echo ""
+  echo "=== JSON para MCP (copiá esto a tu editor) ==="
+  echo ""
+  cat "${GEN_DIR}/cursor.mcp.json"
+fi
 
 write_mcp "$ENGRAM_DATA_DIR/mcp.config.json"
 

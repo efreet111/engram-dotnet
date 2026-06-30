@@ -1,7 +1,8 @@
 {
   "mcp": {
     "engram": {
-      "type": "stdio",
+      "type": "local",
+      "enabled": true,
       "command": ["{{ENGRAM_COMMAND}}", "mcp"],
       "environment": {
         "ENGRAM_DATA_DIR": "{{ENGRAM_DATA_DIR}}",
