@@ -113,7 +113,10 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 31 | ENG-448 | P0 | Bug | `MergeProjectsAsync`: no transaction at all — 3 UPDATEs auto-commit independently | Ready | M | ← ENG-440 audit | Fix: wrap in `await using var tx = conn.BeginTransactionAsync()` + assign `cmd.Transaction = tx` |
 | 32 | ENG-449 | P1 | Bug | `PruneProjectAsync`: no transaction — 2 DELETEs without atomicity | Ready | S | ← ENG-440 audit | Fix: wrap in transaction |
 | 33 | ENG-450 | P1 | Bug | `PruneOldObservationsAsync`: no transaction — UPDATEs by type without atomicity | Ready | S | ← ENG-440 audit | Fix: wrap in transaction |
-| 25 | ENG-442 | P0 | Chore | Push `feat/eng-301-post-install-scripts` to remote + verify CI | ✅ Done | XS | ← audit OSS 2026-06-23 | `7f16ca5` — rama mergeada a main y push'eada |
+| — | **Sync recovery — bugs encontrados en testing (2026-06-29)** |
+| 34 | ENG-451 | P0 | Bug | **BUG-1 (P0)**: `SyncManager` no re-aplica mutaciones pulled huérfanas al recuperar de `lifecycle=blocked`. Mutaciones con `source='pull' AND acked_at IS NULL` nunca se aplican a `observations`. Data loss silenciosa. | Ready | M | ← ADR-007 spike | [ADR-007](../docs/architecture/adr/ADR-007-sync-blocked-recovery.md) |
+| 35 | ENG-451b | P1 | Bug | **BUG-2 (P1)**: `engram sync status` muestra contadores en 0 porque lee memoria del proceso, no SQLite. Información falsa en scripts y CI. | Ready | S | ← ADR-007 spike | Mismo ADR-007, fix en `Engram.Cli sync status` |
+| — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | Ready | M | ← audit OSS 2026-06-23 | Bloqueado por ENG-436 (sync pull roto) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
 | 28 | ENG-445 | P0 | Chore | **Docker version pin:** `docker/Dockerfile:6` `v1.2.0` → `v0.3.0` | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` |
@@ -433,6 +436,50 @@ El path dry-run llama `MigrateProjectAsync()` (UPDATEs reales), luego imprime "W
 **Esfuerzo estimado:** M (3-4h). Patrón: ver `PostgresStore.ApplyPulledMutationAsync` que sí implementa el upsert.
 
 **Estado:** Done (unit tests + logging). PM-7 pending (e2e Docker test).
+
+---
+
+### ENG-451 — SyncManager: recovery de mutaciones pulled huérfanas (P0, Bug)
+
+**Origen:** spike `spike-engram-sync` en FlowForge (ADR-007).
+
+**BUG-1 — P0 (data loss silenciosa):**
+
+`SyncManager` detecta proyecto no enrolado → `lifecycle=blocked`. Las mutaciones del servidor se descargan (`source='pull'`) pero `acked_at` queda `NULL` porque nunca se aplicaron. Al enrolar, `lifecycle` vuelve a `healthy` pero las mutaciones pendientes **nunca se re-aplican**. Los memories del equipo no aparecen localmente.
+
+**Root cause:** El pull loop solo pide mutaciones nuevas (`after_seq=last_pulled_seq`). No re-procesa las ya descargadas con `acked_at IS NULL`.
+
+**Evidencia en SQLite:**
+```sql
+SELECT COUNT(*) FROM sync_mutations WHERE source='pull' AND acked_at IS NULL;
+-- 3  ← mutaciones huérfanas
+
+SELECT * FROM observations WHERE project='team/flowforge';
+-- (vacío) ← jamás se aplicaron
+```
+
+**Fix:** `ReapplyPendingPulledMutationsAsync()` en `SyncManager.CycleAsync()` antes del pull — procesa todo registro con `source='pull' AND acked_at IS NULL` y lo aplica a `observations`.
+
+**Criterios:**
+- [ ] DB con mutaciones pendientes → ciclo → `observations` tiene el registro
+- [ ] No-duplicación: si la observación ya existe, el re-apply no la duplica
+- [ ] Test de integración: sync bloqueado → enrolar → memorias aparecen
+
+**Esfuerzo:** M (3-4h)
+
+---
+
+**BUG-2 — P1 (información falsa):**
+
+`engram sync status` lee contadores del proceso en memoria. Cuando se ejecuta como CLI separada (proceso fresco), arranca en 0 aunque SQLite tenga `last_pulled_seq=1124`.
+
+**Fix:** `sync status` debe leer directamente de `sync_state` en SQLite (`ILocalSyncStore`), no del estado en memoria del proceso.
+
+**Criterios:**
+- [ ] `engram sync status` desde CLI fresco muestra mismo resultado que `SELECT * FROM sync_state` en SQLite
+- [ ] Funciona en scripts y CI
+
+**Esfuerzo:** S (1-2h)
 
 ---
 
