@@ -1052,33 +1052,46 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             ? config.TtlByType.Keys.ToList()
             : [p.Type];
 
-        foreach (var type in typesToPrune)
+        using var conn = _dataSource.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        try
         {
-            if (!config.ShouldExpire(type)) continue;
-            var ttl = config.GetTtl(type);
-            if (ttl is null) continue;
-
-            var cutoff = DateTime.UtcNow - ttl.Value;
-            var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss");
-
-            using var countCmd = _dataSource.CreateCommand();
-            countCmd.CommandText = "SELECT COUNT(*) FROM observations WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
-            countCmd.Parameters.AddWithValue("@type", type);
-            countCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
-            var count = Convert.ToInt32(countCmd.ExecuteScalar());
-
-            if (!p.DryRun && count > 0)
+            foreach (var type in typesToPrune)
             {
-                var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-                using var delCmd = _dataSource.CreateCommand();
-                delCmd.CommandText = "UPDATE observations SET deleted_at = @now, updated_at = @now WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
-                delCmd.Parameters.AddWithValue("@now", now);
-                delCmd.Parameters.AddWithValue("@type", type);
-                delCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
-                delCmd.ExecuteNonQuery();
-            }
+                if (!config.ShouldExpire(type)) continue;
+                var ttl = config.GetTtl(type);
+                if (ttl is null) continue;
 
-            if (count > 0) details[type] = count;
+                var cutoff = DateTime.UtcNow - ttl.Value;
+                var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss");
+
+                using var countCmd = conn.CreateCommand();
+                countCmd.Transaction = tx;
+                countCmd.CommandText = "SELECT COUNT(*) FROM observations WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
+                countCmd.Parameters.AddWithValue("@type", type);
+                countCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
+                var count = Convert.ToInt32(countCmd.ExecuteScalar());
+
+                if (!p.DryRun && count > 0)
+                {
+                    var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                    using var delCmd = conn.CreateCommand();
+                    delCmd.Transaction = tx;
+                    delCmd.CommandText = "UPDATE observations SET deleted_at = @now, updated_at = @now WHERE type = @type AND deleted_at IS NULL AND (topic_key IS NULL OR topic_key = '') AND created_at::timestamptz < @cutoff::timestamptz";
+                    delCmd.Parameters.AddWithValue("@now", now);
+                    delCmd.Parameters.AddWithValue("@type", type);
+                    delCmd.Parameters.AddWithValue("@cutoff", cutoffStr);
+                    delCmd.ExecuteNonQuery();
+                }
+
+                if (count > 0) details[type] = count;
+            }
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
         }
 
         return Task.FromResult(new RetentionPruneResult
@@ -1562,25 +1575,39 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         long observationsUpdated = 0, sessionsUpdated = 0, promptsUpdated = 0;
 
-        foreach (var src in sources)
+        using var conn = _dataSource.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        try
         {
-            using var cmdObs = _dataSource.CreateCommand();
-            cmdObs.CommandText = "UPDATE observations SET project = @canonical WHERE project = @src AND deleted_at IS NULL";
-            cmdObs.Parameters.AddWithValue("@canonical", canonical);
-            cmdObs.Parameters.AddWithValue("@src", src);
-            observationsUpdated += cmdObs.ExecuteNonQuery();
+            foreach (var src in sources)
+            {
+                using var cmdObs = conn.CreateCommand();
+                cmdObs.Transaction = tx;
+                cmdObs.CommandText = "UPDATE observations SET project = @canonical WHERE project = @src AND deleted_at IS NULL";
+                cmdObs.Parameters.AddWithValue("@canonical", canonical);
+                cmdObs.Parameters.AddWithValue("@src", src);
+                observationsUpdated += cmdObs.ExecuteNonQuery();
 
-            using var cmdSess = _dataSource.CreateCommand();
-            cmdSess.CommandText = "UPDATE sessions SET project = @canonical WHERE project = @src";
-            cmdSess.Parameters.AddWithValue("@canonical", canonical);
-            cmdSess.Parameters.AddWithValue("@src", src);
-            sessionsUpdated += cmdSess.ExecuteNonQuery();
+                using var cmdSess = conn.CreateCommand();
+                cmdSess.Transaction = tx;
+                cmdSess.CommandText = "UPDATE sessions SET project = @canonical WHERE project = @src";
+                cmdSess.Parameters.AddWithValue("@canonical", canonical);
+                cmdSess.Parameters.AddWithValue("@src", src);
+                sessionsUpdated += cmdSess.ExecuteNonQuery();
 
-            using var cmdPrompt = _dataSource.CreateCommand();
-            cmdPrompt.CommandText = "UPDATE user_prompts SET project = @canonical WHERE project = @src";
-            cmdPrompt.Parameters.AddWithValue("@canonical", canonical);
-            cmdPrompt.Parameters.AddWithValue("@src", src);
-            promptsUpdated += cmdPrompt.ExecuteNonQuery();
+                using var cmdPrompt = conn.CreateCommand();
+                cmdPrompt.Transaction = tx;
+                cmdPrompt.CommandText = "UPDATE user_prompts SET project = @canonical WHERE project = @src";
+                cmdPrompt.Parameters.AddWithValue("@canonical", canonical);
+                cmdPrompt.Parameters.AddWithValue("@src", src);
+                promptsUpdated += cmdPrompt.ExecuteNonQuery();
+            }
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
         }
 
         return Task.FromResult(new MergeResult
@@ -1773,17 +1800,30 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         long sessionsDeleted = 0, promptsDeleted = 0;
 
-        using (var cmd = _dataSource.CreateCommand())
+        using var conn = _dataSource.OpenConnection();
+        using var tx = conn.BeginTransaction();
+        try
         {
-            cmd.CommandText = "DELETE FROM user_prompts WHERE project = @proj";
-            cmd.Parameters.AddWithValue("@proj", project);
-            promptsDeleted = cmd.ExecuteNonQuery();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = "DELETE FROM user_prompts WHERE project = @proj";
+                cmd.Parameters.AddWithValue("@proj", project);
+                promptsDeleted = cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = "DELETE FROM sessions WHERE project = @proj";
+                cmd.Parameters.AddWithValue("@proj", project);
+                sessionsDeleted = cmd.ExecuteNonQuery();
+            }
+            tx.Commit();
         }
-        using (var cmd = _dataSource.CreateCommand())
+        catch
         {
-            cmd.CommandText = "DELETE FROM sessions WHERE project = @proj";
-            cmd.Parameters.AddWithValue("@proj", project);
-            sessionsDeleted = cmd.ExecuteNonQuery();
+            tx.Rollback();
+            throw;
         }
 
         return Task.FromResult(new PruneResult
@@ -1838,6 +1878,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             foreach (var entry in entries)
             {
                 await using var cmd = txConn.CreateCommand();
+                cmd.Transaction = tx;
                 cmd.CommandText = @"
                     INSERT INTO cloud_mutations (project, entity, entity_key, op, payload, created_by, occurred_at)
                     VALUES (@project, @entity, @entity_key, @op, @payload::jsonb, @created_by, NOW())
@@ -1855,7 +1896,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             }
 
             // 2. Apply mutations to data store within the same transaction (PM-5: atomic batch)
-            await ApplyMutationsToDataStoreAsync(txConn, entries, ct);
+            await ApplyMutationsToDataStoreAsync(txConn, tx, entries, ct);
 
             tx.Commit();
             return seqs;
@@ -2337,7 +2378,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     /// Apply mutations to the data store within the same transaction.
     /// Order: sessions first, then observations, then prompts (respects FK constraints).
     /// </summary>
-    private async Task ApplyMutationsToDataStoreAsync(NpgsqlConnection txConn, IReadOnlyList<MutationEntry> entries, CancellationToken ct)
+    private async Task ApplyMutationsToDataStoreAsync(NpgsqlConnection txConn, NpgsqlTransaction tx, IReadOnlyList<MutationEntry> entries, CancellationToken ct)
     {
         // Group by entity type for ordered apply (sessions → observations → prompts)
         var sessionUpserts = entries.Where(e => e.Entity == "session" && e.Op == "upsert").ToList();
@@ -2349,31 +2390,31 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         // Apply in order: sessions first (root), then observations, then prompts
         foreach (var entry in sessionUpserts)
         {
-            await ApplySessionUpsertAsync(txConn, entry, ct);
+            await ApplySessionUpsertAsync(txConn, tx, entry, ct);
         }
 
         foreach (var entry in observationUpserts)
         {
-            await ApplyObservationUpsertAsync(txConn, entry, ct);
+            await ApplyObservationUpsertAsync(txConn, tx, entry, ct);
         }
 
         foreach (var entry in observationDeletes)
         {
-            await ApplyObservationDeleteAsync(txConn, entry, ct);
+            await ApplyObservationDeleteAsync(txConn, tx, entry, ct);
         }
 
         foreach (var entry in promptUpserts)
         {
-            await ApplyPromptUpsertAsync(txConn, entry, ct);
+            await ApplyPromptUpsertAsync(txConn, tx, entry, ct);
         }
 
         foreach (var entry in promptDeletes)
         {
-            await ApplyPromptDeleteAsync(txConn, entry, ct);
+            await ApplyPromptDeleteAsync(txConn, tx, entry, ct);
         }
     }
 
-    private async Task ApplySessionUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    private async Task ApplySessionUpsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         var payload = JsonSerializer.Deserialize<SessionPullPayload>(entry.Payload, JsonPullOpts);
         if (payload is null)
@@ -2383,6 +2424,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
 
         await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         // Use NULLIF to handle empty strings, COALESCE for TEXT fields (schema uses TEXT not TIMESTAMPTZ)
         cmd.CommandText = @"
             INSERT INTO sessions (id, project, directory, started_at, ended_at, summary)
@@ -2412,7 +2454,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         _logger?.LogInformation("Applied mutation session/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 
-    private async Task ApplyObservationUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    private async Task ApplyObservationUpsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         var payload = JsonSerializer.Deserialize<ObservationPullPayload>(entry.Payload, JsonPullOpts);
         if (payload is null)
@@ -2423,6 +2465,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         // Use SessionId from payload (required for FK constraint)
         await using var checkCmd = conn.CreateCommand();
+        checkCmd.Transaction = tx;
         checkCmd.CommandText = "SELECT id FROM observations WHERE sync_id = @syncId AND deleted_at IS NULL";
         checkCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
         var existingId = await checkCmd.ExecuteScalarAsync(ct);
@@ -2431,6 +2474,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         {
             // Update existing
             await using var updateCmd = conn.CreateCommand();
+            updateCmd.Transaction = tx;
             updateCmd.CommandText = @"
                 UPDATE observations
                 SET type = @type, title = @title, content = @content,
@@ -2453,6 +2497,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         {
             // Insert new
             await using var insertCmd = conn.CreateCommand();
+            insertCmd.Transaction = tx;
             insertCmd.CommandText = @"
                 INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project,
@@ -2483,9 +2528,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         _logger?.LogInformation("Applied mutation observation/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 
-    private async Task ApplyObservationDeleteAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    private async Task ApplyObservationDeleteAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = @"
             UPDATE observations
             SET deleted_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'), 
@@ -2497,7 +2543,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         _logger?.LogInformation("Applied mutation observation/delete for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 
-    private async Task ApplyPromptUpsertAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    private async Task ApplyPromptUpsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         var payload = JsonSerializer.Deserialize<PromptPullPayload>(entry.Payload, JsonPullOpts);
         if (payload is null)
@@ -2508,6 +2554,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
         // Check if prompt exists by sync_id (not soft-deleted)
         await using var checkCmd = conn.CreateCommand();
+        checkCmd.Transaction = tx;
         checkCmd.CommandText = "SELECT id FROM user_prompts WHERE sync_id = @syncId AND deleted_at IS NULL";
         checkCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
         var existingId = await checkCmd.ExecuteScalarAsync(ct);
@@ -2516,6 +2563,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         {
             // Update existing
             await using var updateCmd = conn.CreateCommand();
+            updateCmd.Transaction = tx;
             updateCmd.CommandText = @"
                 UPDATE user_prompts
                 SET content = @content, project = @project
@@ -2531,6 +2579,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         {
             // Insert new
             await using var insertCmd = conn.CreateCommand();
+            insertCmd.Transaction = tx;
             insertCmd.CommandText = @"
                 INSERT INTO user_prompts (sync_id, session_id, content, project, created_by, created_at)
                 VALUES (@syncId, @sessionId, @content, @project, 'sync', COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
@@ -2547,9 +2596,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         _logger?.LogInformation("Applied mutation prompt/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 
-    private async Task ApplyPromptDeleteAsync(NpgsqlConnection conn, MutationEntry entry, CancellationToken ct)
+    private async Task ApplyPromptDeleteAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = @"
             UPDATE user_prompts
             SET deleted_at = TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')
