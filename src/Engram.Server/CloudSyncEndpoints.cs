@@ -398,6 +398,7 @@ public static class CloudSyncEndpoints
     /// <summary>
     /// Handle GET /sync/status — consolidated sync observability endpoint.
     /// Resolves ISyncStatusProvider optionally (null-safe when SyncManager not registered).
+    /// Uses database counts from ILocalSyncStore when available to avoid metric reset on restart.
     /// </summary>
     private static async Task<IResult> HandleSyncStatusAsync(HttpContext ctx, IStore store)
     {
@@ -405,10 +406,12 @@ public static class CloudSyncEndpoints
 
         SyncState? state = null;
         List<SyncMutation> pending = [];
+        SyncMutationCounts? counts = null;
         if (store is ILocalSyncStore localStore)
         {
             state = await localStore.GetSyncStateAsync("cloud", ctx.RequestAborted);
             pending = await localStore.ListPendingSyncMutationsAsync("cloud", 0, ctx.RequestAborted);
+            counts = await localStore.GetSyncMutationCountsAsync("cloud", ctx.RequestAborted);
         }
 
         List<EnrolledProject> enrolled = [];
@@ -428,8 +431,8 @@ public static class CloudSyncEndpoints
             Phase: isCloudRelay ? "cloud" : phase.ToString().ToLowerInvariant(),
             Target: "cloud",
             Cursor: new StatusCursorBody(
-                LastPushedSeq: state?.LastAckedSeq ?? metrics?.TotalPushed ?? 0,
-                LastPulledSeq: state?.LastPulledSeq ?? metrics?.TotalPulled ?? 0,
+                LastPushedSeq: state?.LastAckedSeq ?? counts?.TotalPushed ?? 0,
+                LastPulledSeq: state?.LastPulledSeq ?? counts?.TotalPulled ?? 0,
                 LastEnqueuedSeq: state?.LastEnqueuedSeq ?? 0
             ),
             Health: new StatusHealthBody(
@@ -450,8 +453,8 @@ public static class CloudSyncEndpoints
             ),
             Counts: new StatusCountsBody(
                 PendingPush: pending.Count,
-                TotalPushed: metrics?.TotalPushed ?? 0,
-                TotalPulled: metrics?.TotalPulled ?? 0,
+                TotalPushed: counts?.TotalPushed ?? metrics?.TotalPushed ?? 0,
+                TotalPulled: counts?.TotalPulled ?? metrics?.TotalPulled ?? 0,
                 DeferredPending: metrics?.DeferredReplayed ?? 0
             ),
             EnrolledProjects: enrolled.Select(e => e.Project).ToList(),

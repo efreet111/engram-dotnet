@@ -2062,6 +2062,27 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(list);
     }
 
+    public Task<SyncMutationCounts> GetSyncMutationCountsAsync(string targetKey, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT
+                SUM(CASE WHEN source = 'local' AND acked_at IS NOT NULL THEN 1 ELSE 0 END) AS total_pushed,
+                SUM(CASE WHEN source = 'pull' AND acked_at IS NOT NULL THEN 1 ELSE 0 END) AS total_pulled
+            FROM sync_mutations
+            WHERE target_key = @target";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+
+        using var r = cmd.ExecuteReader();
+        if (r.Read())
+        {
+            var pushed = r.IsDBNull(0) ? 0 : r.GetInt64(0);
+            var pulled = r.IsDBNull(1) ? 0 : r.GetInt64(1);
+            return Task.FromResult(new SyncMutationCounts(pushed, pulled));
+        }
+        return Task.FromResult(new SyncMutationCounts(0, 0));
+    }
+
     public Task EnrollProjectLocalAsync(string project)
     {
         using var cmd = _db.CreateCommand();

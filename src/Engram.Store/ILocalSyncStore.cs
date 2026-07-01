@@ -24,6 +24,12 @@ public interface ILocalSyncStore
     Task<List<PendingProjectCount>> CountPendingNonEnrolledAsync(string targetKey, CancellationToken ct = default);
 
     /// <summary>
+    /// Get total pushed and pulled mutation counts from the database.
+    /// Used to provide accurate counts in /sync/status even after process restart.
+    /// </summary>
+    Task<SyncMutationCounts> GetSyncMutationCountsAsync(string targetKey, CancellationToken ct = default);
+
+    /// <summary>
     /// Acknowledge that mutations with given seqs have been successfully pushed.
     /// </summary>
     Task AckSyncMutationSeqsAsync(string targetKey, IReadOnlyList<long> seqs, CancellationToken ct = default);
@@ -125,6 +131,13 @@ public sealed record SyncMutation(
 public sealed record PendingProjectCount(
     string Project,
     long Count);
+
+/// <summary>
+/// Counts of sync mutations by source.
+/// </summary>
+public sealed record SyncMutationCounts(
+    long TotalPushed,
+    long TotalPulled);
 
 /// <summary>
 /// Result of deferred replay operation.
