@@ -1,6 +1,6 @@
 # ADR-008: Self-loop detection for SyncManager
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-01
 **Deciders:** victor
 **Related:** ENG-452, ADR-007, ENG-451
@@ -28,9 +28,11 @@ The FlowForge installer (v0.1.0-alpha.6) installs in `mode=sync` but does **not*
 
 The SyncManager is disabled if any of these match:
 
-1. `ENGRAM_SERVER_URL` is unset AND `cfg.Host == "0.0.0.0"` (or any) AND `port` is the same as the configured port — i.e. the default `http://localhost:{port}` would equal the server's own address.
-2. `ENGRAM_SERVER_URL` is set explicitly to `http://localhost:{port}` (or `http://127.0.0.1:{port}`) where `{port}` matches the server port.
-3. `ENGRAM_SERVER_URL` is set to a URL where host resolves to the same loopback address AND port matches.
+1. `ENGRAM_SERVER_URL` is unset, so the default `http://localhost:{port}` is used — and that port matches the server's own port. The server binds to `0.0.0.0` (wildcard), so a request to `localhost:{port}` reaches the same process.
+2. `ENGRAM_SERVER_URL` is set explicitly to `http://localhost:{port}` (or `http://127.0.0.1:{port}`, `http://[::1]:{port}`) where `{port}` matches the server port.
+3. `ENGRAM_SERVER_URL` is set to a URL where host resolves to a loopback name AND port matches.
+
+DNS resolution is intentionally avoided — the check is purely lexical against literal loopback names (`localhost`, `127.0.0.1`, `::1`). This keeps startup fast and offline-safe.
 
 ### Behavior when self-loop detected
 
@@ -73,33 +75,36 @@ The FlowForge installer cannot know the user's intended sync target — that is 
 
 ## Implementation
 
-In `EngramServer.cs`, change the SyncManager registration block to:
+In `src/Engram.Server/EngramServer.cs`, the SyncManager registration block (lines 57-92) now resolves the sync URL once, checks for self-loop, and either logs a warning + skips registration or registers normally.
 
-```csharp
-if (syncConfig.Enabled && store is ILocalSyncStore localSyncStore)
-{
-    var remoteUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
-    var resolvedUrl = !string.IsNullOrEmpty(remoteUrl)
-        ? remoteUrl.TrimEnd('/')
-        : $"http://localhost:{cfg.Port}";
-
-    if (IsSelfLoop(resolvedUrl, cfg))
-    {
-        // Log warning and skip SyncManager registration
-    }
-    else
-    {
-        // Register SyncManager as before
-    }
-}
-```
-
-`IsSelfLoop` parses the URL, compares host:port against the server's bind address and port. Treats `0.0.0.0`, `localhost`, and `127.0.0.1` as loopback.
+The helper `IsSyncSelfLoop(string resolvedSyncUrl, int serverPort)` is `public static` to be unit-testable without spinning up a full server. It returns `true` when:
+- The URL is `http` or `https`
+- The port matches the server's port (default port for scheme used if unspecified)
+- The host is a literal loopback name (`localhost`, `127.0.0.1`, `::1`)
 
 ## Test plan
 
-- Unit test: `IsSelfLoop("http://localhost:7437", port=7437)` → `true`
-- Unit test: `IsSelfLoop("http://192.168.1.5:7437", port=7437)` → `false`
-- Unit test: `IsSelfLoop("http://localhost:8000", port=7437)` → `false`
-- Integration test: `engram serve` with no `ENGRAM_SERVER_URL` → warning logged, no SyncManager, no 501 spam
-- Integration test: `engram serve` with valid remote URL → SyncManager registers, no warning
+Unit tests in `tests/Engram.Server.Tests/SyncSelfLoopDetectionTests.cs` (12 cases):
+
+| Input | Server port | Expected |
+|-------|-------------|----------|
+| `http://localhost:7437` | 7437 | `true` |
+| `http://127.0.0.1:7437` | 7437 | `true` |
+| `http://LOCALHOST:7437` | 7437 | `true` (case-insensitive) |
+| `http://[::1]:7437` | 7437 | `true` |
+| `http://192.168.1.5:7437` | 7437 | `false` |
+| `http://10.0.0.1:7437` | 7437 | `false` |
+| `http://sync.example.com:7437` | 7437 | `false` |
+| `http://localhost:8000` | 7437 | `false` (port mismatch) |
+| `http://127.0.0.1:9999` | 7437 | `false` (port mismatch) |
+| `not-a-url` | 7437 | `false` (parse failure) |
+| `""` (empty) | 7437 | `false` (parse failure) |
+| `ftp://localhost:7437` | 7437 | `false` (unsupported scheme) |
+
+Integration verification (manual): running `engram serve` locally on a fresh install now shows the warning and produces no 501 spam. To verify in your local environment:
+
+```bash
+pkill -f "engram serve"
+engram serve 2>&1 | head -20
+# Expect: "[engram] warning: SyncManager disabled — ENGRAM_SERVER_URL points to this server itself"
+```
