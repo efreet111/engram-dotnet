@@ -173,6 +173,13 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
                 return;
             }
 
+            // Re-apply any orphaned pulled mutations from a previous interrupted sync.
+            // Must run BEFORE push because push may be blocked by non-enrolled projects,
+            // and the cycle will return early without reaching this step otherwise.
+            var reapplyCount = await _store.ReapplyPendingPulledMutationsAsync(_cfg.TargetKey, ct);
+            if (reapplyCount > 0)
+                _logger.LogInformation("SyncManager recovered {Count} orphaned pulled mutations", reapplyCount);
+
             SetPhase(SyncPhase.Pushing);
             failedDuringPush = true;
             await PushAsync(ct);
@@ -184,11 +191,6 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
                 DeferredReplay(_logger, replayResult.ReplayCount, replayResult.DeadCount, null);
                 _metrics.RecordDeferred(replayResult.ReplayCount, replayResult.DeadCount);
             }
-
-            // Re-apply any orphaned pulled mutations from a previous interrupted sync
-            var reapplyCount = await _store.ReapplyPendingPulledMutationsAsync(_cfg.TargetKey, ct);
-            if (reapplyCount > 0)
-                _logger.LogInformation("SyncManager recovered {Count} orphaned pulled mutations", reapplyCount);
 
             SetPhase(SyncPhase.Pulling);
             await PullAsync(ct);
