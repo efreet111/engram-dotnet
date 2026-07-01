@@ -114,8 +114,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 32 | ENG-449 | P1 | Bug | `PruneProjectAsync`: no transaction — 2 DELETEs without atomicity | ✅ Done | S | ← ENG-440 audit | Fix: wrap in transaction with try/catch |
 | 33 | ENG-450 | P1 | Bug | `PruneOldObservationsAsync`: no transaction — UPDATEs by type without atomicity | ✅ Done | S | ← ENG-440 audit | Fix: wrap per-type loop in transaction with try/catch |
 | — | **Sync recovery — bugs encontrados en testing (2026-06-29)** |
-| 34 | ENG-451 | P0 | Bug | **BUG-1 (P0)**: `SyncManager` no re-aplica mutaciones pulled huérfanas al recuperar de `lifecycle=blocked`. Mutaciones con `source='pull' AND acked_at IS NULL` nunca se aplican a `observations`. Data loss silenciosa. | Ready | M | ← ADR-007 spike | [ADR-007](../docs/architecture/adr/ADR-007-sync-blocked-recovery.md) |
-| 35 | ENG-451b | P1 | Bug | **BUG-2 (P1)**: `engram sync status` muestra contadores en 0 porque lee memoria del proceso, no SQLite. Información falsa en scripts y CI. | Ready | S | ← ADR-007 spike | Mismo ADR-007, fix en `Engram.Cli sync status` |
+| 34 | ENG-451 | P0 | Bug | **BUG-1 (P0)**: `SyncManager` no re-aplica mutaciones pulled huérfanas al recuperar de `lifecycle=blocked`. Mutaciones con `source='pull' AND acked_at IS NULL` nunca se aplican a `observations`. Data loss silenciosa. | ✅ Done | M | ← ADR-007 spike | `6ba2674` — InsertPulledMutationAsync + ReapplyPendingPulledMutationsAsync + HandleSyncStatusAsync fix |
+| 35 | ENG-451b | P1 | Bug | **BUG-2 (P1)**: `engram sync status` muestra contadores en 0 porque lee memoria del proceso, no SQLite. Información falsa en scripts y CI. | ✅ Done | S | ← ADR-007 spike | `12b97a9` — GetSyncMutationCountsAsync desde BD para conteos precisos |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | Ready | M | ← audit OSS 2026-06-23 | Bloqueado por ENG-436 (sync pull roto) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
@@ -467,6 +467,8 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 **Esfuerzo:** M (3-4h)
 
+**Estado:** ✅ Done — commits `6ba2674` (BUG-1) y `12b97a9` (BUG-2)
+
 ---
 
 **BUG-2 — P1 (información falsa):**
@@ -476,8 +478,9 @@ SELECT * FROM observations WHERE project='team/flowforge';
 **Fix:** `sync status` debe leer directamente de `sync_state` en SQLite (`ILocalSyncStore`), no del estado en memoria del proceso.
 
 **Criterios:**
-- [ ] `engram sync status` desde CLI fresco muestra mismo resultado que `SELECT * FROM sync_state` en SQLite
-- [ ] Funciona en scripts y CI
+- [x] `engram sync status` desde CLI fresco muestra conteos desde BD
+- [x] Funciona en scripts y CI
+- [x] Fix: `GetSyncMutationCountsAsync` + `HandleSyncStatusAsync` fallback chain
 
 **Esfuerzo:** S (1-2h)
 
