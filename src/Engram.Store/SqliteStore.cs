@@ -2167,7 +2167,78 @@ CREATE TABLE IF NOT EXISTS observations (
                 ApplyPromptDelete(mutation);
                 break;
         }
+
+        // Mark as acked in sync_mutations after applying
+        if (mutation.Seq > 0)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "UPDATE sync_mutations SET acked_at = datetime('now') WHERE target_key = @target AND seq = @seq AND acked_at IS NULL";
+            cmd.Parameters.AddWithValue("@target", targetKey);
+            cmd.Parameters.AddWithValue("@seq", mutation.Seq);
+            cmd.ExecuteNonQuery();
+        }
+
         return Task.CompletedTask;
+    }
+
+    public Task<long> InsertPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project, occurred_at)
+            VALUES (@target, @entity, @key, @op, @payload, 'pull', @project, @occurredAt)";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@entity", mutation.Entity);
+        cmd.Parameters.AddWithValue("@key", mutation.EntityKey);
+        cmd.Parameters.AddWithValue("@op", mutation.Op);
+        cmd.Parameters.AddWithValue("@payload", mutation.Payload);
+        cmd.Parameters.AddWithValue("@project", mutation.Project);
+        cmd.Parameters.AddWithValue("@occurredAt", mutation.OccurredAt.ToString("O"));
+        cmd.ExecuteNonQuery();
+
+        using var seqCmd = _db.CreateCommand();
+        seqCmd.CommandText = "SELECT last_insert_rowid()";
+        var seq = Convert.ToInt64(seqCmd.ExecuteScalar());
+        return Task.FromResult(seq);
+    }
+
+    public Task<int> ReapplyPendingPulledMutationsAsync(string targetKey, CancellationToken ct = default)
+    {
+        int count = 0;
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT seq, target_key, entity, entity_key, op, payload, source, project, occurred_at, acked_at
+            FROM sync_mutations
+            WHERE target_key = @target AND source = 'pull' AND acked_at IS NULL
+            ORDER BY seq ASC";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+
+        using var r = cmd.ExecuteReader();
+        var pending = new List<SyncMutation>();
+        while (r.Read())
+        {
+            pending.Add(new SyncMutation(
+                r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3),
+                r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7),
+                DateTime.Parse(r.GetString(8)), r.IsDBNull(9) ? null : r.GetString(9)
+            ));
+        }
+        r.Close();
+
+        foreach (var mutation in pending)
+        {
+            try
+            {
+                ApplyPulledMutationAsync(targetKey, mutation, ct).Wait(ct);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to reapply pulled mutation seq={Seq}", mutation.Seq);
+            }
+        }
+
+        return Task.FromResult(count);
     }
 
     private void ApplySessionUpsert(SyncMutation mutation)

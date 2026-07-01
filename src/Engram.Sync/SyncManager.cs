@@ -185,6 +185,11 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
                 _metrics.RecordDeferred(replayResult.ReplayCount, replayResult.DeadCount);
             }
 
+            // Re-apply any orphaned pulled mutations from a previous interrupted sync
+            var reapplyCount = await _store.ReapplyPendingPulledMutationsAsync(_cfg.TargetKey, ct);
+            if (reapplyCount > 0)
+                _logger.LogInformation("SyncManager recovered {Count} orphaned pulled mutations", reapplyCount);
+
             SetPhase(SyncPhase.Pulling);
             await PullAsync(ct);
 
@@ -267,7 +272,10 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
 
             foreach (var mutation in result.Mutations)
             {
-                var syncMutation = new SyncMutation(mutation.Seq, _cfg.TargetKey, mutation.Entity, mutation.EntityKey, mutation.Op, mutation.Payload, "pull", mutation.Project, DateTime.Parse(mutation.OccurredAt), null);
+                // Insert into sync_mutations first to get local seq, then apply
+                var tempMutation = new SyncMutation(0, _cfg.TargetKey, mutation.Entity, mutation.EntityKey, mutation.Op, mutation.Payload, "pull", mutation.Project, DateTime.Parse(mutation.OccurredAt), null);
+                var localSeq = await _store.InsertPulledMutationAsync(_cfg.TargetKey, tempMutation, ct);
+                var syncMutation = new SyncMutation(localSeq, _cfg.TargetKey, mutation.Entity, mutation.EntityKey, mutation.Op, mutation.Payload, "pull", mutation.Project, DateTime.Parse(mutation.OccurredAt), null);
                 await _store.ApplyPulledMutationAsync(_cfg.TargetKey, syncMutation, ct);
                 sinceSeq = mutation.Seq;
                 totalPulled++;

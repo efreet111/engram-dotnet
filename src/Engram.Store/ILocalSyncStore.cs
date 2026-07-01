@@ -51,6 +51,20 @@ public interface ILocalSyncStore
     Task ApplyPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default);
 
     /// <summary>
+    /// Insert a pulled mutation into sync_mutations before applying.
+    /// Used by SyncManager to track pulled mutations for recovery.
+    /// Returns the local seq assigned by the database.
+    /// </summary>
+    Task<long> InsertPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-apply pending pulled mutations (source='pull' AND acked_at IS NULL).
+    /// Called on startup or after blocked recovery to handle orphaned mutations.
+    /// Returns count of re-applied mutations.
+    /// </summary>
+    Task<int> ReapplyPendingPulledMutationsAsync(string targetKey, CancellationToken ct = default);
+
+    /// <summary>
     /// Replay deferred relations that failed due to FK misses.
     /// Returns count of successfully replayed and dead rows.
     /// </summary>
