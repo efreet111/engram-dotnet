@@ -58,23 +58,38 @@ public static class EngramServer
         var syncConfig = SyncManagerConfig.FromEnvironment();
         if (syncConfig.Enabled && store is ILocalSyncStore localSyncStore)
         {
-            var syncMetrics = new SyncMetrics();
-            builder.Services.AddHttpClient("sync");
-            builder.Services.AddSingleton(syncConfig);
-            builder.Services.AddSingleton(syncMetrics);
-            builder.Services.AddSingleton<IMutationTransport>(sp =>
+            // Resolve the sync target URL from ENGRAM_SERVER_URL (default: localhost:{port}).
+            // Detect self-loop: if the target is the same process hosting this server,
+            // skip SyncManager registration with a clear warning. See ADR-008.
+            var remoteUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+            var resolvedSyncUrl = !string.IsNullOrEmpty(remoteUrl)
+                ? remoteUrl.TrimEnd('/')
+                : $"http://localhost:{cfg.Port}";
+
+            if (IsSyncSelfLoop(resolvedSyncUrl, cfg.Port))
             {
-                var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
-                // Use ENGRAM_SERVER_URL if set (remote sync), otherwise fallback to localhost
-                var remoteUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
-                var syncUrl = !string.IsNullOrEmpty(remoteUrl)
-                    ? remoteUrl.TrimEnd('/')
-                    : $"http://localhost:{cfg.Port}";
-                return new MutationTransport(httpClient, syncUrl, cfg.User);
-            });
-            builder.Services.AddSingleton<SyncManager>(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
-            builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
-            builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncManager>());
+                Console.Error.WriteLine(
+                    $"[engram] warning: SyncManager disabled — ENGRAM_SERVER_URL points to this server itself");
+                Console.Error.WriteLine($"[engram]   configured: {resolvedSyncUrl}");
+                Console.Error.WriteLine($"[engram]   this server: http://0.0.0.0:{cfg.Port}");
+                Console.Error.WriteLine(
+                    $"[engram]   Set ENGRAM_SERVER_URL to a remote sync server, or ENGRAM_SYNC_ENABLED=false to silence this warning.");
+            }
+            else
+            {
+                var syncMetrics = new SyncMetrics();
+                builder.Services.AddHttpClient("sync");
+                builder.Services.AddSingleton(syncConfig);
+                builder.Services.AddSingleton(syncMetrics);
+                builder.Services.AddSingleton<IMutationTransport>(sp =>
+                {
+                    var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("sync");
+                    return new MutationTransport(httpClient, resolvedSyncUrl, cfg.User);
+                });
+                builder.Services.AddSingleton<SyncManager>(sp => new SyncManager(localSyncStore, sp.GetRequiredService<IMutationTransport>(), syncConfig, sp.GetRequiredService<ILogger<SyncManager>>(), syncMetrics));
+                builder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
+                builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncManager>());
+            }
         }
 
         // CORS (optional — driven by ENGRAM_CORS_ORIGINS)
@@ -689,11 +704,48 @@ public static class EngramServer
         if (string.IsNullOrWhiteSpace(scope)) return null;
         var s = scope.Trim().ToLowerInvariant();
         
-        // "project" is legacy alias for personal
+        // "project" legacy alias for personal
         if (s == "personal" || s == "project")
             return $"personal:{userId}";
             
         return s;
+    }
+
+    /// <summary>
+    /// Detect self-loop: returns true if the resolved sync URL points to the same
+    /// loopback host:port as the server hosting this process. See ADR-008.
+    ///
+    /// Note: the server binds to 0.0.0.0:{port} (wildcard), so any loopback name
+    /// pointing at the same port reaches the same process. We avoid DNS lookups
+    /// to keep startup fast and offline-safe.
+    /// </summary>
+    public static bool IsSyncSelfLoop(string resolvedSyncUrl, int serverPort)
+    {
+        if (!Uri.TryCreate(resolvedSyncUrl, UriKind.Absolute, out var uri))
+            return false;
+
+        // Only http/https schemes; anything else is not a self-loop in this sense.
+        if (uri.Scheme != "http" && uri.Scheme != "https")
+            return false;
+
+        var syncPort = uri.IsDefaultPort ? DefaultPortForScheme(uri.Scheme) : uri.Port;
+        if (syncPort != serverPort)
+            return false;
+
+        return IsLocalAddress(uri.Host);
+    }
+
+    private static int DefaultPortForScheme(string scheme) => scheme switch
+    {
+        "http" => 80,
+        "https" => 443,
+        _ => 0,
+    };
+
+    private static bool IsLocalAddress(string host)
+    {
+        var h = host.ToLowerInvariant();
+        return h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]";
     }
 
     // ─── Request bodies ─────────────────────────────────────────────────────
