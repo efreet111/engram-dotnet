@@ -2,10 +2,12 @@
 adr: 007
 title: "SyncManager: re-aplicar mutaciones pulled pendientes al recuperar de estado blocked"
 date: 2026-06-29
-status: proposed
+status: accepted
 authors:
   - victor
 origin: "FlowForge spike-engram-sync — .ai-work/spike-engram-sync/spec.md#FR-007"
+implemented: 2026-07-01
+verified: 2026-07-01
 ---
 
 # ADR-007: SyncManager — recovery de mutaciones pulled pendientes
@@ -93,10 +95,30 @@ Implementar ambos fixes antes del próximo release de `engram-dotnet`.
 
 ## Tests requeridos
 
-- [ ] Fixture: DB con `sync_mutations WHERE source='pull' AND acked_at IS NULL`
+- [x] Fixture: DB con `sync_mutations WHERE source='pull' AND acked_at IS NULL`
       → ciclo → verificar que `observations` tiene el registro
-- [ ] `engram sync status` desde CLI fresco → mismo resultado que SQLite directo
-- [ ] No-duplicación: si la observación ya existe, el re-apply no debe duplicarla
+  - **Verificado 2026-07-01**: 3 mutaciones huérfanas en `~/.engram/engram.db` del cliente
+    fueron recuperadas por `ReapplyPendingPulledMutationsAsync()` tras reiniciar
+    `engram serve` con el binario nuevo (MD5 `518be1f9...`). Log:
+    `SyncManager recovered 3 orphaned pulled mutations`.
+- [x] `engram sync status` desde CLI fresco → mismo resultado que SQLite directo
+  - **Verificado 2026-07-01**: `Total pulled: 5580` después de reiniciar (antes mostraba 0).
+    Ahora lee desde `GetSyncMutationCountsAsync()` en SQLite.
+- [x] No-duplicación: si la observación ya existe, el re-apply no debe duplicarla
+  - Cubierto por tests existentes en `tests/Engram.Store.Tests/SqliteStoreApplyPulledTests.cs`:
+    todos los métodos `Apply*` son idempotentes (upsert con `ON CONFLICT DO UPDATE`).
+
+## Commits
+
+| Bug | Commit | Descripción |
+|-----|--------|-------------|
+| BUG-1 (recovery) | `6ba2674` | `InsertPulledMutationAsync` + `ReapplyPendingPulledMutationsAsync` + `ApplyPulledMutationAsync` marca `acked_at` |
+| BUG-1 (cycle order) | `5e20f80` | Mover `ReapplyPendingPulledMutationsAsync` ANTES del push (antes del blocked) |
+| BUG-2 (counts) | `12b97a9` | `GetSyncMutationCountsAsync` desde BD en `HandleSyncStatusAsync` |
+
+## Status
+
+✅ **Implementado y verificado en producción** (2026-07-01).
 
 ## Referencias
 
