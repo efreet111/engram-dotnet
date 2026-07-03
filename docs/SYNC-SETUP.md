@@ -260,5 +260,23 @@ crit: SyncManager[2006] Panic exit: ...
 | Push fails with 500 | Old binary on server | `docker compose up -d --build` |
 | Pull returns no data | Project not enrolled | `POST /sync/enroll` |
 | SyncManager in backoff | Too many consecutive failures | Check server logs |
-| Mutation transport 501 | SQLite backend (no ICloudMutationStore) | Use PostgreSQL |
+| `Mutation transport 501` logs every 30ms | **Self-loop** — `ENGRAM_SERVER_URL` points back at the same `engram serve` process, or is unset (default `localhost:7437`). Since ENG-452, the SyncManager detects this and shows a clear warning; on older binaries it spams 501. | Set `ENGRAM_SERVER_URL` to the real sync target, or `ENGRAM_SYNC_ENABLED=false` to silence. See [ADR-008](architecture/adr/ADR-008-sync-self-loop-detection.md). |
 | Address already in use | Port 7437 occupied | `fuser -k 7437/tcp` |
+
+### Diagnostic — self-loop warning (ENG-452)
+
+Starting with v0.4.0, `engram serve` detects when `ENGRAM_SERVER_URL` would
+point back at the local process and disables the SyncManager with a one-time
+stderr warning rather than logging 501 forever:
+
+```
+[engram] warning: SyncManager disabled — ENGRAM_SERVER_URL points to this server itself
+[engram]   configured: http://localhost:7437
+[engram]   this server: http://0.0.0.0:7437
+[engram]   Set ENGRAM_SERVER_URL to a remote sync server, or ENGRAM_SYNC_ENABLED=false to silence this warning.
+```
+
+The server continues to accept HTTP traffic and local writes; only the
+background push/pull cycle is skipped. To enable remote sync, set
+`ENGRAM_SERVER_URL` to the relay server (the TrueNAS PostgreSQL-backed
+server in most deployments).
