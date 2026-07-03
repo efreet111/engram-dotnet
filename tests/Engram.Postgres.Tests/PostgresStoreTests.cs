@@ -1011,6 +1011,50 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     // ─── ENG-435: Dry-run immutability + mid-migration rollback ──────────────
 
     /// <summary>
+    /// Installs a sabotage trigger that raises on any UPDATE to the sessions table.
+    /// Used by MigrateProject_MidMigrationFailure_RollsBackCompletely to deterministically
+    /// fail the 2nd of 3 UPDATEs in MigrateProjectAsync.
+    /// </summary>
+    private async Task InstallSabotageTriggerAsync()
+    {
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        using var triggerCmd = conn.CreateCommand();
+        triggerCmd.CommandText = @"
+            CREATE OR REPLACE FUNCTION eng435_sabotage_trigger() RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'eng435-test: mid-migration failure';
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
+            CREATE TRIGGER eng435_sabotage BEFORE UPDATE ON sessions
+                FOR EACH ROW EXECUTE FUNCTION eng435_sabotage_trigger();";
+        await triggerCmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Removes the sabotage trigger and its function. Idempotent (DROP IF EXISTS).
+    /// </summary>
+    private async Task RemoveSabotageTriggerAsync()
+    {
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        try
+        {
+            await conn.OpenAsync();
+            using var dropCmd = conn.CreateCommand();
+            dropCmd.CommandText = @"
+                DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
+                DROP FUNCTION IF EXISTS eng435_sabotage_trigger();";
+            await dropCmd.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            // Best-effort cleanup — never let cleanup failures mask the original test failure.
+        }
+    }
+
+    /// <summary>
     /// Seeds observations, sessions, and prompts under a single project so the
     /// migration has rows to count. Returns the expected counts.
     /// </summary>
@@ -1130,40 +1174,19 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var target = "new-proj";
         await SeedMigrationFixtureAsync(source);
 
-        // Install sabotage trigger: any UPDATE on sessions raises an exception.
-        // This is the only way to deterministically fail the 2nd of 3 UPDATEs
-        // in a single transaction without modifying production code.
-        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        // Install sabotage trigger wrapped in try/finally so cleanup runs even on
+        // assertion failures. The trigger raises on any UPDATE to sessions.
+        await InstallSabotageTriggerAsync();
+        try
         {
-            await conn.OpenAsync();
-            using var triggerCmd = conn.CreateCommand();
-            triggerCmd.CommandText = @"
-                CREATE OR REPLACE FUNCTION eng435_sabotage_trigger() RETURNS trigger AS $$
-                BEGIN
-                    RAISE EXCEPTION 'eng435-test: mid-migration failure';
-                END;
-                $$ LANGUAGE plpgsql;
-
-                DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
-                CREATE TRIGGER eng435_sabotage BEFORE UPDATE ON sessions
-                    FOR EACH ROW EXECUTE FUNCTION eng435_sabotage_trigger();";
-            triggerCmd.ExecuteNonQuery();
+            // Act + Assert: MigrateProjectAsync throws and does NOT partially migrate
+            var ex = await Assert.ThrowsAsync<PostgresException>(
+                () => _fixture.Store.MigrateProjectAsync(source, target));
+            Assert.Contains("eng435-test", ex.MessageText);
         }
-
-        // Act + Assert: MigrateProjectAsync throws and does NOT partially migrate
-        var ex = await Assert.ThrowsAsync<PostgresException>(
-            () => _fixture.Store.MigrateProjectAsync(source, target));
-        Assert.Contains("eng435-test", ex.MessageText);
-
-        // Cleanup: drop the sabotage trigger
-        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        finally
         {
-            await conn.OpenAsync();
-            using var dropCmd = conn.CreateCommand();
-            dropCmd.CommandText = @"
-                DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
-                DROP FUNCTION IF EXISTS eng435_sabotage_trigger();";
-            dropCmd.ExecuteNonQuery();
+            await RemoveSabotageTriggerAsync();
         }
 
         // Assert: rollback was complete — every row still belongs to source, none to target
