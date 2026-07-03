@@ -101,7 +101,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 15 | ENG-432 | P2 | Feature | CLI: `engram project id` — mostrar/regenerar project_id | Done | S | ← ENG-410 | `Program.cs:485` project id --json --regenerate --set -y |
 | 16 | ENG-433 | P2 | Feature | Auto-generación de `.engram-id` en startup | Done | S | ← ENG-410 | `src/Engram.Store/ProjectIdentity.cs:105` TryAutoEnroll + `--auto-enroll` CLI flag + 5 tests |
 | 17 | ENG-434 | P2 | Feature | Migración `project` string → GUID canónico (v1.1) | Icebox | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — solo 3 usuarios internos; ENG-435 cubre el caso de uso |
-| 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | Rework | M | ← ENG-410 + ENG-432 | [spec](../.ai-work/eng-435-legacy-migration/spec.md) · [rework_ticket](../.ai-work/eng-435-legacy-migration/rework_ticket.md) cycle 1/3 |
+| 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | ✅ Done | M | ← ENG-410 + ENG-432 | `e906041` + `4be21df` — code fixes verificados, 2 integration tests añadidos (dry-run inmutabilidad + mid-migration rollback). Cierra rework cycle 2/3. |
 | — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
 | 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging done, PM-7 pending |
 | 20 | ENG-437 | P0 | Chore | Release v0.4.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Ready | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |

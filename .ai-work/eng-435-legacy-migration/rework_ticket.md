@@ -1,7 +1,7 @@
 ---
-cycle_count: 1
+cycle_count: 2
 max_cycles: 3
-status: "rejected"
+status: "resolved"
 ---
 # Rework Ticket — ENG-435: Legacy Identity Migration Toolkit
 
