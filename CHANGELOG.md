@@ -5,7 +5,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **ENG-451 (BUG-1)**: SyncManager recovery for orphaned pulled mutations. New methods on `ILocalSyncStore`: `InsertPulledMutationAsync` (records pulled mutations in `sync_mutations` with `source='pull'`), `ReapplyPendingPulledMutationsAsync` (re-applies `source='pull' AND acked_at IS NULL` mutations on each cycle, runs BEFORE push so it works even when sync is blocked). Also adds `ack` step to `ApplyPulledMutationAsync` (was missing — left orphaned rows on interruption). Commits `6ba2674`, `5e20f80`. See ADR-007.
+- **ENG-451 (BUG-2)**: `engram sync status` reads mutation counts from SQLite via new `GetSyncMutationCountsAsync` (was reading in-memory `SyncMetrics` which reset to 0 on every server restart). New `SyncMutationCounts` record type on `ILocalSyncStore`. `HandleSyncStatusAsync` uses DB counts as primary source with metrics fallback. Commit `12b97a9`.
+- **ENG-452**: `engram serve` detects self-loop (SyncManager pointing at the same process) and disables the SyncManager with a clear stderr warning instead of looping on 501 every 30ms. Detection is purely lexical against literal loopback names (`localhost`, `127.0.0.1`, `::1`) — no DNS, no startup delay. Public static `IsSyncSelfLoop(string, int)` for unit testing. See ADR-008. Commit `fec9d73`.
+- **ENG-435 cycle 2**: Two integration tests in `tests/Engram.Postgres.Tests/PostgresStoreTests.cs` covering the migration rework acceptance criteria: `MigrateProject_DryRun_DoesNotModifyData` (asserts CLI dry-run path leaves all rows untouched), `MigrateProject_MidMigrationFailure_RollsBackCompletely` (installs sabotage trigger on `sessions`, asserts transaction rolls back preceding UPDATE on `observations`). Trigger install/remove extracted into helpers and wrapped in `try/finally` for guaranteed cleanup. Commits `4be21df`, `62c1194`.
+
 ### Fixed
+
+- **ENG-451 (BUG-1)**: SyncManager no longer leaves orphaned pulled mutations in `sync_mutations` when interrupted — every pulled mutation is now tracked and re-applied on next cycle, fixing silent data loss after `lifecycle=blocked → healthy` recovery.
+- **ENG-452**: 501 spam in logs every 30ms when running `engram serve` locally without `ENGRAM_SERVER_URL`. Now shows one clear warning and skips the SyncManager instead.
 - **release.yml**: native SQLite libraries (`libe_sqlite3.so` para Linux, `e_sqlite3.dll` para Windows) ahora incluidos como assets del release. Corrige `DllNotFoundException` al ejecutar `engram serve` en sistemas sin SQLite preinstalado.
 - **release.yml**: SHA-256 checksums generados para todos los assets (8 archivos en total).
 - **release.yml**: `dotnet restore` ahora especifica runtimes `linux-x64` y `win-x64` para evitar `NETSDK1047` en el publish.

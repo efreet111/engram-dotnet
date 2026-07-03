@@ -1,6 +1,6 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-06-01  
+> **Last updated**: 2026-07-01  
 > **Current version**: `main` (post MCP sync fix + multi-editor setup)
 
 **Orden de trabajo (qué hacer ahora):** [BACKLOG.md](BACKLOG.md) — cola única con IDs `ENG-xxx`.  
@@ -32,6 +32,9 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | Docker MCP permissions | `bf01f18` | `/app/docs` en ambos Dockerfiles |
 | MCP sync startup fix | `a7f45eb` | `engram mcp` + `ENGRAM_SYNC_ENABLED` sin crash DI |
 | MCP multi-editor setup | (pending commit) | `config/mcp/`, `scripts/setup.ps1`, `INSTALL.md` |
+| ENG-451 BUG-1 + BUG-2 | `6ba2674` `12b97a9` `5e20f80` | Sync recovery for orphaned pulled mutations + accurate `/sync/status` counts from DB. See ADR-007. |
+| ENG-452 | `fec9d73` | Self-loop detection — `engram serve` with SQLite no longer wastes CPU on doomed 501s. See ADR-008. |
+| ENG-435 rework cycle 2 | `4be21df` `62c1194` | Migration dry-run + mid-migration rollback integration tests. Closes rework cycle 2/3. |
 
 ---
 
