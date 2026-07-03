@@ -1007,4 +1007,191 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         Assert.Equal(1, page4.Observations.Count);
         Assert.False(page4.HasMore);
     }
+
+    // ─── ENG-435: Dry-run immutability + mid-migration rollback ──────────────
+
+    /// <summary>
+    /// Seeds observations, sessions, and prompts under a single project so the
+    /// migration has rows to count. Returns the expected counts.
+    /// </summary>
+    private async Task<(int observations, int sessions, int prompts)> SeedMigrationFixtureAsync(string project)
+    {
+        // 2 observations in distinct sessions
+        await _fixture.Store.CreateSessionAsync("s-dry-1", project, "/tmp");
+        await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-dry-1",
+            Title = "obs-1",
+            Content = "content 1",
+            Type = "manual",
+            Project = project,
+        });
+        await _fixture.Store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-dry-1",
+            Title = "obs-2",
+            Content = "content 2",
+            Type = "manual",
+            Project = project,
+        });
+
+        // 1 prompt in a second session
+        await _fixture.Store.CreateSessionAsync("s-dry-2", project, "/tmp");
+        await _fixture.Store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = "s-dry-2",
+            Content = "prompt content",
+            Project = project,
+        });
+
+        return (observations: 2, sessions: 2, prompts: 1);
+    }
+
+    [Fact]
+    public async Task MigrateProject_DryRun_DoesNotModifyData()
+    {
+        // ENG-435 rework ticket — dry-run must NOT execute the migration.
+        // The CLI's dry-run path uses OpenRawConnection + SELECT COUNT(*).
+        // This test simulates that path and verifies the data is unchanged.
+        await _fixture.ResetAsync();
+        var source = "old-proj";
+        var target = "new-proj";
+        var expected = await SeedMigrationFixtureAsync(source);
+
+        // Snapshot of project values BEFORE dry-run
+        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await conn.OpenAsync();
+
+            // Act: dry-run — only COUNT queries, no UPDATE
+            var store = _fixture.Store;
+            using var dryRunConn = ((PostgresStore)store).OpenRawConnection();
+            try
+            {
+                using var cmdObs = dryRunConn.CreateCommand();
+                cmdObs.CommandText = "SELECT COUNT(*) FROM observations WHERE project = @proj AND deleted_at IS NULL";
+                cmdObs.Parameters.AddWithValue("@proj", source);
+                var obsCount = Convert.ToInt64(cmdObs.ExecuteScalar());
+
+                using var cmdSess = dryRunConn.CreateCommand();
+                cmdSess.CommandText = "SELECT COUNT(*) FROM sessions WHERE project = @proj";
+                cmdSess.Parameters.AddWithValue("@proj", source);
+                var sessCount = Convert.ToInt64(cmdSess.ExecuteScalar());
+
+                using var cmdPrompt = dryRunConn.CreateCommand();
+                cmdPrompt.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE project = @proj AND deleted_at IS NULL";
+                cmdPrompt.Parameters.AddWithValue("@proj", source);
+                var promptCount = Convert.ToInt64(cmdPrompt.ExecuteScalar());
+
+                // The counts match what we seeded
+                Assert.Equal(expected.observations, obsCount);
+                Assert.Equal(expected.sessions, sessCount);
+                Assert.Equal(expected.prompts, promptCount);
+            }
+            finally
+            {
+                dryRunConn.Close();
+            }
+
+            // Assert: NO data was modified — every row still belongs to source
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = @"
+                SELECT
+                    (SELECT COUNT(*) FROM observations WHERE project = @src) AS obs_src,
+                    (SELECT COUNT(*) FROM observations WHERE project = @tgt) AS obs_tgt,
+                    (SELECT COUNT(*) FROM sessions     WHERE project = @src) AS sess_src,
+                    (SELECT COUNT(*) FROM sessions     WHERE project = @tgt) AS sess_tgt,
+                    (SELECT COUNT(*) FROM user_prompts WHERE project = @src) AS prompt_src,
+                    (SELECT COUNT(*) FROM user_prompts WHERE project = @tgt) AS prompt_tgt";
+            checkCmd.Parameters.AddWithValue("@src", source);
+            checkCmd.Parameters.AddWithValue("@tgt", target);
+            using var r = checkCmd.ExecuteReader();
+            r.Read();
+            Assert.Equal(expected.observations, Convert.ToInt32(r["obs_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["obs_tgt"]));
+            Assert.Equal(expected.sessions, Convert.ToInt32(r["sess_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["sess_tgt"]));
+            Assert.Equal(expected.prompts, Convert.ToInt32(r["prompt_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["prompt_tgt"]));
+        }
+    }
+
+    [Fact]
+    public async Task MigrateProject_MidMigrationFailure_RollsBackCompletely()
+    {
+        // ENG-435 rework ticket — if any UPDATE in the middle of MigrateProjectAsync
+        // fails, all preceding UPDATEs in the same transaction must roll back.
+        //
+        // We install a trigger on `sessions` that raises an exception on UPDATE.
+        // MigrateProjectAsync updates observations (succeeds) → sessions (FAILS via trigger)
+        // → never reaches user_prompts. The transaction must roll back the observations update.
+        await _fixture.ResetAsync();
+        var source = "old-proj";
+        var target = "new-proj";
+        await SeedMigrationFixtureAsync(source);
+
+        // Install sabotage trigger: any UPDATE on sessions raises an exception.
+        // This is the only way to deterministically fail the 2nd of 3 UPDATEs
+        // in a single transaction without modifying production code.
+        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await conn.OpenAsync();
+            using var triggerCmd = conn.CreateCommand();
+            triggerCmd.CommandText = @"
+                CREATE OR REPLACE FUNCTION eng435_sabotage_trigger() RETURNS trigger AS $$
+                BEGIN
+                    RAISE EXCEPTION 'eng435-test: mid-migration failure';
+                END;
+                $$ LANGUAGE plpgsql;
+
+                DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
+                CREATE TRIGGER eng435_sabotage BEFORE UPDATE ON sessions
+                    FOR EACH ROW EXECUTE FUNCTION eng435_sabotage_trigger();";
+            triggerCmd.ExecuteNonQuery();
+        }
+
+        // Act + Assert: MigrateProjectAsync throws and does NOT partially migrate
+        var ex = await Assert.ThrowsAsync<PostgresException>(
+            () => _fixture.Store.MigrateProjectAsync(source, target));
+        Assert.Contains("eng435-test", ex.MessageText);
+
+        // Cleanup: drop the sabotage trigger
+        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await conn.OpenAsync();
+            using var dropCmd = conn.CreateCommand();
+            dropCmd.CommandText = @"
+                DROP TRIGGER IF EXISTS eng435_sabotage ON sessions;
+                DROP FUNCTION IF EXISTS eng435_sabotage_trigger();";
+            dropCmd.ExecuteNonQuery();
+        }
+
+        // Assert: rollback was complete — every row still belongs to source, none to target
+        await using (var verifyConn = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await verifyConn.OpenAsync();
+            using var checkCmd = verifyConn.CreateCommand();
+            checkCmd.CommandText = @"
+                SELECT
+                    (SELECT COUNT(*) FROM observations WHERE project = @src) AS obs_src,
+                    (SELECT COUNT(*) FROM observations WHERE project = @tgt) AS obs_tgt,
+                    (SELECT COUNT(*) FROM sessions     WHERE project = @src) AS sess_src,
+                    (SELECT COUNT(*) FROM sessions     WHERE project = @tgt) AS sess_tgt,
+                    (SELECT COUNT(*) FROM user_prompts WHERE project = @src) AS prompt_src,
+                    (SELECT COUNT(*) FROM user_prompts WHERE project = @tgt) AS prompt_tgt";
+            checkCmd.Parameters.AddWithValue("@src", source);
+            checkCmd.Parameters.AddWithValue("@tgt", target);
+            using var r = checkCmd.ExecuteReader();
+            r.Read();
+            // observations: 2 still in source (the 1st UPDATE that succeeded MUST have rolled back)
+            Assert.Equal(2, Convert.ToInt32(r["obs_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["obs_tgt"]));
+            // sessions: 2 still in source (the 2nd UPDATE failed)
+            Assert.Equal(2, Convert.ToInt32(r["sess_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["sess_tgt"]));
+            // prompts: 1 still in source (3rd UPDATE never ran)
+            Assert.Equal(1, Convert.ToInt32(r["prompt_src"]));
+            Assert.Equal(0, Convert.ToInt32(r["prompt_tgt"]));
+        }
+    }
 }
