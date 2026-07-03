@@ -346,17 +346,35 @@ curl "http://localhost:7437/sync/mutations/pull?since_seq=0&project=team/mi-api&
 ```bash
 engram sync status
 
-# Output:
-# Sync status:          healthy
-# Target:               cloud
-# Last sync:            2026-05-20T16:00:00Z
-# Cursor: last_pushed=142, last_pulled=89
-# Health: failures=0, backoff=none
+# Output (text):
+# Sync status (mutation-based):
+#   Enabled:              True
+#   Phase:                backoff
+#   Health:               degraded
+#   Consecutive failures: 0
+#   Backoff until:        2026-07-01T18:14:15Z
+#   Last sync:            —
+#   Last error:           Mutation transport failed with status 501. Error: unknown
+#   Pending push:         0
+#   Total pushed:         0
+#   Total pulled:         5580   ← ENG-451 BUG-2 fix: from DB, not memory
+#   Last pushed seq:      0
+#   Last pulled seq:      1124
 ```
+
+> Counts (`Total pushed`, `Total pulled`) are read from `sync_mutations` in SQLite
+> via `GetSyncMutationCountsAsync` since ENG-451 BUG-2. They survive server
+> restarts and reflect the actual database state, not in-memory metrics.
 
 ```bash
 engram sync status --json | jq
 ```
+
+> Note: as of ENG-452, if `ENGRAM_SERVER_URL` is unset or points to the same
+> process hosting the server, `engram serve` shows
+> `warning: SyncManager disabled — ENGRAM_SERVER_URL points to this server itself`
+> and the sync cycle does not run. `engram sync status` will then show
+> `Phase: idle` and `Last sync: —` with no backing cycle. See ADR-008.
 
 ### engram doctor
 
