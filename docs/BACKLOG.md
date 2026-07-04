@@ -878,3 +878,30 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 **Por qué importa:** Sin auto-update, los fixes (ENG-451, ENG-452, ENG-435, ENG-437, etc.) no llegan al usuario automáticamente. La sesión de hoy requirió 4 rebuilds manuales (cliente + tests + actualización binario en `~/.local/bin`).
 
+
+### ENG-455 — `flowforge sync connect` command — Repo: FlowForge (cross-repo engram-dotnet)
+
+**Tipo:** Feature | **P1** | **Effort:** M | **Origen:** ← ENG-453 + sesión usuario 2026-07-01 ("la idea es... que podamos hacer este paso transparente")
+
+**Problema:** Para activar sync offline-first hoy día hay que:
+1. Saber que `ENGRAM_SERVER_URL` existe
+2. Setearlo en env
+3. Saber que `ENGRAM_SYNC_ENABLED` debe ser `"true"`
+4. Editar config MCP de cada IDE (cada uno con schema distinto)
+5. Reiniciar procesos `engram mcp` activos
+6. Verificar que sincroniza
+
+Documentado en `FlowForge/POST-INSTALL.md` §3. Imposible de descubrir para un usuario nuevo.
+
+**Propuesta:** Implementar `flowforge sync connect <url>` que automatiza los 6 pasos. Spec completo en `FlowForge/docs/decisions/ADR-009-flowforge-sync-connect.md`.
+
+**Criterios de aceptación:**
+- [ ] `flowforge sync connect <url>` valida server, persiste config, actualiza IDEs, reinicia MCPs
+- [ ] Idempotente: misma URL 2 veces = no-op
+- [ ] Detecta drift entre `~/.engram/config.json` y env vars del proceso (caso real del 2026-07-01)
+- [ ] `flowforge sync disconnect` revierte sin perder URL persistida
+- [ ] `flowforge sync status` muestra config + procesos activos + health del server
+- [ ] Atomic write para `~/.engram/config.json` (write .tmp → rename)
+
+**Depende de:** ENG-453 (FlowForge installer lee sync config existente)
+
