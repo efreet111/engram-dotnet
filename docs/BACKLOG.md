@@ -861,3 +861,20 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
 | 2026-05-28 | Creación del backlog ordenado; ítems de sesión pre-release y meta junio |
 | 2026-05-27 | Fixes doc/MCP/Docker/Obsidian (commits en main) |
+
+### ENG-454 — Auto-update command (`flowforge update`) — Repo: FlowForge
+
+**Tipo:** Chore | **P1** | **Effort:** M | **Origen:** ← ENG-452 (self-loop) + observación directa del usuario
+
+**Problema:** Hoy día, cuando el usuario tiene `engram serve` (o MCP server) corriendo con un binario viejo, no hay forma de saber que hay updates disponibles. La única señal es el self-loop warning (ENG-452) que aparece en logs. El config.json dice `"auto_update": false`.
+
+**Criterios de aceptación (para FlowForge):**
+- [ ] `flowforge update` consulta el manifest remoto y muestra versiones disponibles vs instalada
+- [ ] `flowforge update engram-dotnet` descarga el binario nuevo, lo reemplaza atómicamente, reinicia servicios MCP activos
+- [ ] `--dry-run` muestra qué haría sin aplicar cambios
+- [ ] `--check` (default) solo verifica y avisa si hay update
+- [ ] Backward-compatible: si el usuario rechaza, no hace nada
+- [ ] Rollback: si el nuevo binario no arranca en N segundos, vuelve al anterior
+
+**Por qué importa:** Sin auto-update, los fixes (ENG-451, ENG-452, ENG-435, ENG-437, etc.) no llegan al usuario automáticamente. La sesión de hoy requirió 4 rebuilds manuales (cliente + tests + actualización binario en `~/.local/bin`).
+
