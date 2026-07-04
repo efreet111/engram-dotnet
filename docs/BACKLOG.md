@@ -905,3 +905,22 @@ Documentado en `FlowForge/POST-INSTALL.md` §3. Imposible de descubrir para un u
 
 **Depende de:** ENG-453 (FlowForge installer lee sync config existente)
 
+
+### ENG-456 — `LlmVerifier` eager instantiation breaks MCP server without `ANTHROPIC_API_KEY`
+
+**Tipo:** Bug | **P0** | **Effort:** XS | **Origen:** ← sesión 2026-07-01 (verificación final sync setup)
+
+**Problema:** En `src/Engram.Cli/Program.cs:138-139`, `LlmVerifier` se registra con `_ => new LlmVerifier()`. El constructor (`src/Engram.Verification/ArtifactVerifier.cs:44-51`) tira `InvalidOperationException` si `ANTHROPIC_API_KEY` no está seteada. Como `EngramTools` recibe `IVerifier verifier` en su constructor, apenas se construye `EngramTools`, el DI instancia `LlmVerifier` → throw → **MCP server no arranca**.
+
+Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan con `"mem_save" threw an unhandled exception: ANTHROPIC_API_KEY is not set`.
+
+**Workaround actual:** Setear `ANTHROPIC_API_KEY` con cualquier dummy en `~/.config/opencode/opencode.json`. El verifier solo se usa en `mem_verify_artifact` así que el key nunca se usa realmente.
+
+**Criterios de aceptación:**
+- [ ] `engram mcp` arranca sin `ANTHROPIC_API_KEY` en env
+- [ ] `mem_save`, `mem_search`, `mem_get` funcionan sin la key
+- [ ] `mem_verify_artifact` reporta error claro si se llama sin la key (en vez de romper el server)
+- [ ] `LlmVerifier` se instancia solo cuando se necesita (lazy)
+
+**Fix propuesto:** Cambiar el registro a `Lazy<IVerifier>` o detectar la falta de key y registrar un `NoOpVerifier` que devuelve "skipped".
+
