@@ -924,3 +924,25 @@ Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan
 
 **Fix propuesto:** Cambiar el registro a `Lazy<IVerifier>` o detectar la falta de key y registrar un `NoOpVerifier` que devuelve "skipped".
 
+
+### ENG-457 — Sync pull dedup: prevent millions of duplicate rows — Branch: `fix/sync-mutations-dedup`
+
+**Tipo:** Bug | **P0** | **Effort:** S | **Origen:** ← sesión verificación 2026-07-05 (sync duplicaba 6.7M mutaciones)
+
+**Problema:** El sync pull inserta la misma mutación múltiples veces en `sync_mutations` cuando el cursor `last_pulled_seq` retrocede (primera sync contra server con histórico, reset, etc). Un usuario acumuló **6,759,768 filas duplicadas** → BD de 2 GB → rendimiento degradado.
+
+**Root cause:** Falta constraint UNIQUE en `(target_key, entity_key)` para `source='pull'`, y `InsertPulledMutationAsync` no usa `INSERT OR IGNORE`.
+
+**Fix:**
+1. Partial UNIQUE INDEX `idx_sync_mutations_pull_dedup` en `(target_key, entity_key) WHERE source='pull'`
+2. `InsertPulledMutationAsync` ahora usa `INSERT OR IGNORE` y devuelve el `seq` existente si ya estaba
+
+**Criterios de aceptación:**
+- [x] UNIQUE INDEX impide duplicación futura
+- [x] INSERT OR IGNORE funciona correctamente
+- [x] Tests cubren todos los paths (7/7 passing)
+- [x] Cero regresiones (220/220 store tests passing)
+- [x] Cleanup local: 6,759,768 → 7 rows (1.97GB reclaim)
+
+**PR:** https://github.com/efreet111/engram-dotnet/pull/new/fix/sync-mutations-dedup
+
