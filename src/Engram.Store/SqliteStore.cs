@@ -234,6 +234,11 @@ CREATE TABLE IF NOT EXISTS observations (
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_target_seq ON sync_mutations(target_key, seq);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_pending    ON sync_mutations(target_key, acked_at, seq);
+            -- ENG-457: prevent duplicate pulls of the same mutation. Partial index
+            -- scoped to source='pull' so we don't constrain local source mutations,
+            -- which can legitimately have multiple ops on the same entity_key.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_mutations_pull_dedup
+                ON sync_mutations(target_key, entity_key) WHERE source = 'pull';
         ");
 
         AddColumnIfNotExists("sync_mutations", "project", "TEXT NOT NULL DEFAULT ''");
@@ -2204,9 +2209,14 @@ CREATE TABLE IF NOT EXISTS observations (
 
     public Task<long> InsertPulledMutationAsync(string targetKey, SyncMutation mutation, CancellationToken ct = default)
     {
+        // ENG-457: idempotent insert. If the same (target_key, entity_key) was
+        // already pulled (e.g. cursor reset, repeated cycle), OR IGNORE skips
+        // the insert and the existing seq is returned. Without this, the same
+        // pulled mutation accumulates millions of duplicate rows when the
+        // pull cursor regresses to a low value.
         using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project, occurred_at)
+            INSERT OR IGNORE INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project, occurred_at)
             VALUES (@target, @entity, @key, @op, @payload, 'pull', @project, @occurredAt)";
         cmd.Parameters.AddWithValue("@target", targetKey);
         cmd.Parameters.AddWithValue("@entity", mutation.Entity);
@@ -2217,8 +2227,16 @@ CREATE TABLE IF NOT EXISTS observations (
         cmd.Parameters.AddWithValue("@occurredAt", mutation.OccurredAt.ToString("O"));
         cmd.ExecuteNonQuery();
 
+        // Always return the existing seq for this (target_key, entity_key, source='pull')
+        // — whether we just inserted or it already existed. This keeps
+        // ApplyPulledMutationAsync consistent regardless of dedup.
         using var seqCmd = _db.CreateCommand();
-        seqCmd.CommandText = "SELECT last_insert_rowid()";
+        seqCmd.CommandText = @"
+            SELECT seq FROM sync_mutations
+            WHERE target_key = @target AND entity_key = @key AND source = 'pull'
+            ORDER BY seq ASC LIMIT 1";
+        seqCmd.Parameters.AddWithValue("@target", targetKey);
+        seqCmd.Parameters.AddWithValue("@key", mutation.EntityKey);
         var seq = Convert.ToInt64(seqCmd.ExecuteScalar());
         return Task.FromResult(seq);
     }
