@@ -17,7 +17,7 @@
 .EXAMPLE
   .\post-install.ps1
   .\post-install.ps1 -Binary "C:\Programs\FlowForge\engram.exe"
-  .\post-install.ps1 -Binary "C:\Programs\FlowForge\engram.exe" -EngramVersion "0.3.0"
+  .\post-install.ps1 -Binary "C:\Programs\FlowForge\engram.exe" -EngramVersion "1.3.0"
 #>
 param(
     [string] $Binary        = "",
@@ -47,7 +47,7 @@ if (-not (Test-Path $Binary)) {
 if (-not $EngramVersion) {
     try {
         $raw = & $Binary version 2>$null
-        # "engram 0.3.0" → "0.3.0"
+        # "engram 1.3.0" → "1.3.0"
         $EngramVersion = ($raw -replace "^engram\s+", "").Trim()
     } catch {
         Write-Error "No se pudo obtener la versión del binario: $_"

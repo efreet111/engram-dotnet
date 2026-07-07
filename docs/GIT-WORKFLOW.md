@@ -166,9 +166,9 @@ Los binarios públicos salen por **tag**, no por cada merge a `main`.
 
 | Paso | Acción |
 |------|--------|
-| 1 | `CHANGELOG.md` — mover `[Unreleased]` a `[v0.4.0] — fecha` |
+| 1 | `CHANGELOG.md` — mover `[Unreleased]` a `[vX.Y.Z] — fecha` |
 | 2 | Alinear `Program.cs` `Version` con el tag |
-| 3 | Commit en `main`: `chore: release v0.4.0` |
+| 3 | Commit en `main`: `chore: release vX.Y.Z` |
 | 4 | Tag anotado |
 | 5 | Push tag → GitHub Actions `release.yml` publica assets |
 
@@ -176,15 +176,15 @@ Los binarios públicos salen por **tag**, no por cada merge a `main`.
 git checkout main
 git pull origin main
 # Editar CHANGELOG + Program.cs Version
-git commit -m "chore: prepare release v0.4.0"
-git tag -a v0.4.0 -m "Release v0.4.0"
+git commit -m "chore: release vX.Y.Z — unify version"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin main
-git push origin v0.4.0
+git push origin vX.Y.Z
 ```
 
 **CI release:** corre tests completos + publica `engram-linux-x64` y `engram-win-x64.exe`.
 
-Entre releases, `main` puede ir adelantada respecto al último tag (como ahora: tag `v0.3.0`, código con más fixes).
+Entre releases, `main` puede ir adelantada respecto al último tag (como ahora: tag `v1.3.0`, código con más fixes).
 
 ---
 

@@ -32,7 +32,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-const string Version = "0.3.0";
+const string Version = "1.3.0";
 
 // ─── Root command ────────────────────────────────────────────────────────────
 

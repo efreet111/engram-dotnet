@@ -31,7 +31,7 @@ dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
 ```bash
 curl http://localhost:7437/health
-# → {"status":"ok","service":"engram","version":"0.3.0","backend":"sqlite"}
+# → {"status":"ok","service":"engram","version":"1.1.0","backend":"sqlite"}
 ```
 
 ### MCP Setup (any client)

@@ -104,7 +104,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | ✅ Done | M | ← ENG-410 + ENG-432 | `e906041` + `4be21df` — code fixes verificados, 2 integration tests añadidos (dry-run inmutabilidad + mid-migration rollback). Cierra rework cycle 2/3. |
 | — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
 | 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging done, PM-7 pending |
-| 20 | ENG-437 | P0 | Chore | Release v0.4.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Ready | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
+| 20 | ENG-437 | P0 | Chore | Release v1.3.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Done | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
 | 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — movido a `.ai-work/eng-435-legacy-migration/`, `.gitignore` actualizado |
 | 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — número real: 28 tools. Fix en README, DEVELOPMENT, MANUAL-TESTING-CHECKLIST, MCP-TEST-CASES, MIGRATION, ROADMAP, TECHNICAL-DEBT |
 | 23 | ENG-440 | P0 | Bug | **DEPRECATED — split into ENG-447..450**: PostgresStore atomicity audit | — | — | ← audit OSS 2026-06-23 | Ver items derivados abajo |
@@ -499,7 +499,7 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 ---
 
-### ENG-437 — Release v0.4.0 + fix version string chaos (P0, Chore)
+### ENG-437 — Release v1.3.0 + fix version string chaos (P0, Chore)
 
 **Problema (dos issues relacionados):**
 
@@ -508,11 +508,11 @@ SELECT * FROM observations WHERE project='team/flowforge';
 2. **Version string inconsistente**: El commit `84e0712` fijó la versión a `1.2.0` en algún lugar, pero CHANGELOG declara `0.3.0` como último release. Lo que imprime `engram --version` no coincide con la documentación.
 
 **Criterios de aceptación:**
-- [ ] Verificar qué imprime `engram --version` actualmente
-- [ ] Decidir el número de versión correcto para el [Unreleased] block (propuesta: `v0.4.0`)
-- [ ] Unificar versión en: `Program.cs`, `Directory.Build.props`, `CHANGELOG.md`, `README.md`
-- [ ] Mover el block `[Unreleased]` a `[0.4.0] — 2026-06-XX` en CHANGELOG
-- [ ] Crear git tag `v0.4.0` y push
+- [x] Verificar qué imprime `engram --version` actualmente
+- [x] Decidir el número de versión correcto para el [Unreleased] block (propuesta: `v1.3.0`)
+- [x] Unificar versión en: `Program.cs`, `Directory.Build.props`, `CHANGELOG.md`, `README.md`
+- [x] Mover el block `[Unreleased]` a `[1.3.0] — 2026-07-06` en CHANGELOG
+- [x] Crear git tag `v1.3.0` (local, no push)
 - [ ] GitHub Release notes a partir del CHANGELOG
 
 **Esfuerzo estimado:** S (1h)
@@ -836,7 +836,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
-| 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v0.4.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
+| 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v1.3.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
 | 2026-06-16 | **ENG-210 Done**: Validado `scripts/test-offline-reconnect.sh` end-to-end (3/3 memorias offline recuperadas). Backlog consolidado: eliminadas 3 filas duplicadas (ENG-209/210/427), notación de salud de sync actualizada. |
 | 2026-06-15 | **ENG-428 Done**: Fix JsonPullOpts SnakeCaseLower — session_id ≠ sessionId rompía push. Test 2-client pasa end-to-end. |
 | 2026-06-15 | **ENG-211 Done**: AddColumnIfNotExists para sync_apply_deferred. |

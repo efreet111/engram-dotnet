@@ -28,7 +28,7 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | Upstream Parity Phase 1 | [#7](https://github.com/efreet111/engram-dotnet/pull/7) | Project detection, CLI `projects list\|consolidate\|prune` |
 | PostgreSQL Backend | [#3](https://github.com/efreet111/engram-dotnet/pull/3) | PostgresStore with FTS, GIN indexes, 32 IStore methods |
 | Obsidian Export | [#4](https://github.com/efreet111/engram-dotnet/pull/4) | CLI exporter, hub notes, incremental sync, 47 tests |
-| Doc/code sync + MCP tools | `69e83d7` | Version 0.3.0, 26 tools, `mem_current_project`, Obsidian CRLF |
+| Doc/code sync + MCP tools | `69e83d7` | Version 1.3.0, 26 tools, `mem_current_project`, Obsidian CRLF |
 | Docker MCP permissions | `bf01f18` | `/app/docs` en ambos Dockerfiles |
 | MCP sync startup fix | `a7f45eb` | `engram mcp` + `ENGRAM_SYNC_ENABLED` sin crash DI |
 | MCP multi-editor setup | (pending commit) | `config/mcp/`, `scripts/setup.ps1`, `INSTALL.md` |

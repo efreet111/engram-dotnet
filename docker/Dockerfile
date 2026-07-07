@@ -3,7 +3,7 @@
 
 FROM debian:12-slim
 
-ARG ENGRAM_VERSION=v0.3.0
+ARG ENGRAM_VERSION=v1.3.0
 
 # Dependencias mínimas para correr el binario .NET self-contained en Linux
 RUN apt-get update && apt-get install -y --no-install-recommends \

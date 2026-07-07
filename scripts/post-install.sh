@@ -6,7 +6,7 @@
 # Uso:
 #   post-install.sh                          # auto-detecta engram en PATH
 #   post-install.sh --binary /usr/local/bin/engram
-#   post-install.sh --binary /path/engram --engram-version 0.3.0
+#   post-install.sh --binary /path/engram --engram-version 1.3.0
 set -euo pipefail
 
 ENGRAM_BINARY=""
@@ -40,7 +40,7 @@ fi
 
 if [[ -z "$ENGRAM_VERSION" ]]; then
   raw="$("$ENGRAM_BINARY" version 2>/dev/null || true)"
-  # "engram 0.3.0" → "0.3.0"
+  # "engram 1.3.0" → "1.3.0"
   ENGRAM_VERSION="${raw#engram }"
   ENGRAM_VERSION="${ENGRAM_VERSION//[[:space:]]/}"
 fi

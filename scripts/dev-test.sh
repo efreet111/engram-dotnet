@@ -12,7 +12,7 @@
 #   PORT          - host port to bind (default 7437)
 #   IMAGE_TAG     - Docker image tag (default engram-local:dev)
 #   CONTAINER     - container name (default engram-test)
-#   ENGRAM_VERSION - build arg version tag (default v0.3.0; must be semver)
+#   ENGRAM_VERSION - build arg version tag (default v1.3.0; must be semver)
 #   PG_HOST       - Postgres host (default host.docker.internal)
 #   PG_PORT       - Postgres port (default 5432)
 #   PG_DB         - Postgres database (default engram-dev)
@@ -30,7 +30,7 @@ set -euo pipefail
 PORT="${PORT:-7437}"
 IMAGE_TAG="${IMAGE_TAG:-engram-local:dev}"
 CONTAINER="${CONTAINER:-engram-test}"
-ENGRAM_VERSION="${ENGRAM_VERSION:-v0.3.0}"
+ENGRAM_VERSION="${ENGRAM_VERSION:-v1.3.0}"
 PG_HOST="${PG_HOST:-host.docker.internal}"
 PG_PORT="${PG_PORT:-5432}"
 PG_DB="${PG_DB:-engram_dev}"

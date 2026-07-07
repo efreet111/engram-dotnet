@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+<!-- (empty — next release) -->
+
+## [1.3.0] — 2026-07-06
+
 ### Added
 
 - **ENG-451 (BUG-1)**: SyncManager recovery for orphaned pulled mutations. New methods on `ILocalSyncStore`: `InsertPulledMutationAsync` (records pulled mutations in `sync_mutations` with `source='pull'`), `ReapplyPendingPulledMutationsAsync` (re-applies `source='pull' AND acked_at IS NULL` mutations on each cycle, runs BEFORE push so it works even when sync is blocked). Also adds `ack` step to `ApplyPulledMutationAsync` (was missing — left orphaned rows on interruption). Commits `6ba2674`, `5e20f80`. See ADR-007.
@@ -80,7 +84,7 @@
 - **Versión CLI** — `Program.cs` corregido de `1.1.0` a `0.3.0` para alinear con CHANGELOG y tags de release
 - **Conteo MCP tools en docs** — corregido de "27" a "26" en README.md, README.es.md, ARCHITECTURE.md, DEVELOPMENT.md y MCP-TEST-CASES.md; eliminada referencia a `mem_generate_index` que no existe en el código
 
-## [0.3.0] — 2026-05-11 — Session Activity Tracker + Phase 2 API Parity
+## [1.2.1] — 2026-05-11 — Session Activity Tracker + Phase 2 API Parity
 
 ### Added
 
@@ -124,7 +128,7 @@ Smoke test + 5 regression tests ejecutados contra `http://192.168.0.178:7437` (P
 
 Detalles en `docs/MANUAL-TESTING-CHECKLIST.md`.
 
-## [0.2.0] — 2026-04-30 — PostgreSQL Backend + Upstream Phase 1
+## [1.1.0] — 2026-04-30 — PostgreSQL Backend + Upstream Phase 1
 
 ### Added
 
@@ -142,7 +146,7 @@ Detalles en `docs/MANUAL-TESTING-CHECKLIST.md`.
 - **`EngramServer`** — nuevos endpoints `DELETE /sessions/{id}`, `DELETE /prompts/{id}`, `GET /export?project=`
 - **`SqliteStore`** — consistencia completa con `IStore` interface
 
-## [0.1.0] — 2026-04-20 — Obsidian Export
+## [1.0.0] — 2026-04-20 — Obsidian Export
 
 ### Added
 
@@ -159,7 +163,8 @@ Detalles en `docs/MANUAL-TESTING-CHECKLIST.md`.
 
 > Releases anteriores a v0.1.0 fueron prototipos internos sin changelog formal.
 
-[unreleased]: https://github.com/efreet111/engram-dotnet/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v0.3.0
-[0.2.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v0.2.0
-[0.1.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v0.1.0
+[unreleased]: https://github.com/efreet111/engram-dotnet/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v1.3.0
+[1.2.1]: https://github.com/efreet111/engram-dotnet/releases/tag/v1.2.1
+[1.1.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v1.1.0
+[1.0.0]: https://github.com/efreet111/engram-dotnet/releases/tag/v1.0.0

@@ -34,7 +34,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        ENGRAM_VERSION: v0.3.0
+        ENGRAM_VERSION: v1.3.0
     container_name: engram-test-server
     depends_on:
       postgres:
@@ -63,7 +63,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        ENGRAM_VERSION: v0.3.0
+        ENGRAM_VERSION: v1.3.0
     container_name: engram-test-client-a
     depends_on:
       server:
@@ -97,7 +97,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        ENGRAM_VERSION: v0.3.0
+        ENGRAM_VERSION: v1.3.0
     container_name: engram-test-client-b
     depends_on:
       server:
