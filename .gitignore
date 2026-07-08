@@ -67,3 +67,4 @@ dist-cli/
 scripts/sync-test.sh
 docs/architecture/adr/ADR-002-sync-mutation-application.md
 docs/architecture/adr/ADR-003-xml-doc-comment-policy.md
+.directory
