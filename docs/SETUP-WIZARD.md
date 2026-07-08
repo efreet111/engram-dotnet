@@ -1,5 +1,7 @@
 # Setup Wizard — clonar repo y configurar MCP
 
+> **📖 New here?** Start with the [**Installation Guide**](INSTALL.md) for a complete overview of all installation methods.
+
 Guía para instalar engram-dotnet en una máquina de desarrollo y conectar cualquier cliente MCP (Cursor, Claude Desktop, OpenCode, etc.).
 
 > **FlowForge Installer** cubre instalación de binarios. El wizard `scripts/setup.sh/ps1` cubre configuración MCP. ENG-302 (wizard gráfico unificado) está en desarrollo.

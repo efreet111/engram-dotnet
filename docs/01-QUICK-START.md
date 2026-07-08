@@ -1,5 +1,7 @@
 # Quick Start — engram-dotnet by Persona
 
+> **📖 Looking for installation instructions?** See the [**Installation Guide**](INSTALL.md) for all methods (FlowForge installer, build from git, Docker).
+
 ---
 
 ## 🧑 Solo Developer

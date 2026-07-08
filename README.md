@@ -64,6 +64,17 @@ That's what the agent saves when it calls `mem_save`. Later it finds it with `me
 
 ---
 
+## 🚀 Installation
+
+**New to Engram?** Start here: [**Installation Guide**](docs/INSTALL.md)
+
+Three methods available:
+- **FlowForge Installer** (recommended) — one command, everything included
+- **Build from Git** — for developers who want the latest code
+- **Docker** — for teams and isolated environments
+
+---
+
 ## 👤 Who are you?
 
 Choose your profile and follow the guide:

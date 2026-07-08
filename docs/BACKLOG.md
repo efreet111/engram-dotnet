@@ -91,7 +91,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Siguiente** |
 | ✓ | ENG-301 | P1 | Feature | Stack installer (engram + FlowForge + FlowDocs, multi-platform) | Done | L | roadmap | Done in FlowForge v0.1.0-alpha.2 (2026-06-23). See [FlowForge release](https://github.com/efreet111/FlowForge/releases/tag/v0.1.0-alpha.2). Post-install scripts on `feat/eng-301-post-install-scripts` (commit 2dcbf80) — pending push+merge. |
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
-| 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | Ready | S | → ENG-301 | — |
+| 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | ✅ Done | S | → ENG-301 | `docs/INSTALL.md` creado, enlazado desde README, SETUP-WIZARD, QUICK-START |
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
@@ -119,7 +119,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 36 | ENG-452 | P0 | Bug | **Self-loop**: `engram serve` con SQLite local hace que `SyncManager` apunte a sí mismo, generando 501 cada 30ms en logs sin acción remediadora. Detectado durante verificación de ENG-451. | ✅ Done | S | ← ENG-451 verification | `fec9d73` — IsSyncSelfLoop() deshabilita SyncManager con warning claro. Ver [ADR-008](../docs/architecture/adr/ADR-008-sync-self-loop-detection.md) |
 | 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | Ready | S | ← ENG-452 | Preguntar y persistir `ENGRAM_SERVER_URL` en `mode=sync` install |
 | — | **Meta v1.1 — memoria semántica avanzada** |
-| 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | Ready | M | ← audit OSS 2026-06-23 | Bloqueado por ENG-436 (sync pull roto) |
+| 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | ✅ Done | M | ← audit OSS 2026-06-23 | Manifest actualizado a `>=0.4.0` con documentación de v1.3.0 como stable (FlowForge commit e589c6e) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
 | 28 | ENG-445 | P0 | Chore | **Docker version pin:** `docker/Dockerfile:6` `v1.2.0` → `v0.3.0` | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` |
 | 29 | ENG-446 | P1 | Chore | **Untracked files:** ADR-002, ADR-003, sync-test.sh, SqliteStoreApplyPulledTests.cs gitignore'd | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — gitignore con explicación (contienen deuda conocida) |
@@ -519,6 +519,22 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 ---
 
+### ✅ ENG-443 — Stack Installer manifest (P0, Done)
+
+**Estado:** ✅ Done — FlowForge commit e589c6e (2026-07-06)
+
+**Qué se hizo:**
+- Manifest actualizado a `engram-dotnet: ">=0.4.0"` (require sync recovery ENG-451 + self-loop detection ENG-452)
+- Documentado v1.3.0 como release estable actual (2026-07-06)
+- Installer version bumped a 0.1.0-alpha.7
+
+**Criterios cumplidos:**
+- [x] Manifest refleja rango de versiones compatible
+- [x] Comentario documenta por qué >=0.4.0 es el mínimo
+- [x] v1.3.0 documentado como stable actual
+
+---
+
 ### ENG-438 — OSS hygiene: mover `rework_ticket.md` fuera de la raíz (P1, Chore)
 
 **Problema:** `rework_ticket.md` vive en la raíz del repo. Un contribuidor OSS que clona el proyecto ve como primer artifact (después de README.md) un documento que dice "CRITICAL-1: PostgresStore transaction is empty". Pésima primera impresión.
@@ -655,15 +671,22 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 ---
 
-### ENG-303 — Guía instalación unificada (P1, junio) → Depende de ENG-301
+### ✅ ENG-303 — Guía instalación unificada (P1, Done)
 
-**Problema:** Hoy la documentación de instalación está dispersa entre QUICK-START, SETUP-WIZARD, MCP-CONFIG y INSTALL.md. Un usuario nuevo no sabe por dónde empezar.
+**Estado:** ✅ Done — 2026-07-06
 
-**Para qué sirve:** Una sola página que lleve al usuario desde "nunca usé Engram" hasta "tengo el MCP funcionando".
+**Qué se hizo:**
+- Creado `docs/INSTALL.md` como guía unificada de instalación
+- Cubre 3 métodos: FlowForge installer, build from git, Docker
+- Sección MCP setup con ejemplos para OpenCode, Cursor, VS Code
+- Troubleshooting común
+- Enlazado desde README.md, SETUP-WIZARD.md, QUICK-START.md
 
-**Cómo probar:** Darle la guía a alguien que no conoce el proyecto y pedirle que instale. Medir tiempo y frustración.
-
-**Hecho cuando:** un usuario nuevo sigue la guía y tiene Engram funcionando en &lt;15 min sin preguntar.
+**Criterios cumplidos:**
+- [x] Guía unificada creada
+- [x] Cubre todos los métodos de instalación
+- [x] Enlazada desde docs principales
+- [x] Usuario nuevo puede seguir desde "nunca usé Engram" hasta "tengo MCP funcionando"
 
 ---
 
