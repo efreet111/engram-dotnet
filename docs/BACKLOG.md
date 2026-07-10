@@ -103,7 +103,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 17 | ENG-434 | P2 | Feature | Migración `project` string → GUID canónico (v1.1) | Icebox | XL | ← ENG-410 + spike 434 | [spike learnings](../.ai-work/eng-434-spike/learnings.md) — solo 3 usuarios internos; ENG-435 cubre el caso de uso |
 | 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | ✅ Done | M | ← ENG-410 + ENG-432 | `e906041` + `4be21df` — code fixes verificados, 2 integration tests añadidos (dry-run inmutabilidad + mid-migration rollback). Cierra rework cycle 2/3. |
 | — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
-| 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging done, PM-7 pending |
+| 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | ✅ Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging + PM-7 e2e Docker test PASS (2026-07-09) |
 | 20 | ENG-437 | P0 | Chore | Release v1.3.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Done | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
 | 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — movido a `.ai-work/eng-435-legacy-migration/`, `.gitignore` actualizado |
 | 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — número real: 28 tools. Fix en README, DEVELOPMENT, MANUAL-TESTING-CHECKLIST, MCP-TEST-CASES, MIGRATION, ROADMAP, TECHNICAL-DEBT |
@@ -117,7 +117,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 34 | ENG-451 | P0 | Bug | **BUG-1 (P0)**: `SyncManager` no re-aplica mutaciones pulled huérfanas al recuperar de `lifecycle=blocked`. Mutaciones con `source='pull' AND acked_at IS NULL` nunca se aplican a `observations`. Data loss silenciosa. | ✅ Done | M | ← ADR-007 spike | `6ba2674` — InsertPulledMutationAsync + ReapplyPendingPulledMutationsAsync + HandleSyncStatusAsync fix |
 | 35 | ENG-451b | P1 | Bug | **BUG-2 (P1)**: `engram sync status` muestra contadores en 0 porque lee memoria del proceso, no SQLite. Información falsa en scripts y CI. | ✅ Done | S | ← ADR-007 spike | `12b97a9` — GetSyncMutationCountsAsync desde BD para conteos precisos |
 | 36 | ENG-452 | P0 | Bug | **Self-loop**: `engram serve` con SQLite local hace que `SyncManager` apunte a sí mismo, generando 501 cada 30ms en logs sin acción remediadora. Detectado durante verificación de ENG-451. | ✅ Done | S | ← ENG-451 verification | `fec9d73` — IsSyncSelfLoop() deshabilita SyncManager con warning claro. Ver [ADR-008](../docs/architecture/adr/ADR-008-sync-self-loop-detection.md) |
-| 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | Ready | S | ← ENG-452 | ADR-010 completo (235 líneas). Context map: `FlowForge/.ai-work/eng-453-installer-server-url/context-map.md` |
+| 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | 🟡 PR Open | S | ← ENG-452 | forge-verify cycle 2: PASS_DEGRADADO (9/9 FR, 4/4 NFR). PR: `feat/eng-453-verify-cleanup` (6 archivos, 5 fixes). Pendiente merge + tests con .NET SDK |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | ✅ Done | M | ← audit OSS 2026-06-23 | Manifest actualizado a `>=0.4.0` con documentación de v1.3.0 como stable (FlowForge commit e589c6e) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
@@ -443,12 +443,20 @@ El path dry-run llama `MigrateProjectAsync()` (UPDATEs reales), luego imprime "W
 - [x] Unit tests para todos los 5 métodos Apply* (FR-001 a FR-005)
 - [x] Logging parity con PostgresStore (FR-006)
 - [x] FK insert issue verification: SnakeCaseLower fix (FR-007)
-- [ ] Test de integración: Client-A salva obs en PostgreSQL → Client-B con SQLite hace pull → obs visible localmente en B
-- [ ] `bash scripts/test-2client-pull.sh` con Client-B usando SQLite pasa end-to-end
+- [x] Test de integración: Client-A salva obs en PostgreSQL → Client-B con SQLite hace pull → obs visible localmente en B
+- [x] `bash scripts/test-2client-pull.sh` con Client-B usando SQLite pasa end-to-end
 
 **Esfuerzo estimado:** M (3-4h). Patrón: ver `PostgresStore.ApplyPulledMutationAsync` que sí implementa el upsert.
 
-**Estado:** Done (unit tests + logging). PM-7 pending (e2e Docker test).
+**Estado:** ✅ Done (2026-07-09) — unit tests + logging + PM-7 e2e Docker test PASS.
+
+**Verificación PM-7 (2026-07-09):**
+```bash
+bash scripts/test-2client-pull.sh
+# ✅ PASS — ENG-209 — Client-B encontró la memoria de Client-A vía sync pull
+# ✅ PASS — Memoria en servidor central
+# SyncManager reports: health: healthy, consecutive_failures: 0
+```
 
 ---
 
@@ -513,9 +521,57 @@ SELECT * FROM observations WHERE project='team/flowforge';
 - [x] Unificar versión en: `Program.cs`, `Directory.Build.props`, `CHANGELOG.md`, `README.md`
 - [x] Mover el block `[Unreleased]` a `[1.3.0] — 2026-07-06` en CHANGELOG
 - [x] Crear git tag `v1.3.0` (local, no push)
-- [ ] GitHub Release notes a partir del CHANGELOG
+- [x] GitHub Release notes a partir del CHANGELOG — archivo generado en `.ai-work/eng-437-release-v040/release-notes-v1.3.0.md` (pendiente publicar en GitHub)
 
 **Esfuerzo estimado:** S (1h)
+
+**Estado:** ✅ Done (2026-07-09) — release notes generadas, pendientes de publicar en https://github.com/efreet111/engram-dotnet/releases/new?tag=v1.3.0
+
+---
+
+### 🟡 ENG-453 — FlowForge installer no guarda `ENGRAM_SERVER_URL` (P1, Bug)
+
+**Problema:** Cuando un usuario instala en `mode=sync`, el FlowForge installer no pide ni guarda `ENGRAM_SERVER_URL`. El `SyncManager` de engram-dotnet arranca sin URL → detecta self-loop (ENG-452) → se deshabilita. El usuario cree que el sync funciona pero no lo está — las memorias nunca se sincronizan.
+
+**Impacto:** First-run experience killer para usuarios que eligen mode=sync.
+
+**Origen:** Audit OSS 2026-06-23, durante verificación de ENG-451/452.
+
+**Estado:** 🟡 PR Open en FlowForge (2026-07-09)
+
+**Flujo FlowForge aplicado:**
+1. ✅ **forge-discovery** (Phase 0): Context map creado en `FlowForge/.ai-work/eng-453-installer-server-url/context-map.md`
+2. ✅ **forge-arch** (Phase 1): Spec.md generado con 9 FRs + 4 NFRs + STRIDE analysis. Sin BLOCKERs.
+3. ✅ **forge-verify cycle 1**: PASS_DEGRADADO — 8/9 FR PASS, 2/4 NFR PASS, 3 MINOR issues + 2 cleanup administrativo
+4. ✅ **forge-dev**: 5 fixes aplicados (VERIFY-01, VERIFY-02, VERIFY-03, CLEANUP-01, CLEANUP-02)
+5. ✅ **forge-verify cycle 2**: PASS_DEGRADADO — 9/9 FR PASS, 4/4 NFR PASS, 0 issues nuevos
+6. ✅ **Commit**: `0550e35` en branch `feat/eng-453-verify-cleanup`
+7. 🟡 **PR abierto**: Pendiente merge + tests con .NET SDK
+
+**Fixes aplicados:**
+- **VERIFY-01**: `InstallCommand.cs:107` — `return;` → `Environment.Exit(1); return;` en headless abort (exit code 0 → 1)
+- **VERIFY-02**: Spec NFR-002 alineado — headless errors pueden ser en inglés (consumidos por scripts/CI)
+- **VERIFY-03**: `ConfigStore.cs:47` — write atómico: `.tmp` → `File.Move(overwrite: true)` con try/finally cleanup
+- **CLEANUP-01**: ADR-010 status `Proposed` → `Accepted` (2026-07-09)
+- **CLEANUP-02**: POST-INSTALL.md §3 workaround removido (installer ya maneja esto)
+
+**Archivos modificados (6):**
+- `src/FlowForge.Installer/Commands/InstallCommand.cs`
+- `src/FlowForge.Installer/Infrastructure/ConfigStore.cs`
+- `docs/decisions/ADR-010-installer-prompt-for-server-url.md`
+- `POST-INSTALL.md`
+- `.ai-work/eng-453-installer-server-url/spec.md` (nuevo)
+- `.ai-work/eng-453-installer-server-url/verify-report.md` (nuevo)
+
+**Pendiente:**
+- [ ] Merge del PR en FlowForge
+- [ ] Correr tests con .NET SDK: `dotnet test tests/FlowForge.Installer.Tests/FlowForge.Installer.Tests.csproj -c Release --filter "FullyQualifiedName~InstallerAsksForSyncUrl"`
+- [ ] Marcar como ✅ Done en este BACKLOG cuando el PR se merge
+
+**Referencias:**
+- ADR-010: `FlowForge/docs/decisions/ADR-010-installer-prompt-for-server-url.md`
+- PR: `feat/eng-453-verify-cleanup` en repo FlowForge
+- Artifacts: `FlowForge/.ai-work/eng-453-installer-server-url/`
 
 ---
 
