@@ -53,3 +53,4 @@ docker pull ghcr.io/efreet111/engram-dotnet:v1.3.0
 - Esta release **cierra el bloque P0 del OSS launch audit 2026-06-23**: ENG-435 rework, ENG-436 (`ApplyPulledMutationAsync` stub), ENG-437 (release hygiene), ENG-443 (installer manifest), ENG-444 (PII cleanup), ENG-445 (Docker pin), ENG-446 (untracked files).
 - **ENG-436 PM-7** (e2e Docker test de sync pull con Client-B SQLite) **queda pendiente** — requiere Docker daemon corriendo; no bloquea el uso del producto pero es el smoke test de regresión que se debe correr antes del próximo ciclo.
 - **ENG-453** (FlowForge installer prompt para `ENGRAM_SERVER_URL`) ya implementado en repo FlowForge commit `6f13d7e`. Auditoría forge-verify: PASS_DEGRADADO (ver `.ai-work/eng-453-installer-server-url/verify-report.md` en repo FlowForge).
+

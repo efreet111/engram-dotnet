@@ -75,7 +75,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-203 | — | Doc | Plantillas GitHub: issue + PR template | Done | S | backlog | Creados |
 | ✓ | ENG-204 | — | Chore | Pinear `ModelContextProtocol` (no `*-*`) | Done | S | backlog | `1.3.0` pineada |
 | ✓ | ENG-205 | — | Doc | Auditoría README vs código (tools, endpoints, versiones) | Done | M | sesión pre-release | Versiones corregidas + 7 endpoints |
-| ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3 tests skipped | Done | M | testing | 2 fixeados, 1 eliminado |
+| ✓ | ENG-206 | — | Test | PostgreSQL: arreglar 3>>>>>>> main tests skipped | Done | M | testing | 2 fixeados, 1 eliminado |
 | ✓ | ENG-305 | — | Chore | Badge CI en README | Done | S | sesión pre-release | — |
 | ✓ | ENG-304 | P1 | Chore | `global.json` + `Directory.Build.props` (versiones centralizadas) | Done | S | backlog | `781e9fe` |
 | ✓ | ENG-306 | P1 | Chore | Mejorar trazabilidad en backlog (columna Origen + template HU) | Done | S | ← ENG-205 | Columna Origen agregada |
@@ -104,7 +104,10 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 18 | ENG-435 | P0 | Feature | Legacy Identity Migration Toolkit: asignar GUID custom + migrar memorias | ✅ Done | M | ← ENG-410 + ENG-432 | `e906041` + `4be21df` — code fixes verificados, 2 integration tests añadidos (dry-run inmutabilidad + mid-migration rollback). Cierra rework cycle 2/3. |
 | — | **🚀 OSS Launch — semana 2026-06-23 (P0 antes de publicitar)** |
 | 19 | ENG-436 | P0 | Bug | `ApplyPulledMutationAsync` stub — sync pull silently broken (SQLite) | ✅ Done | M | ← TD-013 audit 2026-06-23 | Unit tests + logging + PM-7 e2e Docker test PASS (2026-07-09) |
-| 20 | ENG-437 | P0 | Chore | Release v1.3.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | ✅ Done | S | ← audit OSS 2026-06-23 | Release v1.3.0 publicada 2026-07-10 |
+
+
+| 20 | ENG-437 | P0 | Chore | Release v1.3.0 + fix version string (1.2.0 vs 0.3.0 inconsistency) | Done | S | ← audit OSS 2026-06-23 | Ver sección detallada abajo |
+
 | 21 | ENG-438 | P1 | Chore | OSS hygiene: mover `rework_ticket.md` de la raíz del repo | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — movido a `.ai-work/eng-435-legacy-migration/`, `.gitignore` actualizado |
 | 22 | ENG-439 | P1 | Doc | Fix conteo de MCP tools en README (3 valores distintos: 24/26/28) | ✅ Done | XS | ← audit OSS 2026-06-23 | `efde32d` — número real: 28 tools. Fix en README, DEVELOPMENT, MANUAL-TESTING-CHECKLIST, MCP-TEST-CASES, MIGRATION, ROADMAP, TECHNICAL-DEBT |
 | 23 | ENG-440 | P0 | Bug | **DEPRECATED — split into ENG-447..450**: PostgresStore atomicity audit | — | — | ← audit OSS 2026-06-23 | Ver items derivados abajo |
@@ -521,11 +524,19 @@ SELECT * FROM observations WHERE project='team/flowforge';
 - [x] Unificar versión en: `Program.cs`, `Directory.Build.props`, `CHANGELOG.md`, `README.md`
 - [x] Mover el block `[Unreleased]` a `[1.3.0] — 2026-07-06` en CHANGELOG
 - [x] Crear git tag `v1.3.0` (local, no push)
+
 - [x] GitHub Release notes a partir del CHANGELOG — publicado en https://github.com/efreet111/engram-dotnet/releases/tag/v1.3.0
 
 **Esfuerzo estimado:** S (1h)
 
 **Estado:** ✅ Done (2026-07-10) — Release v1.3.0 publicada en GitHub
+
+- [x] GitHub Release notes a partir del CHANGELOG — archivo generado en `.ai-work/eng-437-release-v040/release-notes-v1.3.0.md` (pendiente publicar en GitHub)
+
+**Esfuerzo estimado:** S (1h)
+
+**Estado:** ✅ Done (2026-07-09) — release notes generadas, pendientes de publicar en https://github.com/efreet111/engram-dotnet/releases/new?tag=v1.3.0
+
 
 ---
 
