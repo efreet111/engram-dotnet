@@ -926,6 +926,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-07-14 | **ENG-456 Done**: NoOpVerifier factory pattern — MCP arranca sin `ANTHROPIC_API_KEY`, `mem_verify_artifact` retorna error `api_key_missing`. 8 tests nuevos, 682/683 passing. Commit `5764ce1`. |
 | 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v1.3.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
 | 2026-06-16 | **ENG-210 Done**: Validado `scripts/test-offline-reconnect.sh` end-to-end (3/3 memorias offline recuperadas). Backlog consolidado: eliminadas 3 filas duplicadas (ENG-209/210/427), notación de salud de sync actualizada. |
 | 2026-06-15 | **ENG-428 Done**: Fix JsonPullOpts SnakeCaseLower — session_id ≠ sessionId rompía push. Test 2-client pasa end-to-end. |
@@ -996,7 +997,9 @@ Documentado en `FlowForge/POST-INSTALL.md` §3. Imposible de descubrir para un u
 **Depende de:** ENG-453 (FlowForge installer lee sync config existente)
 
 
-### ENG-456 — `LlmVerifier` eager instantiation breaks MCP server without `ANTHROPIC_API_KEY`
+### ✅ ENG-456 — `LlmVerifier` eager instantiation breaks MCP server without `ANTHROPIC_API_KEY`
+
+**Estado:** ✅ Done (2026-07-14) — Commit `5764ce1`
 
 **Tipo:** Bug | **P0** | **Effort:** XS | **Origen:** ← sesión 2026-07-01 (verificación final sync setup)
 
@@ -1007,12 +1010,16 @@ Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan
 **Workaround actual:** Setear `ANTHROPIC_API_KEY` con cualquier dummy en `~/.config/opencode/opencode.json`. El verifier solo se usa en `mem_verify_artifact` así que el key nunca se usa realmente.
 
 **Criterios de aceptación:**
-- [ ] `engram mcp` arranca sin `ANTHROPIC_API_KEY` en env
-- [ ] `mem_save`, `mem_search`, `mem_get` funcionan sin la key
-- [ ] `mem_verify_artifact` reporta error claro si se llama sin la key (en vez de romper el server)
-- [ ] `LlmVerifier` se instancia solo cuando se necesita (lazy)
+- [x] `engram mcp` arranca sin `ANTHROPIC_API_KEY` en env
+- [x] `mem_save`, `mem_search`, `mem_get` funcionan sin la key
+- [x] `mem_verify_artifact` reporta error claro si se llama sin la key (en vez de romper el server)
+- [x] `LlmVerifier` se instancia solo cuando se necesita (lazy)
 
-**Fix propuesto:** Cambiar el registro a `Lazy<IVerifier>` o detectar la falta de key y registrar un `NoOpVerifier` que devuelve "skipped".
+**Fix aplicado:** Factory delegate pattern (NoOpVerifier) en `Program.cs:138-144`. Si `ANTHROPIC_API_KEY` no está seteada, se usa `NoOpVerifier`; si está presente, se usa `LlmVerifier`. `mem_verify_artifact` retorna error estructurado `api_key_missing` cuando NoOpVerifier está activo.
+
+**Tests:** 8 tests añadidos (T1-T6 + T4+ complement), todos pasando. 682/683 tests passing en suite completa (1 failure pre-existente en HttpStore no relacionado).
+
+**Artifacts:** `.ai-work/eng-456-llm-verifier-lazy/` (context-map.md, spec.md, plan.md, verify-report.md)
 
 
 ### ENG-457 — Sync pull dedup: prevent millions of duplicate rows — Branch: `fix/sync-mutations-dedup`
