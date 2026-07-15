@@ -134,9 +134,14 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
         User           = user,
     });
 
-    // Register verification services
-    mcpBuilder.Services.AddSingleton<Engram.Verification.IVerifier>(
-        _ => new Engram.Verification.LlmVerifier());
+    // Register verification services — lazy factory: NoOpVerifier if no API key, LlmVerifier otherwise
+    mcpBuilder.Services.AddSingleton<Engram.Verification.IVerifier>(sp =>
+    {
+        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        if (string.IsNullOrEmpty(apiKey))
+            return new Engram.Verification.NoOpVerifier();
+        return new Engram.Verification.LlmVerifier();
+    });
     mcpBuilder.Services.AddSingleton<Engram.Verification.CycleTracker>(
         sp => new Engram.Verification.CycleTracker(sp.GetRequiredService<IStore>()));
 

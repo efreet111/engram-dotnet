@@ -20,6 +20,7 @@ public static partial class McpErrors
         "observation_not_found",
         "validation_error",
         "blocked_by_observations",
+        "api_key_missing",
         "internal_error"
     ];
 

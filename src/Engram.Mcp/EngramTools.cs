@@ -723,10 +723,17 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         // 3. Track cycle
         var currentCycle = await cycleTracker.GetCurrentCycleAsync(change_name);
 
-        // 4. Verify
+        // 4. Early return if verifier is NoOp (ANTHROPIC_API_KEY not configured)
+        if (verifier is NoOpVerifier)
+            return McpErrors.Structured(
+                "api_key_missing",
+                "ANTHROPIC_API_KEY is not configured — verification is unavailable.",
+                hint: "Set the ANTHROPIC_API_KEY environment variable to enable LLM-based verification");
+
+        // 5. Verify
         var report = await verifier.VerifyAsync(spec, code_diff, currentCycle);
 
-        // 5. If failed, increment cycle
+        // 6. If failed, increment cycle
         if (report.Failed > 0)
         {
             var newCycle = await cycleTracker.IncrementCycleAsync(change_name, $"verify-{change_name}");
@@ -758,7 +765,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 """;
         }
 
-        // 6. All passed
+        // 7. All passed
         return $"""
             ## Verification PASSED ✅
 

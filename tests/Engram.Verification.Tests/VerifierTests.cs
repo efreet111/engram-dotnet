@@ -71,6 +71,73 @@ public class CycleTrackerTests
     }
 }
 
+public class LlmVerifierConstructorTests
+{
+    [Fact]
+    public void LlmVerifier_Constructor_MissingApiKey_Throws()
+    {
+        // Save and clear the env var
+        var original = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+
+            var ex = Assert.Throws<InvalidOperationException>(() => new LlmVerifier());
+            Assert.Contains("ANTHROPIC_API_KEY", ex.Message);
+        }
+        finally
+        {
+            // Restore original value
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", original);
+        }
+    }
+
+    [Fact]
+    public void LlmVerifier_Constructor_WithApiKey_Creates()
+    {
+        // Save and set the env var
+        var original = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "test-key");
+
+            using var verifier = new LlmVerifier();
+            Assert.NotNull(verifier);
+        }
+        finally
+        {
+            // Restore original value
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", original);
+        }
+    }
+}
+
+public class NoOpVerifierTests
+{
+    [Fact]
+    public async Task NoOpVerifier_VerifyAsync_ReturnsEmptyReport()
+    {
+        var verifier = new NoOpVerifier();
+        var spec = new SpecParseResult
+        {
+            Objective = "Test",
+            Requirements = new List<Requirement>()
+        };
+
+        var report = await verifier.VerifyAsync(spec, "", 42);
+
+        Assert.Equal(42, report.Cycle);
+        Assert.Equal(0, report.Total);
+        Assert.Equal(0, report.Passed);
+        Assert.Equal(0, report.Failed);
+        Assert.Equal(100.0, report.CoveragePct);
+        Assert.Equal(100.0, report.PassPct);
+        Assert.False(report.Escalate);
+        Assert.Empty(report.Items);
+        Assert.Contains("ANTHROPIC_API_KEY", report.Summary);
+    }
+}
+
 public class TraceabilityMatrixTests
 {
     [Fact]

@@ -65,8 +65,26 @@ ENGRAM_VERIFICATION_MODEL=claude-sonnet-4-20250514
 # Max cycles before escalation
 ENGRAM_VERIFICATION_MAX_CYCLES=3
 
-# Anthropic API key (required)
+# Anthropic API key (required ONLY for mem_verify_artifact)
 ANTHROPIC_API_KEY=sk-...
+```
+
+> **Note**: `ANTHROPIC_API_KEY` is only required for `mem_verify_artifact`. All other MCP tools
+> (`mem_save`, `mem_search`, `mem_get`, etc.) work normally without it. If the key is not set,
+> the MCP server starts normally and `mem_verify_artifact` returns a structured `api_key_missing`
+> error with instructions on how to configure it.
+
+### Missing API Key Behavior
+
+When `ANTHROPIC_API_KEY` is not configured, calling `mem_verify_artifact` returns:
+
+```json
+{
+  "error": true,
+  "error_code": "api_key_missing",
+  "message": "ANTHROPIC_API_KEY is not configured — verification is unavailable.",
+  "hint": "Set the ANTHROPIC_API_KEY environment variable to enable LLM-based verification"
+}
 ```
 
 ---
@@ -192,7 +210,8 @@ mem_search query="cycle-count verification-tools"
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| `ANTHROPIC_API_KEY is not set` | Missing env var | `export ANTHROPIC_API_KEY=sk-...` |
+| `api_key_missing` on `mem_verify_artifact` | `ANTHROPIC_API_KEY` not set | `export ANTHROPIC_API_KEY=sk-...` |
+| MCP server crashes on startup (old behavior) | Fixed in ENG-456 | Update to latest version; server now starts without API key |
 | Spec not parseable | Non-canonical format | Use `- RF-NNN: description` format |
 | False positive in verdict | LLM didn't understand context | Add more context to diff, check `confidence < 0.7` |
 

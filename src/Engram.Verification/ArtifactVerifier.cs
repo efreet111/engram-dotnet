@@ -168,3 +168,34 @@ public sealed class FakeVerifier : IVerifier
         return Task.FromResult(Result with { Cycle = currentCycle });
     }
 }
+
+/// <summary>
+/// No-op verifier that returns empty passing reports.
+/// Used when ANTHROPIC_API_KEY is not configured — allows MCP server to start
+/// and all non-verify tools to function normally.
+/// </summary>
+public sealed class NoOpVerifier : IVerifier
+{
+    /// <summary>
+    /// Returns an empty passing report. Callers should check for NoOpVerifier
+    /// before invoking VerifyAsync to return a user-friendly error.
+    /// </summary>
+    public Task<VerificationReport> VerifyAsync(
+        SpecParseResult spec,
+        string codeDiff,
+        int currentCycle)
+    {
+        return Task.FromResult(new VerificationReport
+        {
+            Items = [],
+            CoveragePct = 100.0,
+            PassPct = 100.0,
+            Total = 0,
+            Passed = 0,
+            Failed = 0,
+            Cycle = currentCycle,
+            Escalate = false,
+            Summary = "Verification not available — ANTHROPIC_API_KEY not configured"
+        });
+    }
+}

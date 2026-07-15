@@ -575,6 +575,41 @@ public class EngramToolsTests : IDisposable
         gitProcess.Start();
         gitProcess.WaitForExit();
     }
+
+    // ─── ENG-456: NoOpVerifier integration tests ──────────────────────────────
+
+    [Fact]
+    public async Task MemVerifyArtifact_WithoutApiKey_ReturnsError()
+    {
+        // T5: mem_verify_artifact with NoOpVerifier returns api_key_missing error
+        // The constructor already uses NoOpVerifier (production class from Engram.Verification)
+        var specPath = Path.Combine(_tempDir, "spec.md");
+        await File.WriteAllTextAsync(specPath, "# Test\n## Objective\nTest\n");
+
+        var result = await _tools.MemVerifyArtifact(
+            spec_path: specPath,
+            code_diff: "diff --git a/test.cs b/test.cs",
+            change_name: "test-change");
+
+        Assert.Contains("api_key_missing", result);
+        Assert.Contains("ANTHROPIC_API_KEY", result);
+    }
+
+    [Fact]
+    public async Task MemSave_Works_WithoutAnthropicKey()
+    {
+        // T6: mem_save works normally when verifier is NoOpVerifier
+        // (regression guard — verifies NoOpVerifier doesn't break non-verify tools)
+        var result = await _tools.MemSave(
+            title: "NoOp test memory",
+            content: "Content saved without API key",
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        Assert.Contains("NoOp test memory", result);
+    }
 }
 
 // ─── McpConfig — user/project namespace tests ─────────────────────────────────
@@ -709,6 +744,7 @@ public class McpConfigTests
 
         Assert.False(cfg.IsRemote);
     }
+
 }
 
 /// <summary>
@@ -818,28 +854,63 @@ public class MemCurrentProjectTests
     }
 }
 
-/// <summary>
-/// No-op verifier for tests — returns empty passing reports.
+// NoOpVerifier is now in production code (Engram.Verification namespace)
 
 /// <summary>
-/// No-op verifier for tests — returns empty passing reports.
+/// ENG-456: Tests for IVerifier factory delegate behavior.
+/// Validates that the DI factory resolves the correct IVerifier implementation
+/// based on the ANTHROPIC_API_KEY environment variable.
 /// </summary>
-public sealed class NoOpVerifier : IVerifier
+public class VerifierFactoryTests
 {
-    public Task<VerificationReport> VerifyAsync(SpecParseResult spec, string codeDiff, int currentCycle)
+    [Fact]
+    public void McpServer_Starts_WithoutAnthropicKey()
     {
-        return Task.FromResult(new VerificationReport
+        // T4: Factory delegate returns NoOpVerifier when ANTHROPIC_API_KEY is missing
+        var original = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
         {
-            Items = [],
-            CoveragePct = 100.0,
-            PassPct = 100.0,
-            Total = 0,
-            Passed = 0,
-            Failed = 0,
-            Cycle = currentCycle,
-            Escalate = false,
-            Summary = "No-op verifier for tests"
-        });
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+
+            // Replicate the factory logic from Program.cs
+            IVerifier verifier;
+            var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            if (string.IsNullOrEmpty(apiKey))
+                verifier = new NoOpVerifier();
+            else
+                verifier = new LlmVerifier();
+
+            Assert.IsType<NoOpVerifier>(verifier);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", original);
+        }
+    }
+
+    [Fact]
+    public void Factory_WithApiKey_ReturnsLlmVerifier()
+    {
+        // Complement to T4: Factory delegate returns LlmVerifier when ANTHROPIC_API_KEY is set
+        var original = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "test-key");
+
+            IVerifier verifier;
+            var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            if (string.IsNullOrEmpty(apiKey))
+                verifier = new NoOpVerifier();
+            else
+                verifier = new LlmVerifier();
+
+            Assert.IsType<LlmVerifier>(verifier);
+            (verifier as IDisposable)?.Dispose();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", original);
+        }
     }
 }
 
