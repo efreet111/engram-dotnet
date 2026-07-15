@@ -35,6 +35,7 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | ENG-451 BUG-1 + BUG-2 | `6ba2674` `12b97a9` `5e20f80` | Sync recovery for orphaned pulled mutations + accurate `/sync/status` counts from DB. See ADR-007. |
 | ENG-452 | `fec9d73` | Self-loop detection — `engram serve` with SQLite no longer wastes CPU on doomed 501s. See ADR-008. |
 | ENG-435 rework cycle 2 | `4be21df` `62c1194` | Migration dry-run + mid-migration rollback integration tests. Closes rework cycle 2/3. |
+| ENG-456 | `5764ce1` | NoOpVerifier factory pattern — MCP server starts without `ANTHROPIC_API_KEY`. All 28 tools work; `mem_verify_artifact` returns structured `api_key_missing` error. 8 tests added. |
 
 ---
 
