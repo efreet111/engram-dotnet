@@ -1284,4 +1284,100 @@ public class SqliteStoreTests : IDisposable
         Assert.Equal(1, page4.Observations.Count);
         Assert.False(page4.HasMore);
     }
+
+    // ─── ENG-458: Delete mutation includes project ──────────────────────────
+
+    /// <summary>
+    /// ENG-458: DeleteObservationAsync must include project in the sync mutation payload.
+    /// Previously, the delete payload omitted project → ExtractProjectFromPayload returned ""
+    /// → CountPendingNonEnrolledAsync counted it as non-enrolled → blocked ALL sync push.
+    /// </summary>
+    [Fact]
+    public async Task DeleteObservation_MutationIncludesProject()
+    {
+        await SeedSession();
+        var id = await SeedObservation(project: "team/engram-dotnet");
+
+        await _store.DeleteObservationAsync(id);
+
+        var mutations = await GetSyncMutations();
+        var deleteMutations = mutations.Where(m => m.Op == "delete").ToList();
+        Assert.Single(deleteMutations);
+        Assert.Equal("observation", deleteMutations[0].Entity);
+        Assert.Equal("team/engram-dotnet", deleteMutations[0].Project);
+    }
+
+    /// <summary>
+    /// ENG-458: CountPendingNonEnrolledAsync must ignore mutations with project="".
+    /// Empty-project mutations (from legacy data or orphans) should NOT block sync push.
+    /// </summary>
+    [Fact]
+    public async Task CountPendingNonEnrolledAsync_IgnoresEmptyProject()
+    {
+        // Insert orphaned mutations with project="" (simulates legacy data)
+        await InsertIntoSyncMutations("observation", "orphan-1", "delete", "{}");
+        await InsertIntoSyncMutations("observation", "orphan-2", "delete", "{}");
+
+        // Enroll a valid project
+        await _store.EnrollProjectLocalAsync("team/engram-dotnet");
+
+        // Insert a valid mutation with enrolled project
+        await SeedSession();
+        var id = await SeedObservation(project: "team/engram-dotnet");
+        // The observation create already enqueued a mutation with project="team/engram-dotnet"
+
+        // CountPendingNonEnrolledAsync should NOT count the "" project mutations
+        var nonEnrolled = await _store.CountPendingNonEnrolledAsync("cloud");
+
+        // Only genuinely non-enrolled projects should appear — "" is excluded
+        Assert.DoesNotContain(nonEnrolled, p => p.Project == "");
+    }
+
+    /// <summary>
+    /// ENG-458: CountPendingNonEnrolledAsync still blocks on genuinely non-enrolled projects.
+    /// </summary>
+    [Fact]
+    public async Task CountPendingNonEnrolledAsync_StillBlocksNonEnrolledProjects()
+    {
+        // Insert a mutation with a project that is NOT enrolled
+        await InsertIntoSyncMutations("session", "s1", "upsert", "{}");
+        // Override the project to something non-enrolled
+        var dbPath = Path.Combine(_tempDir, "engram.db");
+        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            await conn.OpenAsync();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE sync_mutations SET project = 'unenrolled-proj' WHERE entity_key = 's1'";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Enroll a DIFFERENT project
+        await _store.EnrollProjectLocalAsync("team/engram-dotnet");
+
+        var nonEnrolled = await _store.CountPendingNonEnrolledAsync("cloud");
+
+        // Should detect the genuinely non-enrolled project
+        Assert.Single(nonEnrolled);
+        Assert.Equal("unenrolled-proj", nonEnrolled[0].Project);
+    }
+
+    /// <summary>
+    /// ENG-458: End-to-end — delete obs with project → sync not blocked.
+    /// </summary>
+    [Fact]
+    public async Task DeleteObservation_SyncNotBlockedByEmptyProject()
+    {
+        await SeedSession();
+        var id = await SeedObservation(project: "team/engram-dotnet");
+        // Enroll both projects so neither is "non-enrolled"
+        await _store.EnrollProjectLocalAsync("test-project");
+        await _store.EnrollProjectLocalAsync("team/engram-dotnet");
+
+        // Delete the observation — creates mutation with project="team/engram-dotnet"
+        await _store.DeleteObservationAsync(id);
+
+        // Verify no non-enrolled projects detected
+        var nonEnrolled = await _store.CountPendingNonEnrolledAsync("cloud");
+        Assert.Empty(nonEnrolled);
+    }
 }
