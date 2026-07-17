@@ -792,6 +792,7 @@ CREATE TABLE IF NOT EXISTS observations (
             EnqueueSyncMutation(tx, "observation", obs.SyncId, "delete", new
             {
                 sync_id     = obs.SyncId,
+                project     = obs.Project,
                 deleted     = true,
                 deleted_at  = (string?)null,
                 hard_delete = false,
@@ -2056,6 +2057,7 @@ CREATE TABLE IF NOT EXISTS observations (
             FROM sync_mutations sm
             LEFT JOIN sync_enrolled_projects ep ON sm.project = ep.project
             WHERE sm.target_key = @target AND sm.acked_at IS NULL AND ep.project IS NULL
+              AND sm.project != ''
             GROUP BY sm.project";
         cmd.Parameters.AddWithValue("@target", targetKey);
 
@@ -2912,6 +2914,10 @@ CREATE TABLE IF NOT EXISTS observations (
     {
         var encoded = JsonSerializer.Serialize(payload);
         var project = ExtractProjectFromPayload(payload);
+        if (string.IsNullOrEmpty(project))
+        {
+            _logger?.LogWarning("EnqueueSyncMutation: empty project for {Entity}/{EntityKey} op={Op} — mutation will be ignored by sync push", entity, entityKey, op);
+        }
 
         Exec(tx,
             "INSERT OR IGNORE INTO sync_state (target_key, lifecycle, updated_at) VALUES ('cloud', 'idle', datetime('now'))");

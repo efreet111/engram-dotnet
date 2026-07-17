@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-06-18  
+**Última actualización:** 2026-07-16  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -122,6 +122,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 36 | ENG-452 | P0 | Bug | **Self-loop**: `engram serve` con SQLite local hace que `SyncManager` apunte a sí mismo, generando 501 cada 30ms en logs sin acción remediadora. Detectado durante verificación de ENG-451. | ✅ Done | S | ← ENG-451 verification | `fec9d73` — IsSyncSelfLoop() deshabilita SyncManager con warning claro. Ver [ADR-008](../docs/architecture/adr/ADR-008-sync-self-loop-detection.md) |
 | 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | 🟡 PR Open | S | ← ENG-452 | forge-verify cycle 2: PASS_DEGRADADO (9/9 FR, 4/4 NFR). PR: `feat/eng-453-verify-cleanup` (6 archivos, 5 fixes). Pendiente merge + tests con .NET SDK |
 | 38 | ENG-454 | P0 | Bug | **Release v1.3.0 publicado sin binarios**: workflow `release.yml` falló con exit code 1 después de tests (48/48 passed). Release creado manualmente sin assets. Usuarios reciben v1.2.1 sin fixes de sync recovery. | ✅ Done | M | ← incident-engram-v130-missing-binaries | Workflow re-ejecutado exitosamente (2026-07-15T21:30). 8 assets subidos a v1.3.0. Ver sección detallada abajo. |
+| 39 | ENG-458 | P0 | Bug | **Mutaciones con `project=""` bloquean sync**: `CountPendingNonEnrolledAsync` cuenta mutaciones huérfanas con project vacío como "no enroladas" y bloquea TODO el push, incluso con proyectos válidos enrolados. Pérdida de datos silenciosa. | Ready | S | ← sesión sync 2026-07-16 | Ver sección detallada abajo |
+| 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | Ready | M | ← sesión sync 2026-07-16 | Ver sección detallada abajo |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | ✅ Done | M | ← audit OSS 2026-06-23 | Manifest actualizado a `>=0.4.0` con documentación de v1.3.0 como stable (FlowForge commit e589c6e) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
@@ -1030,6 +1032,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 | 2026-06-05 | Logging infrastructure implementado: JSON logging, client_ip, body preview, ENGRAM_LOG_LEVEL env var. |
 | 2026-06-05 | ENG-306 cerrado: secciones detalladas para ENG-4xx (Icebox). |
 | 2026-06-05 | ENG-211 fileado: SyncManager SQLite schema mismatch (bug descubierto gracias a logs JSON). |
+| 2026-07-16 | **ENG-458 + ENG-459 agregados**: Bugs críticos de sync descubiertos en sesión de verificación manual. ENG-458: mutaciones con `project=""` bloquean sync (P0). ENG-459: sin feedback al usuario cuando sync falla (P0). Ambos causan pérdida de datos silenciosa. |
 | 2026-06-05 | PRD Memoria Semántica v1.1 documentado (10 puntos) + RFC-001 Project Identity + ENG-410..418 agregados al backlog. |
 | 2026-06-04 | Verificación manual post-deploy: smoke test + 5 regression tests (R1-R5) contra `192.168.0.178:7437`, todos OK. Checklist actualizado. |
 | 2026-05-28 | Sesión completa pre-release: ENG-202→206, ENG-305 Done. Columna Origen agregada. |
@@ -1125,4 +1128,197 @@ Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan
 - [x] Cleanup local: 6,759,768 → 7 rows (1.97GB reclaim)
 
 **PR:** https://github.com/efreet111/engram-dotnet/pull/new/fix/sync-mutations-dedup
+
+
+---
+
+### ENG-458 — Mutaciones con `project=""` bloquean sync (P0, Bug)
+
+**Tipo:** Bug | **P0** | **Effort:** S | **Origen:** ← sesión sync 2026-07-16 (verificación manual de sync local → servidor)
+
+**Problema:** Cuando se crean mutaciones sin `project` en el payload (ej: deletes de observaciones huérfanas), se guardan con `project=""` en `sync_mutations`. Luego `CountPendingNonEnrolledAsync` las cuenta como "no enroladas" y **bloquea TODO el push**, incluso si los proyectos válidos están correctamente enrolados.
+
+**Impacto:** 3 mutaciones huérfanas con `project=""` bloquearon el sync de 38 mutaciones válidas (20 de `team/engram-dotnet` + 18 de `team/flowforge`). Pérdida de datos silenciosa: el usuario cree que el sync funciona pero las memorias nunca se sincronizan.
+
+**Root cause:**
+```csharp
+// ExtractProjectFromPayload en SqliteStore.cs
+private static string ExtractProjectFromPayload(object payload)
+{
+    if (payload is null) return "";  // ← Devuelve "" si no hay project
+    ...
+}
+
+// CountPendingNonEnrolledAsync en SqliteStore.cs
+SELECT sm.project, COUNT(*) as count
+FROM sync_mutations sm
+LEFT JOIN sync_enrolled_projects ep ON sm.project = ep.project
+WHERE sm.target_key = @target AND sm.acked_at IS NULL AND ep.project IS NULL
+GROUP BY sm.project
+```
+
+El query cuenta `project=""` como "no enrolado" porque no existe en `sync_enrolled_projects`.
+
+**Escenario de reproducción:**
+1. Usuario crea observaciones con proyecto válido
+2. Usuario borra observaciones (se crean mutaciones `delete` con `project=""`)
+3. Usuario configura sync y enrola proyectos válidos
+4. SyncManager intenta push → bloqueado por "3 non-enrolled projects detected"
+5. Mutaciones válidas nunca se sincronizan
+
+**Solución propuesta:**
+
+**Opción A (recomendada): Ignorar mutaciones con `project=""` en el conteo**
+```csharp
+// CountPendingNonEnrolledAsync en SqliteStore.cs
+SELECT sm.project, COUNT(*) as count
+FROM sync_mutations sm
+LEFT JOIN sync_enrolled_projects ep ON sm.project = ep.project
+WHERE sm.target_key = @target 
+  AND sm.acked_at IS NULL 
+  AND ep.project IS NULL
+  AND sm.project != ''  // ← Ignorar mutaciones huérfanas
+GROUP BY sm.project
+```
+
+**Opción B: Rechazar mutaciones con `project=""` al crearlas**
+```csharp
+// EnqueueSyncMutation en SqliteStore.cs
+if (string.IsNullOrWhiteSpace(project))
+{
+    _logger?.LogWarning("Rejecting mutation with empty project: entity={Entity}, key={Key}", entity, entityKey);
+    return;  // No encolar
+}
+```
+
+**Opción C: Migrar mutaciones existentes con `project=""`**
+```sql
+-- Borrar mutaciones huérfanas antiguas
+DELETE FROM sync_mutations WHERE project = '' AND acked_at IS NULL;
+```
+
+**Criterios de aceptación:**
+- [ ] `CountPendingNonEnrolledAsync` ignora mutaciones con `project=""`
+- [ ] Tests cubren escenario: mutaciones válidas + mutaciones huérfanas → push funciona
+- [ ] Migración: limpiar mutaciones existentes con `project=""` en BDs existentes
+- [ ] Documentar en ADR o comentario de código por qué se ignoran
+
+**Tests:**
+- Test unitario: `CountPendingNonEnrolledAsync` con mutaciones mixtas (válidas + huérfanas)
+- Test de integración: push con mutaciones huérfanas no bloquea proyectos válidos
+
+**Archivos a modificar:**
+- `src/Engram.Store/SqliteStore.cs:2050` — `CountPendingNonEnrolledAsync`
+- `tests/Engram.Store.Tests/SqliteStoreSyncTests.cs` — nuevos tests
+
+---
+
+### ENG-459 — Sync failure feedback (P0, Feature)
+
+**Tipo:** Feature | **P0** | **Effort:** M | **Origen:** ← sesión sync 2026-07-16 (usuario no sabía que sync estaba roto)
+
+**Problema:** El `SyncManager` corre como `BackgroundService` y los errores solo se loggean. No hay mecanismo para notificar al usuario cuando el sync falla repetidamente. El usuario cree que el sync funciona, pero las memorias nunca se sincronizan. **Pérdida de datos silenciosa.**
+
+**Impacto:** Usuario trabajó durante días creando memorias pensando que se sincronizaban con el servidor. Al verificar manualmente, descubrió que el sync estaba bloqueado desde el primer día. 38 mutaciones pendientes de push.
+
+**Escenarios de fallo silencioso:**
+1. `ENGRAM_SERVER_URL` no configurado → SyncManager se deshabilita (self-loop detection)
+2. Proyectos no enrolados → push bloqueado ("non-enrolled-pending")
+3. Servidor remoto sin fixes (ej: ENG-428) → push falla con 500
+4. Red caída → push/pull fallan con timeout
+5. Credenciales inválidas → push falla con 401/403
+
+**Solución propuesta:**
+
+**1. Notificación visible cuando sync falla repetidamente**
+```csharp
+// SyncManager.cs — después de N fallos consecutivos
+if (ConsecutiveFailures >= 3)
+{
+    // Escribir a archivo de notificación
+    await WriteNotificationAsync(new SyncNotification
+    {
+        Level = "error",
+        Message = $"Sync failed {ConsecutiveFailures} times: {LastError}",
+        Action = "Run 'engram sync status' for details",
+        Timestamp = DateTime.UtcNow
+    });
+}
+```
+
+**2. Comando `engram sync status` muestra error claro con acción sugerida**
+```bash
+$ engram sync status
+
+❌ Sync Status: BLOCKED
+   Phase: pending
+   Target: cloud (http://192.168.0.178:7437)
+   
+   Error: 3 projects not enrolled
+   Consecutive failures: 5
+   Last sync: never
+   
+   Pending mutations: 38 (20 team/engram-dotnet, 18 team/flowforge)
+   
+💡 Suggested action:
+   Enroll projects with:
+   curl -X POST http://192.168.0.178:7437/sync/enroll \
+     -H "Content-Type: application/json" \
+     -d '{"project": "team/engram-dotnet"}'
+   
+   Or run: flowforge sync connect http://192.168.0.178:7437 --auto-enroll
+```
+
+**3. Alerta en MCP server cuando sync está bloqueado**
+```csharp
+// EngramTools.cs — al inicializar MCP tools
+if (syncStatusProvider?.Phase == SyncPhase.Disabled || 
+    syncStatusProvider?.ConsecutiveFailures >= 3)
+{
+    _logger.LogWarning("⚠️ Sync is blocked: {Error}. Run 'engram sync status' for details.", 
+        syncStatusProvider?.LastError);
+    
+    // Opcional: añadir campo "sync_health" en mem_status tool
+}
+```
+
+**4. Endpoint `/sync/status` incluye campo `suggested_action`**
+```json
+{
+  "sync_enabled": true,
+  "phase": "pending",
+  "health": {
+    "status": "blocked",
+    "consecutive_failures": 5,
+    "last_error": "non-enrolled-pending: 3 projects not enrolled",
+    "suggested_action": "Enroll projects with: curl -X POST http://server/sync/enroll -d '{\"project\": \"name\"}'"
+  }
+}
+```
+
+**Criterios de aceptación:**
+- [ ] `engram sync status` muestra error claro con acción sugerida
+- [ ] Endpoint `/sync/status` incluye campo `suggested_action`
+- [ ] MCP server loggea warning cuando sync está bloqueado (al iniciar)
+- [ ] Archivo de notificación `~/.engram/sync-notifications.log` (últimas 10 notificaciones)
+- [ ] Tests cubren todos los escenarios de fallo
+
+**Tests:**
+- Test unitario: `engram sync status` con sync bloqueado → muestra error + acción
+- Test unitario: `/sync/status` endpoint incluye `suggested_action`
+- Test de integración: SyncManager con 3 fallos → escribe notificación
+
+**Archivos a modificar:**
+- `src/Engram.Sync/SyncManager.cs` — notificaciones después de N fallos
+- `src/Engram.Cli/Program.cs` — mejorar output de `engram sync status`
+- `src/Engram.Server/CloudSyncEndpoints.cs` — campo `suggested_action` en `/sync/status`
+- `src/Engram.Mcp/EngramTools.cs` — warning al inicializar si sync bloqueado
+- `tests/Engram.Sync.Tests/SyncManagerTests.cs` — nuevos tests
+- `tests/Engram.Cli.Tests/SyncStatusCliTests.cs` — nuevos tests
+
+**Dependencias:**
+- ENG-453 (FlowForge installer guarda `ENGRAM_SERVER_URL`) — relacionado
+- ENG-455 (`flowforge sync connect`) — complementa esta feature
+
+---
 
