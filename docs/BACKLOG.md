@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-07-16  
+**Última actualización:** 2026-07-17  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -122,8 +122,8 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 36 | ENG-452 | P0 | Bug | **Self-loop**: `engram serve` con SQLite local hace que `SyncManager` apunte a sí mismo, generando 501 cada 30ms en logs sin acción remediadora. Detectado durante verificación de ENG-451. | ✅ Done | S | ← ENG-451 verification | `fec9d73` — IsSyncSelfLoop() deshabilita SyncManager con warning claro. Ver [ADR-008](../docs/architecture/adr/ADR-008-sync-self-loop-detection.md) |
 | 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | 🟡 PR Open | S | ← ENG-452 | forge-verify cycle 2: PASS_DEGRADADO (9/9 FR, 4/4 NFR). PR: `feat/eng-453-verify-cleanup` (6 archivos, 5 fixes). Pendiente merge + tests con .NET SDK |
 | 38 | ENG-454 | P0 | Bug | **Release v1.3.0 publicado sin binarios**: workflow `release.yml` falló con exit code 1 después de tests (48/48 passed). Release creado manualmente sin assets. Usuarios reciben v1.2.1 sin fixes de sync recovery. | ✅ Done | M | ← incident-engram-v130-missing-binaries | Workflow re-ejecutado exitosamente (2026-07-15T21:30). 8 assets subidos a v1.3.0. Ver sección detallada abajo. |
-| 39 | ENG-458 | P0 | Bug | **Mutaciones con `project=""` bloquean sync**: `CountPendingNonEnrolledAsync` cuenta mutaciones huérfanas con project vacío como "no enroladas" y bloquea TODO el push, incluso con proyectos válidos enrolados. Pérdida de datos silenciosa. | Ready | S | ← sesión sync 2026-07-16 | Ver sección detallada abajo |
-| 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | Ready | M | ← sesión sync 2026-07-16 | Ver sección detallada abajo |
+| 39 | ENG-458 | P0 | Bug | **Mutaciones con `project=""` bloquean sync**: `CountPendingNonEnrolledAsync` cuenta mutaciones huérfanas con project vacío como "no enroladas" y bloquea TODO el push, incluso con proyectos válidos enrolados. Pérdida de datos silenciosa. | ✅ Done | S | ← sesión sync 2026-07-16 | PR #20 mergeado. Fix: project en delete payload + safety net en query |
+| 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | 🟡 In Progress | M | ← sesión sync 2026-07-16 | Spec + Plan aprobados. Dev pendiente (CKP-3). Ver `.ai-work/eng-459-sync-failure-feedback/` |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | ✅ Done | M | ← audit OSS 2026-06-23 | Manifest actualizado a `>=0.4.0` con documentación de v1.3.0 como stable (FlowForge commit e589c6e) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
