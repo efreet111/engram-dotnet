@@ -161,7 +161,8 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
     {
         var store = sp.GetRequiredService<IStore>();
         var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
-        return new DiagnosticService(store, serverUrl: serverUrl);
+        var syncProvider = sp.GetService<ISyncStatusProvider>();
+        return new DiagnosticService(store, serverUrl: serverUrl, syncStatusProvider: syncProvider);
     });
 
     // Register offline-first-sync services (Phase 2.4) — only when local store supports sync journal
@@ -375,25 +376,7 @@ syncStatusCmd.SetHandler(async (bool json) =>
         }
 
         var doc = JsonSerializer.Deserialize<JsonElement>(body);
-        var enabled = doc.GetProperty("sync_enabled").GetBoolean();
-        var phase = doc.GetProperty("phase").GetString() ?? "";
-        var health = doc.GetProperty("health");
-        var counts = doc.GetProperty("counts");
-        var cursor = doc.GetProperty("cursor");
-
-        Console.WriteLine($"Sync status (mutation-based):");
-        Console.WriteLine($"  Enabled:              {enabled}");
-        Console.WriteLine($"  Phase:                {phase}");
-        Console.WriteLine($"  Health:               {health.GetProperty("status").GetString()}");
-        Console.WriteLine($"  Consecutive failures: {health.GetProperty("consecutive_failures").GetInt32()}");
-        Console.WriteLine($"  Backoff until:        {health.GetProperty("backoff_until").GetString() ?? "—"}");
-        Console.WriteLine($"  Last sync:            {health.GetProperty("last_sync_at").GetString() ?? "—"}");
-        Console.WriteLine($"  Last error:           {health.GetProperty("last_error").GetString() ?? "—"}");
-        Console.WriteLine($"  Pending push:         {counts.GetProperty("pending_push").GetInt32()}");
-        Console.WriteLine($"  Total pushed:         {counts.GetProperty("total_pushed").GetInt64()}");
-        Console.WriteLine($"  Total pulled:         {counts.GetProperty("total_pulled").GetInt64()}");
-        Console.WriteLine($"  Last pushed seq:      {cursor.GetProperty("last_pushed_seq").GetInt64()}");
-        Console.WriteLine($"  Last pulled seq:      {cursor.GetProperty("last_pulled_seq").GetInt64()}");
+        SyncStatusFormatter.Write(doc, Console.Out);
     }
     catch (HttpRequestException)
     {
@@ -1443,3 +1426,53 @@ static bool IsAutoEnrollDisabledInConfig()
 
 static string Truncate(string s, int max)
     => s.Length <= max ? s : s[..max] + "...";
+
+public static class SyncStatusFormatter
+{
+    public static void Write(JsonElement doc, TextWriter output)
+    {
+        var enabled = doc.GetProperty("sync_enabled").GetBoolean();
+        var phase = doc.GetProperty("phase").GetString() ?? "";
+        var health = doc.GetProperty("health");
+        var counts = doc.GetProperty("counts");
+        var cursor = doc.GetProperty("cursor");
+        var healthStatus = health.GetProperty("status").GetString() ?? "";
+
+        output.WriteLine("Sync status (mutation-based):");
+        output.WriteLine($"  Enabled:              {enabled}");
+        output.WriteLine($"  Phase:                {phase}");
+        output.WriteLine($"  Health:               {healthStatus}");
+        output.WriteLine($"  Consecutive failures: {health.GetProperty("consecutive_failures").GetInt32()}");
+        output.WriteLine($"  Backoff until:        {health.GetProperty("backoff_until").GetString() ?? "—"}");
+        output.WriteLine($"  Last sync:            {health.GetProperty("last_sync_at").GetString() ?? "—"}");
+        output.WriteLine($"  Last error:           {health.GetProperty("last_error").GetString() ?? "—"}");
+        output.WriteLine($"  Pending push:         {counts.GetProperty("pending_push").GetInt32()}");
+        output.WriteLine($"  Total pushed:         {counts.GetProperty("total_pushed").GetInt64()}");
+        output.WriteLine($"  Total pulled:         {counts.GetProperty("total_pulled").GetInt64()}");
+        output.WriteLine($"  Last pushed seq:      {cursor.GetProperty("last_pushed_seq").GetInt64()}");
+        output.WriteLine($"  Last pulled seq:      {cursor.GetProperty("last_pulled_seq").GetInt64()}");
+
+        if (!health.TryGetProperty("suggested_action", out var suggestedAction)
+            || suggestedAction.ValueKind == JsonValueKind.Null)
+        {
+            return;
+        }
+
+        var actionText = suggestedAction.GetString();
+        if (string.IsNullOrWhiteSpace(actionText))
+            return;
+
+        if (healthStatus is "disabled" or "blocked")
+        {
+            output.WriteLine();
+            output.WriteLine($"  ⚠️ WARNING: Sync {healthStatus} — data is NOT being synchronized!");
+            var pending = counts.GetProperty("pending_push").GetInt32();
+            if (pending > 0)
+                output.WriteLine($"  Pending mutations: {pending}");
+        }
+
+        output.WriteLine();
+        output.WriteLine("  💡 Suggested action:");
+        output.WriteLine($"     {actionText}");
+    }
+}

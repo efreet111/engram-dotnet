@@ -27,6 +27,16 @@ public sealed record SyncManagerConfig
     /// <summary>Max consecutive failures before disabling sync (default: 10).</summary>
     public int MaxConsecutiveFailures { get; init; } = 10;
 
+    /// <summary>Consecutive failures before writing a notification (default: 3).</summary>
+    public int NotificationThreshold { get; init; } = 3;
+
+    /// <summary>Maximum entries retained in the notification file (default: 10).</summary>
+    public int NotificationFileMaxEntries { get; init; } = 10;
+
+    /// <summary>Directory containing the notification file (default: ~/.engram).</summary>
+    public string NotificationDirectory { get; init; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".engram");
+
     /// <summary>Base backoff duration for exponential backoff (default: 1s).</summary>
     public TimeSpan BaseBackoff { get; init; } = TimeSpan.FromSeconds(1);
 
@@ -49,6 +59,10 @@ public sealed record SyncManagerConfig
         PushBatchSize = ParseInt(Environment.GetEnvironmentVariable("ENGRAM_SYNC_PUSH_BATCH"), 100),
         PullBatchSize = ParseInt(Environment.GetEnvironmentVariable("ENGRAM_SYNC_PULL_BATCH"), 100),
         MaxConsecutiveFailures = ParseInt(Environment.GetEnvironmentVariable("ENGRAM_SYNC_MAX_FAILURES"), 10),
+        NotificationThreshold = ParseInt(Environment.GetEnvironmentVariable("ENGRAM_SYNC_NOTIFICATION_THRESHOLD"), 3),
+        NotificationFileMaxEntries = ParseInt(Environment.GetEnvironmentVariable("ENGRAM_SYNC_NOTIFICATION_MAX"), 10),
+        NotificationDirectory = Environment.GetEnvironmentVariable("ENGRAM_SYNC_NOTIFICATION_DIR")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".engram"),
         BaseBackoff = ParseTimeSpan(Environment.GetEnvironmentVariable("ENGRAM_SYNC_BACKOFF_BASE_MS"), 1000),
         MaxBackoff = ParseTimeSpan(Environment.GetEnvironmentVariable("ENGRAM_SYNC_BACKOFF_MAX_MS"), 300000),
         Enabled = Environment.GetEnvironmentVariable("ENGRAM_SYNC_ENABLED") != "false",

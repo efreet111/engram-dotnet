@@ -38,6 +38,7 @@ public sealed class SyncMetrics
     }
     internal void MarkSyncAt(DateTime at) => Interlocked.Exchange(ref _lastSyncAtTicks, at.Ticks);
     internal void RecordError(string? error) => Interlocked.Exchange(ref _lastError, error);
+    internal void ClearError() => Interlocked.Exchange(ref _lastError, null);
 }
 
 public sealed record SyncMetricsSnapshot(

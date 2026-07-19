@@ -7,4 +7,5 @@ public interface ISyncStatusProvider
     int ConsecutiveFailures { get; }
     DateTime? BackoffUntil { get; }
     SyncMetrics Metrics { get; }
+    string? LastError { get; }
 }

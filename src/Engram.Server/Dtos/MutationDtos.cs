@@ -171,7 +171,8 @@ public sealed record StatusHealthBody(
     [property: JsonPropertyName("consecutive_failures")] int ConsecutiveFailures,
     [property: JsonPropertyName("backoff_until")] string? BackoffUntil,
     [property: JsonPropertyName("last_error")] string? LastError,
-    [property: JsonPropertyName("last_sync_at")] string? LastSyncAt);
+    [property: JsonPropertyName("last_sync_at")] string? LastSyncAt,
+    [property: JsonPropertyName("suggested_action")] string? SuggestedAction);
 
 /// <summary>
 /// Sync counts data — pending push and accumulated totals.

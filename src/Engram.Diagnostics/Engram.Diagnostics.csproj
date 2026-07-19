@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Engram.Store\Engram.Store.csproj" />
+    <ProjectReference Include="..\Engram.Sync\Engram.Sync.csproj" />
   </ItemGroup>
 
 </Project>

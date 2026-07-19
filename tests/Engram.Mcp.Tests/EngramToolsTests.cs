@@ -3,14 +3,19 @@ using Engram.MdGeneration;
 using Engram.Store;
 using Engram.Verification;
 using Engram.Diagnostics;
+using Engram.Sync;
 using Xunit;
 
 namespace Engram.Mcp.Tests;
+
+[CollectionDefinition("ConsoleSensitive", DisableParallelization = true)]
+public sealed class ConsoleSensitiveCollection;
 
 /// <summary>
 /// Tests for the EngramTools MCP tool class.
 /// Tests are invoked directly (not via JSON-RPC) to verify business logic.
 /// </summary>
+[Collection("ConsoleSensitive")]
 public class EngramToolsTests : IDisposable
 {
     private readonly SqliteStore  _store;
@@ -609,6 +614,78 @@ public class EngramToolsTests : IDisposable
 
         Assert.Contains("Memory saved", result);
         Assert.Contains("NoOp test memory", result);
+    }
+
+    [Fact]
+    public void EngramTools_SyncWarning_EmittedOnDisabled()
+    {
+        var provider = new FakeSyncStatusProvider
+        {
+            Phase = SyncPhase.Disabled,
+            ConsecutiveFailures = 10,
+            LastError = "relay unavailable"
+        };
+        var originalError = Console.Error;
+        using var error = new StringWriter();
+
+        try
+        {
+            Console.SetError(error);
+            _ = CreateTools(provider);
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        var output = error.ToString();
+        Assert.Contains("⚠️ Sync is Disabled", output, StringComparison.Ordinal);
+        Assert.Contains("10 consecutive failures", output, StringComparison.Ordinal);
+        Assert.Contains("relay unavailable", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EngramTools_SyncWarning_NotEmittedWhenNull()
+    {
+        var originalError = Console.Error;
+        using var error = new StringWriter();
+
+        try
+        {
+            Console.SetError(error);
+            _ = CreateTools(null);
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        Assert.Equal(string.Empty, error.ToString());
+    }
+
+    private EngramTools CreateTools(ISyncStatusProvider? provider) => new(
+        _store,
+        new McpConfig { DefaultProject = "default-project" },
+        _writeQueue,
+        _sessionActivity,
+        _verifier,
+        _cycleTracker,
+        new PromotionService(_store),
+        _traceRepo,
+        _lineageBuilder,
+        _diagnosticService,
+        _memRelRepo,
+        _memLineageBuilder,
+        provider);
+
+    private sealed class FakeSyncStatusProvider : ISyncStatusProvider
+    {
+        public SyncPhase Phase { get; init; }
+        public bool IsEnabled => true;
+        public int ConsecutiveFailures { get; init; }
+        public DateTime? BackoffUntil => null;
+        public SyncMetrics Metrics { get; } = new();
+        public string? LastError { get; init; }
     }
 }
 

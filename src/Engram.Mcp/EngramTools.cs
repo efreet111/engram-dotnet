@@ -5,6 +5,7 @@ using Engram.Store;
 using Engram.MdGeneration;
 using Engram.Verification;
 using Engram.Diagnostics;
+using Engram.Sync;
 using ModelContextProtocol.Server;
 
 namespace Engram.Mcp;
@@ -49,7 +50,7 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
@@ -58,6 +59,27 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     private readonly IDiagnosticService _diagnosticService = diagnosticService;
     private readonly Verification.MemoryRelationRepository _memRelRepo = memRelRepo;
     private readonly Verification.MemoryLineageBuilder _memLineageBuilder = memLineageBuilder;
+    
+    /// <summary>
+    /// Field initializer with side-effect: emits sync warning to stderr on construction.
+    /// This pattern is necessary because primary constructors don't allow constructor body.
+    /// The static method <see cref="EmitSyncWarning"/> writes to Console.Error if sync is blocked.
+    /// </summary>
+    private readonly bool _syncWarningEmitted = EmitSyncWarning(syncStatusProvider);
+
+    private static bool EmitSyncWarning(ISyncStatusProvider? provider)
+    {
+        if (provider is not null
+            && (provider.Phase == SyncPhase.Disabled || provider.ConsecutiveFailures >= 3))
+        {
+            Console.Error.WriteLine(
+                $"⚠️ Sync is {provider.Phase}: {provider.ConsecutiveFailures} consecutive failures. " +
+                $"Last error: {provider.LastError}. Run 'engram sync status' for details.");
+        }
+
+        return true;
+    }
+
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]

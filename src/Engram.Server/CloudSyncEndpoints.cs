@@ -425,6 +425,17 @@ public static class CloudSyncEndpoints
         var phase = provider?.Phase ?? SyncPhase.Idle;
         // PostgreSQL cloud server: no local SyncManager — push/pull API is always available.
         var isCloudRelay = store is ICloudMutationStore && provider is null;
+        var healthStatus = isCloudRelay
+            ? "healthy"
+            : phase switch
+            {
+                SyncPhase.Disabled => "disabled",
+                SyncPhase.Backoff or SyncPhase.PushFailed or SyncPhase.PullFailed =>
+                    state?.Lifecycle == "blocked" ? "blocked" : "degraded",
+                _ => state?.Lifecycle == "blocked" ? "blocked" : "healthy"
+            };
+        var consecutiveFailures = state?.ConsecutiveFailures ?? provider?.ConsecutiveFailures ?? 0;
+        var lastError = state?.LastError ?? provider?.LastError;
 
         var response = new SyncStatusResponse(
             SyncEnabled: provider?.IsEnabled ?? isCloudRelay,
@@ -436,20 +447,18 @@ public static class CloudSyncEndpoints
                 LastEnqueuedSeq: state?.LastEnqueuedSeq ?? 0
             ),
             Health: new StatusHealthBody(
-                Status: isCloudRelay
-                    ? "healthy"
-                    : phase switch
-                {
-                    SyncPhase.Disabled => "disabled",
-                    SyncPhase.Backoff or SyncPhase.PushFailed or SyncPhase.PullFailed => "degraded",
-                    _ => "healthy"
-                },
-                ConsecutiveFailures: state?.ConsecutiveFailures ?? provider?.ConsecutiveFailures ?? 0,
+                Status: healthStatus,
+                ConsecutiveFailures: consecutiveFailures,
                 BackoffUntil: provider?.BackoffUntil?.ToString("O"),
-                LastError: state?.LastError ?? metrics?.LastError,
+                LastError: lastError,
                 LastSyncAt: metrics?.LastSyncAt is DateTime lastSync && lastSync > DateTime.MinValue
                     ? lastSync.ToString("O")
-                    : null
+                    : null,
+                SuggestedAction: GenerateSuggestedAction(
+                    healthStatus,
+                    consecutiveFailures,
+                    lastError,
+                    ctx.Request)
             ),
             Counts: new StatusCountsBody(
                 PendingPush: pending.Count,
@@ -465,6 +474,32 @@ public static class CloudSyncEndpoints
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    private static string? GenerateSuggestedAction(
+        string healthStatus,
+        int consecutiveFailures,
+        string? lastError,
+        HttpRequest request)
+    {
+        if (healthStatus == "healthy")
+            return null;
+
+        var serverUrl = $"{request.Scheme}://{request.Host}";
+        return healthStatus switch
+        {
+            "degraded" =>
+                "Sync degraded. Check server connectivity and run 'engram sync status' for details.",
+            "disabled" =>
+                $"Sync disabled after {consecutiveFailures} failures. Restart engram server or check ENGRAM_SERVER_URL configuration.",
+            "blocked" when lastError?.Contains("non-enrolled-pending", StringComparison.OrdinalIgnoreCase) == true =>
+                $"Sync blocked: {lastError}. Enroll with: curl -X POST {serverUrl}/sync/enroll -H 'Content-Type: application/json' -d '{{\"project\": \"<name>\"}}'",
+            "blocked" when lastError?.Contains("sync-paused", StringComparison.OrdinalIgnoreCase) == true =>
+                $"Sync paused. Resume with: curl -X DELETE {serverUrl}/sync/pause?project=<project>",
+            "blocked" =>
+                $"Sync blocked. Last error: {lastError}. Run 'engram sync status' for details.",
+            _ => null
+        };
+    }
 
     private static async Task<T?> ReadJsonAsync<T>(HttpContext ctx, long maxBytes)
     {

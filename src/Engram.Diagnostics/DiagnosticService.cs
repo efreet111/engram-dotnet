@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Engram.Diagnostics.Models;
 using Engram.Store;
+using Engram.Sync;
 
 namespace Engram.Diagnostics;
 
@@ -13,6 +14,7 @@ public sealed class DiagnosticService : IDiagnosticService
     private readonly IStore _store;
     private readonly HttpClient _httpClient;
     private readonly string? _serverUrl;
+    private readonly ISyncStatusProvider? _syncStatusProvider;
 
     /// <summary>
     /// Database check timeout in milliseconds.
@@ -24,11 +26,16 @@ public sealed class DiagnosticService : IDiagnosticService
     /// </summary>
     private const int HttpTimeoutMs = 2000;
 
-    public DiagnosticService(IStore store, HttpClient? httpClient = null, string? serverUrl = null)
+    public DiagnosticService(
+        IStore store,
+        HttpClient? httpClient = null,
+        string? serverUrl = null,
+        ISyncStatusProvider? syncStatusProvider = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _httpClient = httpClient ?? new HttpClient();
         _serverUrl = serverUrl;
+        _syncStatusProvider = syncStatusProvider;
     }
 
     /// <summary>
@@ -46,18 +53,63 @@ public sealed class DiagnosticService : IDiagnosticService
         var httpCheck = CheckHttpServerAsync(cancellationToken);
         var mcpCheck = CheckMcpServerAsync(cancellationToken);
         var identityCheck = CheckProjectIdentityAsync(cancellationToken);
+        var syncCheck = CheckSyncHealth();
 
-        await Task.WhenAll(dbCheck, httpCheck, mcpCheck, identityCheck);
+        await Task.WhenAll(dbCheck, httpCheck, mcpCheck, identityCheck, syncCheck);
 
         result.Components["database"] = await dbCheck;
         result.Components["http_server"] = await httpCheck;
         result.Components["mcp_server"] = await mcpCheck;
         result.Components["project_identity"] = await identityCheck;
+        result.Components["sync_health"] = await syncCheck;
 
         // System is healthy if all components are healthy
         result.IsHealthy = result.Components.Values.All(c => c.IsHealthy);
 
         return result;
+    }
+
+    private Task<ComponentHealth> CheckSyncHealth()
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        if (_syncStatusProvider is null)
+        {
+            stopwatch.Stop();
+            return Task.FromResult(new ComponentHealth
+            {
+                IsHealthy = true,
+                Message = "Sync not applicable (cloud relay mode)",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            });
+        }
+
+        var phase = _syncStatusProvider.Phase;
+        var failures = _syncStatusProvider.ConsecutiveFailures;
+        var lastError = _syncStatusProvider.LastError;
+        stopwatch.Stop();
+
+        return Task.FromResult(phase switch
+        {
+            SyncPhase.Healthy or SyncPhase.Idle => new ComponentHealth
+            {
+                IsHealthy = true,
+                Message = "Sync healthy",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            },
+            SyncPhase.Disabled => new ComponentHealth
+            {
+                IsHealthy = false,
+                Message = $"Sync disabled: {failures} failures reached ceiling. Last error: {lastError}",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            },
+            _ => new ComponentHealth
+            {
+                IsHealthy = false,
+                Message = $"Sync degraded: {failures} consecutive failures. Last error: {lastError}",
+                LatencyMs = stopwatch.ElapsedMilliseconds
+            }
+        });
     }
 
     /// <summary>

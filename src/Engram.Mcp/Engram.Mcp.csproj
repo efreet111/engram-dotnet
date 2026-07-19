@@ -16,5 +16,6 @@
     <ProjectReference Include="../Engram.Verification/Engram.Verification.csproj" />
     <ProjectReference Include="../Engram.MdGeneration/Engram.MdGeneration.csproj" />
     <ProjectReference Include="../Engram.Diagnostics/Engram.Diagnostics.csproj" />
+    <ProjectReference Include="../Engram.Sync/Engram.Sync.csproj" />
   </ItemGroup>
 </Project>

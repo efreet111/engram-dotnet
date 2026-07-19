@@ -193,4 +193,106 @@ public sealed class SyncStatusEndpointTests : IAsyncDisposable
         Assert.Equal("project-a", (string)projects[0]!);
         Assert.Equal("project-b", (string)projects[1]!);
     }
+
+    [Fact]
+    public async Task SuggestedAction_NullWhenHealthy()
+    {
+        ConfigureProvider(SyncPhase.Healthy, 0);
+
+        var health = await GetHealthAsync();
+
+        Assert.Equal("healthy", (string)health["status"]!);
+        Assert.True(health.ContainsKey("suggested_action"));
+        Assert.Null(health["suggested_action"]);
+    }
+
+    [Fact]
+    public async Task SuggestedAction_Degraded()
+    {
+        ConfigureProvider(SyncPhase.Backoff, 5, "connection refused");
+
+        var health = await GetHealthAsync();
+
+        Assert.Equal("degraded", (string)health["status"]!);
+        Assert.Contains("degraded", (string)health["suggested_action"]!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SuggestedAction_Disabled()
+    {
+        ConfigureProvider(SyncPhase.Disabled, 10, "failure ceiling reached");
+
+        var health = await GetHealthAsync();
+        var action = (string)health["suggested_action"]!;
+
+        Assert.Equal("disabled", (string)health["status"]!);
+        Assert.Contains("disabled", action, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Restart", action, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SuggestedAction_BlockedNonEnrolled()
+    {
+        ConfigureProvider(SyncPhase.PushFailed, 3);
+        ConfigureState("blocked", 3, "non-enrolled-pending: 3 projects not enrolled");
+
+        var health = await GetHealthAsync();
+        var action = (string)health["suggested_action"]!;
+
+        Assert.Equal("blocked", (string)health["status"]!);
+        Assert.Contains("Enroll", action, StringComparison.Ordinal);
+        Assert.Contains("curl -X POST", action, StringComparison.Ordinal);
+        Assert.Contains($"{_client.BaseAddress!.GetLeftPart(UriPartial.Authority)}/sync/enroll", action, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SuggestedAction_BlockedPaused()
+    {
+        ConfigureProvider(SyncPhase.Healthy, 0);
+        ConfigureState("blocked", 0, "sync-paused: project-alpha is paused");
+
+        var health = await GetHealthAsync();
+        var action = (string)health["suggested_action"]!;
+
+        Assert.Equal("blocked", (string)health["status"]!);
+        Assert.Contains("Resume", action, StringComparison.Ordinal);
+        Assert.Contains("curl -X DELETE", action, StringComparison.Ordinal);
+        Assert.Contains("/sync/pause?project=", action, StringComparison.Ordinal);
+    }
+
+    private void ConfigureProvider(SyncPhase phase, int failures, string? lastError = null)
+    {
+        _providerMock.Setup(p => p.IsEnabled).Returns(phase != SyncPhase.Disabled);
+        _providerMock.Setup(p => p.Phase).Returns(phase);
+        _providerMock.Setup(p => p.ConsecutiveFailures).Returns(failures);
+        _providerMock.Setup(p => p.BackoffUntil).Returns((DateTime?)null);
+        _providerMock.Setup(p => p.Metrics).Returns(new SyncMetrics());
+        _providerMock.Setup(p => p.LastError).Returns(lastError);
+    }
+
+    private void ConfigureState(string lifecycle, int failures, string? lastError)
+    {
+        _localMock.Setup(s => s.GetSyncStateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncState(
+                "cloud",
+                lifecycle,
+                0,
+                0,
+                0,
+                failures,
+                null,
+                null,
+                null,
+                lastError,
+                DateTime.UtcNow));
+    }
+
+    private async Task<JsonObject> GetHealthAsync()
+    {
+        var response = await _client.GetAsync("/sync/status");
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        return json?["health"]?.AsObject()
+            ?? throw new InvalidOperationException("Response did not contain health object");
+    }
 }

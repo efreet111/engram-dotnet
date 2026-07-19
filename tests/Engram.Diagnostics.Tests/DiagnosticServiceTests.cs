@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using Engram.Diagnostics.Models;
 using Engram.Store;
+using Engram.Sync;
 using Moq;
 using Xunit;
 
@@ -218,6 +219,73 @@ public sealed class DiagnosticServiceTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // Sync Health Check Tests
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task SyncHealth_NullProvider_ReturnsHealthy()
+    {
+        ConfigureHealthyDependencies();
+        var service = new DiagnosticService(
+            _storeMock.Object,
+            _httpClient,
+            "http://localhost:5000",
+            syncStatusProvider: null);
+
+        var result = await service.RunDiagnosticsAsync();
+        var syncHealth = result.Components["sync_health"];
+
+        Assert.True(syncHealth.IsHealthy);
+        Assert.Contains("cloud relay", syncHealth.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(syncHealth.LatencyMs, 0, 9);
+    }
+
+    [Fact]
+    public async Task SyncHealth_PhaseHealthy_ReturnsHealthy()
+    {
+        ConfigureHealthyDependencies();
+        var provider = CreateSyncProvider(SyncPhase.Healthy, 0, null);
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+
+        var result = await service.RunDiagnosticsAsync();
+        var syncHealth = result.Components["sync_health"];
+
+        Assert.True(syncHealth.IsHealthy);
+        Assert.Contains("healthy", syncHealth.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(syncHealth.LatencyMs, 0, 9);
+    }
+
+    [Fact]
+    public async Task SyncHealth_PhaseDisabled_ReturnsUnhealthy()
+    {
+        ConfigureHealthyDependencies();
+        var provider = CreateSyncProvider(SyncPhase.Disabled, 10, "relay unavailable");
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+
+        var result = await service.RunDiagnosticsAsync();
+        var syncHealth = result.Components["sync_health"];
+
+        Assert.False(syncHealth.IsHealthy);
+        Assert.Contains("disabled", syncHealth.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("relay unavailable", syncHealth.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SyncHealth_PhaseBackoff_ReturnsUnhealthy()
+    {
+        ConfigureHealthyDependencies();
+        var provider = CreateSyncProvider(SyncPhase.Backoff, 5, "connection refused");
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+
+        var result = await service.RunDiagnosticsAsync();
+        var syncHealth = result.Components["sync_health"];
+
+        Assert.False(syncHealth.IsHealthy);
+        Assert.Contains("degraded", syncHealth.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("5 consecutive failures", syncHealth.Message, StringComparison.Ordinal);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Overall Diagnostics Tests
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -371,6 +439,26 @@ public sealed class DiagnosticServiceTests : IDisposable
 
         // Assert
         Assert.NotNull(service);
+    }
+
+    private void ConfigureHealthyDependencies()
+    {
+        _storeMock.Setup(s => s.StatsAsync()).ReturnsAsync(new Stats());
+        _storeMock.Setup(s => s.BackendName).Returns("sqlite");
+        _httpHandler.SetResponse(HttpStatusCode.OK);
+    }
+
+    private static Mock<ISyncStatusProvider> CreateSyncProvider(
+        SyncPhase phase,
+        int failures,
+        string? lastError)
+    {
+        var provider = new Mock<ISyncStatusProvider>();
+        provider.Setup(p => p.Phase).Returns(phase);
+        provider.Setup(p => p.ConsecutiveFailures).Returns(failures);
+        provider.Setup(p => p.LastError).Returns(lastError);
+        provider.Setup(p => p.Metrics).Returns(new SyncMetrics());
+        return provider;
     }
 
     /// <summary>

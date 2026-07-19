@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Engram.Store;
@@ -67,6 +69,18 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
             new EventId(2008, "SyncManagerStarting"),
             "SyncManager starting (target={TargetKey}, poll={PollInterval})");
 
+    private static readonly Action<ILogger, string, Exception?> SyncNotificationWritten =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(2010, "SyncNotificationWritten"),
+            "Sync notification written: {FilePath}");
+
+    private static readonly Action<ILogger, int, Exception?> SyncRecovered =
+        LoggerMessage.Define<int>(
+            LogLevel.Information,
+            new EventId(2011, "SyncRecovered"),
+            "Sync recovered after {Failures} consecutive failures");
+
     private readonly ILocalSyncStore _store;
     private readonly IMutationTransport _transport;
     private readonly SyncManagerConfig _cfg;
@@ -91,6 +105,7 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
     public int ConsecutiveFailures => _consecutiveFailures;
     public DateTime? BackoffUntil => _backoffUntil;
     public SyncMetrics Metrics => _metrics;
+    public string? LastError => _metrics.LastError;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -126,8 +141,7 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
         {
             if (_consecutiveFailures >= _cfg.MaxConsecutiveFailures)
             {
-                SetPhase(SyncPhase.Disabled);
-                CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, null);
+                await DisableSyncAsync();
                 return;
             }
 
@@ -154,8 +168,7 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
     {
         if (_consecutiveFailures >= _cfg.MaxConsecutiveFailures)
         {
-            SetPhase(SyncPhase.Disabled);
-            CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, null);
+            await DisableSyncAsync();
             return;
         }
 
@@ -182,8 +195,10 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
 
             SetPhase(SyncPhase.Pushing);
             failedDuringPush = true;
-            await PushAsync(ct);
+            var pushCompleted = await PushAsync(ct);
             failedDuringPush = false;
+            if (!pushCompleted)
+                return;
 
             var replayResult = await _store.ReplayDeferredAsync(ct);
             if (replayResult.ReplayCount > 0)
@@ -195,10 +210,22 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
             SetPhase(SyncPhase.Pulling);
             await PullAsync(ct);
 
+            var previousFailures = _consecutiveFailures;
             SetPhase(SyncPhase.Healthy);
             _consecutiveFailures = 0;
             _backoffUntil = null;
             await _store.MarkSyncHealthyAsync(_cfg.TargetKey, ct);
+            _metrics.ClearError();
+            if (previousFailures > 0)
+            {
+                SyncRecovered(_logger, previousFailures, null);
+                await WriteNotificationAsync(
+                    "ok",
+                    0,
+                    null,
+                    null,
+                    $"Sync recovered after {previousFailures} failures");
+            }
 
             _metrics.MarkSyncAt(DateTime.UtcNow);
             CycleComplete(_logger, _phase, (int)sw.Elapsed.TotalMilliseconds, null);
@@ -213,6 +240,16 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
             _metrics.IncrementFailures();
             _metrics.RecordError(ex.Message);
             CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, ex);
+
+            if (_consecutiveFailures == _cfg.NotificationThreshold)
+            {
+                await WriteNotificationAsync(
+                    "error",
+                    _consecutiveFailures,
+                    ex.Message,
+                    "Check server connectivity and run 'engram sync status' for details.",
+                    null);
+            }
         }
         finally
         {
@@ -220,17 +257,23 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
         }
     }
 
-    private async Task PushAsync(CancellationToken ct)
+    private async Task<bool> PushAsync(CancellationToken ct)
     {
         var pending = await _store.ListPendingSyncMutationsAsync(_cfg.TargetKey, _cfg.PushBatchSize, ct);
-        if (pending.Count == 0) { _logger.LogDebug("SyncManager push: no pending mutations"); return; }
+        if (pending.Count == 0) { _logger.LogDebug("SyncManager push: no pending mutations"); return true; }
 
         var nonEnrolled = await _store.CountPendingNonEnrolledAsync(_cfg.TargetKey, ct);
         if (nonEnrolled.Count > 0)
         {
             _logger.LogWarning("SyncManager push blocked: {Count} non-enrolled projects detected", nonEnrolled.Count);
             await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "non-enrolled-pending", $"{nonEnrolled.Count} projects not enrolled", ct);
-            return;
+            await WriteNotificationAsync(
+                "error",
+                _consecutiveFailures,
+                $"non-enrolled-pending: {nonEnrolled.Count} projects not enrolled",
+                "Enroll projects: POST /sync/enroll",
+                null);
+            return false;
         }
 
         var byProject = pending.GroupBy(m => m.Project).ToList();
@@ -246,7 +289,13 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
                 {
                     _logger.LogWarning("SyncManager push paused for project {Project}: {Error}", group.Key, result.PauseError);
                     await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "sync-paused", result.PauseError, ct);
-                    return;
+                    await WriteNotificationAsync(
+                        "error",
+                        _consecutiveFailures,
+                        $"sync-paused: {result.PauseError}",
+                        $"Resume sync: DELETE /sync/pause?project={group.Key}",
+                        null);
+                    return false;
                 }
                 await _store.AckSyncMutationSeqsAsync(_cfg.TargetKey, result.AcceptedSeqs, ct);
                 _logger.LogDebug("SyncManager push acked {Count} mutations for project {Project}", result.AcceptedSeqs.Count, group.Key);
@@ -256,9 +305,17 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
             {
                 _logger.LogWarning("SyncManager push paused (409): {Error}", ex.Message);
                 await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "sync-paused", ex.Message, ct);
-                return;
+                await WriteNotificationAsync(
+                    "error",
+                    _consecutiveFailures,
+                    $"sync-paused: {ex.Message}",
+                    $"Resume sync: DELETE /sync/pause?project={group.Key}",
+                    null);
+                return false;
             }
         }
+
+        return true;
     }
 
     private async Task PullAsync(CancellationToken ct)
@@ -292,6 +349,71 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
             _logger.LogInformation("SyncManager pulled {Total} mutations total", totalPulled);
             _metrics.IncrementPulled(totalPulled);
             await _store.UpdateSyncStateAsync(_cfg.TargetKey, sinceSeq, ct);
+        }
+    }
+
+    private async Task DisableSyncAsync()
+    {
+        if (_phase == SyncPhase.Disabled)
+            return;
+
+        SetPhase(SyncPhase.Disabled);
+        await WriteNotificationAsync(
+            "error",
+            _consecutiveFailures,
+            $"Sync disabled after {_consecutiveFailures} failures",
+            "Restart engram server or check ENGRAM_SERVER_URL configuration.",
+            null);
+        CycleFailed(_logger, _consecutiveFailures, _cfg.MaxConsecutiveFailures, null);
+    }
+
+    private async Task WriteNotificationAsync(
+        string level,
+        int failures,
+        string? error,
+        string? action,
+        string? message)
+    {
+        try
+        {
+            var entry = new Dictionary<string, object?>
+            {
+                ["ts"] = DateTime.UtcNow.ToString("O"),
+                ["level"] = level,
+                ["failures"] = failures,
+                ["error"] = error,
+                ["action"] = action,
+                ["phase"] = _phase.ToString().ToLowerInvariant(),
+                ["message"] = message
+            };
+            var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
+
+            Directory.CreateDirectory(_cfg.NotificationDirectory);
+            var filePath = Path.Combine(_cfg.NotificationDirectory, "sync-notifications.log");
+            var lines = File.Exists(filePath)
+                ? (await File.ReadAllLinesAsync(filePath))
+                    .Where(line => !string.IsNullOrWhiteSpace(line))
+                    .ToList()
+                : [];
+
+            lines.Add(json);
+            var maxEntries = Math.Max(1, _cfg.NotificationFileMaxEntries);
+            if (lines.Count > maxEntries)
+                lines = lines.Skip(lines.Count - maxEntries).ToList();
+
+            await File.WriteAllTextAsync(filePath, string.Join('\n', lines) + "\n");
+
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                File.SetUnixFileMode(filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+            SyncNotificationWritten(_logger, filePath, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write sync notification file");
         }
     }
 
