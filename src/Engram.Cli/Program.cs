@@ -1258,6 +1258,7 @@ relationsCmd.SetHandler(async (string action, long obsId, long targetId, string?
     using var store = OpenStore();
     var project = proj ?? Normalizers.NormalizeProject(ProjectDetector.DetectProject(Directory.GetCurrentDirectory()));
     var sessionId = $"rel-cli-{DateTime.UtcNow:yyyyMMdd}";
+    await store.CreateSessionAsync(sessionId, project, "");
     var repo = new Engram.Verification.MemoryRelationRepository(store);
 
     switch (action.ToLowerInvariant())

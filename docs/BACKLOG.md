@@ -123,7 +123,9 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | 🟡 PR Open | S | ← ENG-452 | forge-verify cycle 2: PASS_DEGRADADO (9/9 FR, 4/4 NFR). PR: `feat/eng-453-verify-cleanup` (6 archivos, 5 fixes). Pendiente merge + tests con .NET SDK |
 | 38 | ENG-454 | P0 | Bug | **Release v1.3.0 publicado sin binarios**: workflow `release.yml` falló con exit code 1 después de tests (48/48 passed). Release creado manualmente sin assets. Usuarios reciben v1.2.1 sin fixes de sync recovery. | ✅ Done | M | ← incident-engram-v130-missing-binaries | Workflow re-ejecutado exitosamente (2026-07-15T21:30). 8 assets subidos a v1.3.0. Ver sección detallada abajo. |
 | 39 | ENG-458 | P0 | Bug | **Mutaciones con `project=""` bloquean sync**: `CountPendingNonEnrolledAsync` cuenta mutaciones huérfanas con project vacío como "no enroladas" y bloquea TODO el push, incluso con proyectos válidos enrolados. Pérdida de datos silenciosa. | ✅ Done | S | ← sesión sync 2026-07-16 | PR #20 mergeado. Fix: project en delete payload + safety net en query |
-| 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | 🟡 In Progress | M | ← sesión sync 2026-07-16 | Spec + Plan aprobados. Dev pendiente (CKP-3). Ver `.ai-work/eng-459-sync-failure-feedback/` |
+| 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | ✅ Done | M | ← sesión sync 2026-07-16 | `712242a8` — 4 notification channels: notification file, `/sync/status` suggested_action, CLI output improvement, MCP diagnostics. 25 new tests (712 total T2, 45 T3). Ver `.ai-work/eng-459-sync-failure-feedback/` |
+| — | **🔍 Bugs encontrados en verificación funcional (2026-07-21)** |
+| 41 | ENG-473 | P0 | Bug | **`relations add` FK constraint violation**: `rel-cli-{date}` session ID se genera pero nunca se crea en tabla `sessions`. `observations` tiene `FOREIGN KEY (session_id) REFERENCES sessions(id)`. `mem_relations` y `mem_lineage_obs` rotos (no se pueden crear relaciones desde CLI ni MCP). | ✅ Done | XS | ← sesión verificación 2026-07-21 | Root cause: `Program.cs:1260` inventa `sessionId` sin crearlo. Fix: `await store.CreateSessionAsync(sessionId, project, "")` antes de `SaveRelationAsync()`. Verificado: add/get/delete/lineage funcionan. |
 | — | **Meta v1.1 — memoria semántica avanzada** |
 | 26 | ENG-443 | P0 | Feature | Stack Installer manifest: bump `engram-dotnet: ">=0.3.0"` or document alpha risk | ✅ Done | M | ← audit OSS 2026-06-23 | Manifest actualizado a `>=0.4.0` con documentación de v1.3.0 como stable (FlowForge commit e589c6e) |
 | 27 | ENG-444 | P0 | Chore | **Privacy/PII cleanup:** remove `192.168.0.178`, `victor.silgado`, `supersecret` from docs | ✅ Done | S | ← audit OSS 2026-06-23 | `7f16ca5` — IP → localhost, passwords → REPLACE_ME, username → your-username |
@@ -948,6 +950,39 @@ curl http://servidor:7437/observations/recent?project=team/mi-api
 
 ---
 
+## 🔮 Nuevas features — brainstorming 2026-07-21
+
+> **Origen:** Sesión de análisis profundo de funcionalidades. Features propuestas para desarrollo incremental post-release v1.3.0. Sin orden de prioridad aún — se priorizarán cuando se activen.
+
+| # | ID | P | Tipo | Feature | Estado | Effort | Origen | Notas |
+|---|-----|---|------|---------|--------|--------|--------|-------|
+| — | **Mejoras estructurales (deuda existente)** |
+| 41 | ENG-460 | P1 | Chore | Refactorizar clases gigantes: SqliteStore (2400 loc) + PostgresStore (2100 loc) → partials por dominio | Idea | M | ← TD-001/002 + sesión análisis | Ver [TECHNICAL-DEBT.md](TECHNICAL-DEBT.md). Misma estrategia que ENG-402. |
+| 42 | ENG-461 | P2 | Chore | Split EngramTools.cs (28 tools, 1034 loc) → partials por categoría | Idea | S | ← TD-009 | Save, Search, Session, Relations, Verification, etc. |
+| 43 | ENG-462 | P1 | Chore | Métodos Async reales: reemplazar `Task.CompletedTask` por `async/await` en SqliteStore (14) + PostgresStore (6) | Idea | S | ← TD-003/014 | Mejor uso de thread pool bajo carga. |
+| 44 | ENG-463 | P2 | Chore | Obsidian export: usar incremental `ExportSinceAsync` en vez de full scan en watch mode | Idea | S | ← TD-016/017 | Watch mode actual hace dump completo cada ciclo. |
+| — | **Nuevas funcionalidades** |
+| 45 | ENG-464 | P1 | Feature | **Project Context Storage**: guardar y recuperar contexto del proyecto en memoria (stack, convenciones, ADRs). MCP tool `mem_project_context` para carga automática al inicio de sesión. | Idea | M | ← sesión análisis 2026-07-21 | Integrado con `.engram-id`. Agentes no re-descubren el proyecto cada vez. |
+| 46 | ENG-465 | P1 | Feature | **Obsidian export mejorado (sin IA)**: templates configurables, jerarquía `{project}/{type}/{date}-title.md`, frontmatter YAML, backlinks `[[wikilink]]` desde `mem_relations`, índice auto-generado por proyecto+tipo. | Idea | M | ← sesión análisis 2026-07-21 | Sin dependencia de Anthropic API. Puro export estructural. |
+| 47 | ENG-466 | P2 | Feature | **Memory templates**: plantillas predefinidas para tipos comunes (decision, bugfix, architecture, PR review, daily standup). Agente rellena campos estructurados. | Idea | S | ← sesión análisis 2026-07-21 | Consistencia en formato de memorias. |
+| 48 | ENG-467 | P2 | Feature | **Auto-summarization de sesiones**: `mem_session_end` genera resumen automático desde observaciones locales (sin IA externa). Agrupa por tipo, extrae títulos, detecta decisiones. | Idea | S | ← sesión análisis 2026-07-21 | Heurísticas, no LLM. |
+| 49 | ENG-468 | P2 | Feature | **Tags/Labels**: campo `tags: [critical, auth, postgres]` en observaciones. Filtrado por tag en search, context y export. | Idea | S | ← sesión análisis 2026-07-21 | Más granular que `type`. |
+| 50 | ENG-469 | P2 | Feature | **Memory consolidation**: fusionar N memorias relacionadas → 1 canónica con referencias. Útil cuando se acumulan observaciones sobre el mismo tema. | Idea | M | ← sesión análisis 2026-07-21 | Usa `mem_relations` graph para detectar candidatos. |
+| 51 | ENG-470 | P2 | Feature | **Fuzzy search en CLI**: `engram search "algo parecido"` con tolerancia a typos. Mejora UX del search manual. | Idea | XS | ← sesión análisis 2026-07-21 | FTS5 ya soporta parcialmente. |
+| — | **Quick wins (deuda pequeña)** |
+| 52 | ENG-471 | P2 | Chore | State file atómico: `WriteAllText` → write-to-tmp + rename. Previene corrupción si el proceso muere. | Idea | XS | ← TD-012 | No crítico pero fácil de arreglar. |
+| 53 | ENG-472 | P2 | Chore | `mem_current_project` expose ambiguity hint: mapear `DetectionResult.Error` al JSON de respuesta. | Idea | XS | ← TD-018 | El detector ya setea `Error`, solo falta pasarlo al output. |
+
+### Criterios de activación
+
+Un ítem pasa de **Idea** a **Ready** cuando:
+- [ ] Se define prioridad real (P0/P1/P2) según momento
+- [ ] Se escribe spec en `docs/tasks/HU-XXX/` o `docs/architecture/rfc/`
+- [ ] Se asigna effort confirmado
+- [ ] Se mueve a la [Cola de ejecución](#cola-de-ejecución) con número de orden
+
+---
+
 ## Icebox (P2 — post v1.0.0)
 
 Items en P2 / Icebox con descripción breve. No para release de junio; referencia rápida si alguien los toma en el futuro.
@@ -1011,6 +1046,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-07-21 | **ENG-473 Done**: Fix `relations add` FK constraint violation. `rel-cli-{date}` session wasn't created. Fix: `CreateSessionAsync()` before `SaveRelationAsync()` en `Program.cs:1260`. Verificado: add/get/delete/lineage todos funcionan. |
 | 2026-07-14 | **ENG-456 Done**: NoOpVerifier factory pattern — MCP arranca sin `ANTHROPIC_API_KEY`, `mem_verify_artifact` retorna error `api_key_missing`. 8 tests nuevos, 682/683 passing. Commit `5764ce1`. |
 | 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v1.3.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
 | 2026-06-16 | **ENG-210 Done**: Validado `scripts/test-offline-reconnect.sh` end-to-end (3/3 memorias offline recuperadas). Backlog consolidado: eliminadas 3 filas duplicadas (ENG-209/210/427), notación de salud de sync actualizada. |
@@ -1297,11 +1333,11 @@ if (syncStatusProvider?.Phase == SyncPhase.Disabled ||
 ```
 
 **Criterios de aceptación:**
-- [ ] `engram sync status` muestra error claro con acción sugerida
-- [ ] Endpoint `/sync/status` incluye campo `suggested_action`
-- [ ] MCP server loggea warning cuando sync está bloqueado (al iniciar)
-- [ ] Archivo de notificación `~/.engram/sync-notifications.log` (últimas 10 notificaciones)
-- [ ] Tests cubren todos los escenarios de fallo
+- [x] `engram sync status` muestra error claro con acción sugerida
+- [x] Endpoint `/sync/status` incluye campo `suggested_action`
+- [x] MCP server loggea warning cuando sync está bloqueado (al iniciar)
+- [x] Archivo de notificación `~/.engram/sync-notifications.log` (últimas 10 notificaciones)
+- [x] Tests cubren todos los escenarios de fallo
 
 **Tests:**
 - Test unitario: `engram sync status` con sync bloqueado → muestra error + acción
@@ -1321,4 +1357,21 @@ if (syncStatusProvider?.Phase == SyncPhase.Disabled ||
 - ENG-455 (`flowforge sync connect`) — complementa esta feature
 
 ---
+
+
+### ✅ ENG-473 — `relations add` FK constraint violation (P0, Bug) — DONE 2026-07-21
+
+**Tipo:** Bug | **P0** | **Effort:** XS | **Origen:** ← sesión verificación funcional 2026-07-21
+
+**Problema:** `engram relations --action add` lanza `SQLite Error 19: 'FOREIGN KEY constraint failed'` porque el `sessionId` auto-generado `rel-cli-{date}` nunca se inserta en la tabla `sessions`. La tabla `observations` tiene `FOREIGN KEY (session_id) REFERENCES sessions(id)`.
+
+**Root cause:** `Program.cs:1260` genera `sessionId = $"rel-cli-{DateTime.UtcNow:yyyyMMdd}"` pero nunca crea la sesión correspondiente. En cambio, `engram save` usa `manual-save-{project}` que se crea explícitamente con `store.CreateSessionAsync()` en `Program.cs:259`.
+
+**Fix:** Agregar `await store.CreateSessionAsync(sessionId, project, "");` en `Program.cs:1261` antes de usar `SaveRelationAsync()`.
+
+**Verificación (2026-07-21):**
+- [x] `relations add` — ✅ `Relation depends_on:61 added to obs#60`
+- [x] `relations get` — ✅ muestra `depends_on: 61`
+- [x] `lineage` — ✅ muestra árbol `obs#60 → obs#61 → obs#63` con hops
+- [x] `relations delete` — ✅ `Relation removed.`
 
