@@ -973,7 +973,7 @@ curl http://servidor:7437/observations/recent?project=team/mi-api
 | 52 | ENG-471 | P2 | Chore | State file atómico: `WriteAllText` → write-to-tmp + rename. Previene corrupción si el proceso muere. | Idea | XS | ← TD-012 | No crítico pero fácil de arreglar. |
 | 53 | ENG-472 | P2 | Chore | `mem_current_project` expose ambiguity hint: mapear `DetectionResult.Error` al JSON de respuesta. | Idea | XS | ← TD-018 | El detector ya setea `Error`, solo falta pasarlo al output. |
 | 54 | ENG-474 | P1 | Feature | **Obsidian Memory Graph**: exportar memorias a Obsidian con relaciones como `[[wiki-links]]` + auto-linking por `topic_key` prefix para densificar el grafo. Obsidian Graph View muestra grafo coherente del conocimiento. | Idea | M | ← sesión análisis 2026-07-23 | Extiende ENG-404 (relations) + export Obsidian existente. Auto-linking sin IA (costo cero). Ver [context-map](../.ai-work/obsidian-memory-graph/context-map.md). |
-| 55 | ENG-475 | P0 | Bug | **PostgreSQL idx_obs_dedupe overflow**: sync push falla con HTTP 500 cuando observaciones tienen contenido >2704 bytes. Índice compuesto `(normalized_hash, project, scope, type, title, created_at)` excede límite B-tree de Postgres. 13 observaciones bloqueadas. Workaround: marcar como acked. Fix: cambiar índice a `md5(normalized_hash)`. | Ready | M | ← sesión sync 2026-07-24 | Ver [ticket](../.ai-work/eng-475-postgres-dedupe-index-overflow/ticket.md). |
+| 55 | ENG-475 | P0 | Bug | **PostgreSQL idx_obs_dedupe overflow**: sync push falla con HTTP 500 cuando observaciones tienen contenido >2704 bytes. Índice compuesto `(normalized_hash, project, scope, type, title, created_at)` excede límite B-tree de Postgres. 13 observaciones bloqueadas. Workaround: marcar como acked. Fix: cambiar índice a `md5(normalized_hash)`. | ✅ Done | M | ← sesión sync 2026-07-24 | PR #22 mergeado (`62eca98`). Fix: removido `title` del índice. Migración idempotente agregada. Tests: 2/2 SQLite, 2/2 Postgres. |
 
 ### Criterios de activación
 
@@ -1048,6 +1048,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-07-25 | **ENG-475 Done**: PR #22 mergeado (`62eca98`). Fix: removido `title` de `idx_obs_dedupe` en PostgresStore.cs y SqliteStore.cs. Migración idempotente `MigrateDedupeIndex()` para DBs existentes. Tests regresión: 2/2 SQLite, 2/2 PostgreSQL (Testcontainers). Sync verificado funcionando (35 pushed, 70 pulled). |
 | 2026-07-24 | **ENG-475 agregado**: PostgreSQL idx_obs_dedupe overflow — sync push falla con observaciones >2704 bytes. Ticket creado en `.ai-work/eng-475-postgres-dedupe-index-overflow/`. Workaround aplicado: 13 observaciones marcadas como acked. Sync desbloqueado (35 mutaciones pushed exitosamente). |
 | 2026-07-23 | **ENG-474 agregado**: Obsidian Memory Graph — exportar memorias con relaciones como wiki-links + auto-linking por topic_key prefix. Context-map creado en `.ai-work/obsidian-memory-graph/`. Estrategia: híbrida sin embeddings (costo cero). Pendiente: spec.md. |
 | 2026-07-22 | **Backlog sync**: ENG-453 marcado ✅ Done (PR FlowForge [#5](https://github.com/efreet111/FlowForge/pull/5) mergeado 2026-07-13). ENG-457 marcado ✅ Done (PR [#16](https://github.com/efreet111/engram-dotnet/pull/16) mergeado 2026-07-07). |
