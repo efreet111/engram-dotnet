@@ -96,7 +96,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             CREATE UNIQUE INDEX IF NOT EXISTS idx_obs_sync_id ON observations(sync_id) WHERE sync_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_obs_topic    ON observations(topic_key, project, scope, updated_at DESC) WHERE topic_key IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_obs_deleted  ON observations(deleted_at);
-            CREATE INDEX IF NOT EXISTS idx_obs_dedupe   ON observations(normalized_hash, project, scope, type, title, created_at DESC) WHERE normalized_hash IS NOT NULL;
+            -- ENG-475: removed `title` from dedup index — TEXT values >2704 bytes
+            -- exceed PostgreSQL B-tree page limit (1/3 of 8KB buffer).
+            -- The dedup query still filters by title in WHERE; the index covers
+            -- (hash, project, scope, type) which is already highly selective.
+            DROP INDEX IF EXISTS idx_obs_dedupe;
+            CREATE INDEX idx_obs_dedupe ON observations(normalized_hash, project, scope, type, created_at DESC) WHERE normalized_hash IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS user_prompts (
                 id         BIGSERIAL PRIMARY KEY,
@@ -279,6 +284,14 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         // sync_enrolled_projects needs UNIQUE(project, user) for ON CONFLICT
         EnsureEnrollmentConstraint();
 
+        // ─── ENG-475 migration: fix idx_obs_dedupe B-tree overflow ─────────────
+        // PostgreSQL B-tree cannot index rows >2704 bytes (1/3 of 8KB page).
+        // The old index included `title` (TEXT, unbounded) which caused:
+        //   PostgresException 54000: index row size 2800 exceeds btree maximum 2704
+        // Fix: drop and recreate without `title`. Dedup query still filters by title
+        // in WHERE clause; hash+project+scope+type is already highly selective.
+        MigrateDedupeIndex();
+
         // ─── Normalisation (idempotent) ────────────────────────────────────────
 
         Exec("UPDATE observations SET scope = 'project' WHERE scope IS NULL OR scope = ''");
@@ -331,6 +344,43 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         {
             // Constraint may already exist — idempotent migration
         }
+    }
+
+    /// <summary>
+    /// ENG-475: Fix idx_obs_dedupe B-tree overflow.
+    /// PostgreSQL B-tree cannot index rows &gt;2704 bytes (1/3 of 8KB page).
+    /// The old index included `title` (TEXT, unbounded) which caused:
+    ///   PostgresException 54000: index row size exceeds btree maximum 2704
+    /// This migration drops and recreates the index without `title`.
+    /// The dedup query still filters by title in WHERE clause.
+    /// </summary>
+    private void MigrateDedupeIndex()
+    {
+        // Check if the old index includes 'title' column
+        using var checkCmd = _dataSource.CreateCommand();
+        checkCmd.CommandText = @"
+            SELECT indexdef FROM pg_indexes 
+            WHERE tablename = 'observations' AND indexname = 'idx_obs_dedupe'";
+        var indexDef = checkCmd.ExecuteScalar() as string;
+
+        if (indexDef != null && indexDef.Contains("title", StringComparison.OrdinalIgnoreCase))
+        {
+            // Old index exists with 'title' — drop and recreate without it
+            Exec(@"
+                DROP INDEX IF EXISTS idx_obs_dedupe;
+                CREATE INDEX idx_obs_dedupe 
+                ON observations(normalized_hash, project, scope, type, created_at DESC) 
+                WHERE normalized_hash IS NOT NULL");
+        }
+        else if (indexDef == null)
+        {
+            // Index doesn't exist at all — create it
+            Exec(@"
+                CREATE INDEX idx_obs_dedupe 
+                ON observations(normalized_hash, project, scope, type, created_at DESC) 
+                WHERE normalized_hash IS NOT NULL");
+        }
+        // else: index exists and doesn't contain 'title' — already migrated, no-op
     }
 
     // ─── Dedupe window expression (PostgreSQL dialect) ────────────────────────

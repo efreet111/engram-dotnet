@@ -230,7 +230,9 @@ CREATE TABLE IF NOT EXISTS observations (
             CREATE UNIQUE INDEX IF NOT EXISTS idx_obs_sync_id ON observations(sync_id);
             CREATE INDEX IF NOT EXISTS idx_obs_topic         ON observations(topic_key, project, scope, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_obs_deleted       ON observations(deleted_at);
-            CREATE INDEX IF NOT EXISTS idx_obs_dedupe        ON observations(normalized_hash, project, scope, type, title, created_at DESC);
+            -- ENG-475: removed `title` from dedup index for consistency with PostgresStore.
+            -- SQLite tolerates larger index rows but we keep parity for dedup logic.
+            CREATE INDEX IF NOT EXISTS idx_obs_dedupe        ON observations(normalized_hash, project, scope, type, created_at DESC);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_target_seq ON sync_mutations(target_key, seq);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_pending    ON sync_mutations(target_key, acked_at, seq);
@@ -239,6 +241,13 @@ CREATE TABLE IF NOT EXISTS observations (
             -- which can legitimately have multiple ops on the same entity_key.
             CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_mutations_pull_dedup
                 ON sync_mutations(target_key, entity_key) WHERE source = 'pull';
+        ");
+
+        // ─── ENG-475 migration: fix idx_obs_dedupe for existing SQLite DBs ─────
+        // Drop and recreate without `title` column (may exist in older DBs).
+        Exec(@"
+            DROP INDEX IF EXISTS idx_obs_dedupe;
+            CREATE INDEX idx_obs_dedupe ON observations(normalized_hash, project, scope, type, created_at DESC);
         ");
 
         AddColumnIfNotExists("sync_mutations", "project", "TEXT NOT NULL DEFAULT ''");
