@@ -239,6 +239,46 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         Assert.Null(obs);
     }
 
+    // ─── ENG-475: Large observations (B-tree index overflow regression) ────────
+
+    [Fact]
+    public async Task AddObservation_LargeContent_DoesNotThrow()
+    {
+        // ENG-475: PostgreSQL idx_obs_dedupe overflow when title+content > 2704 bytes.
+        // This test verifies that large observations can be inserted without error.
+        await SeedSession();
+
+        // Create content > 5KB (well above the 2704 byte B-tree limit)
+        var largeContent = new string('A', 6000);
+        var longTitle = new string('T', 500);
+
+        var id = await SeedObservation(longTitle, largeContent);
+
+        Assert.True(id > 0);
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(6000, obs.Content.Length);
+        Assert.Equal(500, obs.Title.Length);
+    }
+
+    [Fact]
+    public async Task AddObservation_LargeContent_DedupStillWorks()
+    {
+        // ENG-475: Verify dedup works correctly even with large content.
+        await SeedSession();
+
+        var largeContent = "Decision: Use JWT for authentication. " + new string('X', 5000);
+        var id1 = await SeedObservation("JWT Decision", largeContent);
+        var id2 = await SeedObservation("JWT Decision", largeContent.ToUpper()); // normalizes to same hash
+
+        Assert.Equal(id1, id2); // Should deduplicate
+
+        var obs = await _fixture.Store.GetObservationAsync(id1);
+        Assert.NotNull(obs);
+        Assert.True(obs.DuplicateCount >= 2);
+    }
+
     // ─── Search ───────────────────────────────────────────────────────────────
 
     [Fact]

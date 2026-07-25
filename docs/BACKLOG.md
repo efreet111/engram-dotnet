@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-07-17  
+**Última actualización:** 2026-07-22  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -120,7 +120,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 34 | ENG-451 | P0 | Bug | **BUG-1 (P0)**: `SyncManager` no re-aplica mutaciones pulled huérfanas al recuperar de `lifecycle=blocked`. Mutaciones con `source='pull' AND acked_at IS NULL` nunca se aplican a `observations`. Data loss silenciosa. | ✅ Done | M | ← ADR-007 spike | `6ba2674` — InsertPulledMutationAsync + ReapplyPendingPulledMutationsAsync + HandleSyncStatusAsync fix |
 | 35 | ENG-451b | P1 | Bug | **BUG-2 (P1)**: `engram sync status` muestra contadores en 0 porque lee memoria del proceso, no SQLite. Información falsa en scripts y CI. | ✅ Done | S | ← ADR-007 spike | `12b97a9` — GetSyncMutationCountsAsync desde BD para conteos precisos |
 | 36 | ENG-452 | P0 | Bug | **Self-loop**: `engram serve` con SQLite local hace que `SyncManager` apunte a sí mismo, generando 501 cada 30ms en logs sin acción remediadora. Detectado durante verificación de ENG-451. | ✅ Done | S | ← ENG-451 verification | `fec9d73` — IsSyncSelfLoop() deshabilita SyncManager con warning claro. Ver [ADR-008](../docs/architecture/adr/ADR-008-sync-self-loop-detection.md) |
-| 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | 🟡 PR Open | S | ← ENG-452 | forge-verify cycle 2: PASS_DEGRADADO (9/9 FR, 4/4 NFR). PR: `feat/eng-453-verify-cleanup` (6 archivos, 5 fixes). Pendiente merge + tests con .NET SDK |
+| 37 | ENG-453 | P1 | Bug | **FlowForge installer** no guarda `ENGRAM_SERVER_URL` al instalar en `mode=sync` → siempre termina en self-loop silencioso. **En repo FlowForge**, no engram-dotnet. | ✅ Done | S | ← ENG-452 | PR [#5](https://github.com/efreet111/FlowForge/pull/5) mergeado 2026-07-13 |
 | 38 | ENG-454 | P0 | Bug | **Release v1.3.0 publicado sin binarios**: workflow `release.yml` falló con exit code 1 después de tests (48/48 passed). Release creado manualmente sin assets. Usuarios reciben v1.2.1 sin fixes de sync recovery. | ✅ Done | M | ← incident-engram-v130-missing-binaries | Workflow re-ejecutado exitosamente (2026-07-15T21:30). 8 assets subidos a v1.3.0. Ver sección detallada abajo. |
 | 39 | ENG-458 | P0 | Bug | **Mutaciones con `project=""` bloquean sync**: `CountPendingNonEnrolledAsync` cuenta mutaciones huérfanas con project vacío como "no enroladas" y bloquea TODO el push, incluso con proyectos válidos enrolados. Pérdida de datos silenciosa. | ✅ Done | S | ← sesión sync 2026-07-16 | PR #20 mergeado. Fix: project en delete payload + safety net en query |
 | 40 | ENG-459 | P0 | Feature | **Sync failure feedback**: sin notificación visible cuando sync falla repetidamente. Usuario cree que funciona pero memorias nunca se sincronizan. Pérdida de datos silenciosa. | ✅ Done | M | ← sesión sync 2026-07-16 | `712242a8` — 4 notification channels: notification file, `/sync/status` suggested_action, CLI output improvement, MCP diagnostics. 25 new tests (712 total T2, 45 T3). Ver `.ai-work/eng-459-sync-failure-feedback/` |
@@ -545,7 +545,7 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 ---
 
-### 🟡 ENG-453 — FlowForge installer no guarda `ENGRAM_SERVER_URL` (P1, Bug)
+### ✅ ENG-453 — FlowForge installer no guarda `ENGRAM_SERVER_URL` (P1, Bug) — DONE 2026-07-13
 
 **Problema:** Cuando un usuario instala en `mode=sync`, el FlowForge installer no pide ni guarda `ENGRAM_SERVER_URL`. El `SyncManager` de engram-dotnet arranca sin URL → detecta self-loop (ENG-452) → se deshabilita. El usuario cree que el sync funciona pero no lo está — las memorias nunca se sincronizan.
 
@@ -553,7 +553,7 @@ SELECT * FROM observations WHERE project='team/flowforge';
 
 **Origen:** Audit OSS 2026-06-23, durante verificación de ENG-451/452.
 
-**Estado:** 🟡 PR Open en FlowForge (2026-07-09)
+**Estado:** ✅ Done — PR [#5](https://github.com/efreet111/FlowForge/pull/5) mergeado 2026-07-13
 
 **Flujo FlowForge aplicado:**
 1. ✅ **forge-discovery** (Phase 0): Context map creado en `FlowForge/.ai-work/eng-453-installer-server-url/context-map.md`
@@ -562,7 +562,7 @@ SELECT * FROM observations WHERE project='team/flowforge';
 4. ✅ **forge-dev**: 5 fixes aplicados (VERIFY-01, VERIFY-02, VERIFY-03, CLEANUP-01, CLEANUP-02)
 5. ✅ **forge-verify cycle 2**: PASS_DEGRADADO — 9/9 FR PASS, 4/4 NFR PASS, 0 issues nuevos
 6. ✅ **Commit**: `0550e35` en branch `feat/eng-453-verify-cleanup`
-7. 🟡 **PR abierto**: Pendiente merge + tests con .NET SDK
+7. ✅ **PR mergeado**: [#5](https://github.com/efreet111/FlowForge/pull/5) — 2026-07-13
 
 **Fixes aplicados:**
 - **VERIFY-01**: `InstallCommand.cs:107` — `return;` → `Environment.Exit(1); return;` en headless abort (exit code 0 → 1)
@@ -580,9 +580,9 @@ SELECT * FROM observations WHERE project='team/flowforge';
 - `.ai-work/eng-453-installer-server-url/verify-report.md` (nuevo)
 
 **Pendiente:**
-- [ ] Merge del PR en FlowForge
+- [x] Merge del PR en FlowForge — ✅ mergeado 2026-07-13
 - [ ] Correr tests con .NET SDK: `dotnet test tests/FlowForge.Installer.Tests/FlowForge.Installer.Tests.csproj -c Release --filter "FullyQualifiedName~InstallerAsksForSyncUrl"`
-- [ ] Marcar como ✅ Done en este BACKLOG cuando el PR se merge
+- [x] Marcar como ✅ Done en este BACKLOG cuando el PR se merge — ✅ 2026-07-22
 
 **Referencias:**
 - ADR-010: `FlowForge/docs/decisions/ADR-010-installer-prompt-for-server-url.md`
@@ -972,6 +972,8 @@ curl http://servidor:7437/observations/recent?project=team/mi-api
 | — | **Quick wins (deuda pequeña)** |
 | 52 | ENG-471 | P2 | Chore | State file atómico: `WriteAllText` → write-to-tmp + rename. Previene corrupción si el proceso muere. | Idea | XS | ← TD-012 | No crítico pero fácil de arreglar. |
 | 53 | ENG-472 | P2 | Chore | `mem_current_project` expose ambiguity hint: mapear `DetectionResult.Error` al JSON de respuesta. | Idea | XS | ← TD-018 | El detector ya setea `Error`, solo falta pasarlo al output. |
+| 54 | ENG-474 | P1 | Feature | **Obsidian Memory Graph**: exportar memorias a Obsidian con relaciones como `[[wiki-links]]` + auto-linking por `topic_key` prefix para densificar el grafo. Obsidian Graph View muestra grafo coherente del conocimiento. | Idea | M | ← sesión análisis 2026-07-23 | Extiende ENG-404 (relations) + export Obsidian existente. Auto-linking sin IA (costo cero). Ver [context-map](../.ai-work/obsidian-memory-graph/context-map.md). |
+| 55 | ENG-475 | P0 | Bug | **PostgreSQL idx_obs_dedupe overflow**: sync push falla con HTTP 500 cuando observaciones tienen contenido >2704 bytes. Índice compuesto `(normalized_hash, project, scope, type, title, created_at)` excede límite B-tree de Postgres. 13 observaciones bloqueadas. Workaround: marcar como acked. Fix: cambiar índice a `md5(normalized_hash)`. | Ready | M | ← sesión sync 2026-07-24 | Ver [ticket](../.ai-work/eng-475-postgres-dedupe-index-overflow/ticket.md). |
 
 ### Criterios de activación
 
@@ -1046,6 +1048,9 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-07-24 | **ENG-475 agregado**: PostgreSQL idx_obs_dedupe overflow — sync push falla con observaciones >2704 bytes. Ticket creado en `.ai-work/eng-475-postgres-dedupe-index-overflow/`. Workaround aplicado: 13 observaciones marcadas como acked. Sync desbloqueado (35 mutaciones pushed exitosamente). |
+| 2026-07-23 | **ENG-474 agregado**: Obsidian Memory Graph — exportar memorias con relaciones como wiki-links + auto-linking por topic_key prefix. Context-map creado en `.ai-work/obsidian-memory-graph/`. Estrategia: híbrida sin embeddings (costo cero). Pendiente: spec.md. |
+| 2026-07-22 | **Backlog sync**: ENG-453 marcado ✅ Done (PR FlowForge [#5](https://github.com/efreet111/FlowForge/pull/5) mergeado 2026-07-13). ENG-457 marcado ✅ Done (PR [#16](https://github.com/efreet111/engram-dotnet/pull/16) mergeado 2026-07-07). |
 | 2026-07-21 | **ENG-473 Done**: Fix `relations add` FK constraint violation. `rel-cli-{date}` session wasn't created. Fix: `CreateSessionAsync()` before `SaveRelationAsync()` en `Program.cs:1260`. Verificado: add/get/delete/lineage todos funcionan. |
 | 2026-07-14 | **ENG-456 Done**: NoOpVerifier factory pattern — MCP arranca sin `ANTHROPIC_API_KEY`, `mem_verify_artifact` retorna error `api_key_missing`. 8 tests nuevos, 682/683 passing. Commit `5764ce1`. |
 | 2026-06-23 | **OSS Launch Audit**: ENG-435 → Rework (2 critical bugs: transacción vacía + dry-run ejecuta migración real). ENG-436 agregado (P0: `ApplyPulledMutationAsync` stub). ENG-437 agregado (P0: Release v1.3.0 + fix versión). ENG-438/439 agregados (P1: hygiene). Audit completo en FlowForge `.ai-work/oss-launch-audit/context-map.md`. |
@@ -1144,7 +1149,7 @@ Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan
 **Artifacts:** `.ai-work/eng-456-llm-verifier-lazy/` (context-map.md, spec.md, plan.md, verify-report.md)
 
 
-### ENG-457 — Sync pull dedup: prevent millions of duplicate rows — Branch: `fix/sync-mutations-dedup`
+### ✅ ENG-457 — Sync pull dedup: prevent millions of duplicate rows — DONE 2026-07-07
 
 **Tipo:** Bug | **P0** | **Effort:** S | **Origen:** ← sesión verificación 2026-07-05 (sync duplicaba 6.7M mutaciones)
 
@@ -1163,7 +1168,7 @@ Esto significa que `mem_save`, `mem_search`, y todos los demás tools MCP fallan
 - [x] Cero regresiones (220/220 store tests passing)
 - [x] Cleanup local: 6,759,768 → 7 rows (1.97GB reclaim)
 
-**PR:** https://github.com/efreet111/engram-dotnet/pull/new/fix/sync-mutations-dedup
+**PR:** [#16](https://github.com/efreet111/engram-dotnet/pull/16) — mergeado 2026-07-07
 
 
 ---
@@ -1374,4 +1379,56 @@ if (syncStatusProvider?.Phase == SyncPhase.Disabled ||
 - [x] `relations get` — ✅ muestra `depends_on: 61`
 - [x] `lineage` — ✅ muestra árbol `obs#60 → obs#61 → obs#63` con hops
 - [x] `relations delete` — ✅ `Relation removed.`
+
+---
+
+### ENG-474 — Obsidian Memory Graph (P1, Feature)
+
+**Tipo:** Feature | **P1** | **Effort:** M | **Origen:** ← sesión análisis 2026-07-23
+
+**Problema:** Hoy el export a Obsidian genera notas sueltas sin links entre ellas (excepto session/topic hubs). Las relaciones existen en la DB (`mem_relations`) pero no se renderizan como `[[wiki-links]]`. El grafo de conocimiento no es visible en Obsidian Graph View.
+
+**Para qué sirve:** Que el usuario pueda abrir Obsidian y ver un grafo visual de cómo se conectan sus memorias: decisiones → ADRs → bugs → fixes. Navegación por contexto en vez de solo búsqueda textual.
+
+**Análisis de viabilidad (2026-07-23):**
+- ✅ Nodos (observaciones) tienen campos suficientes
+- ✅ Aristas (relaciones) ya existen con 4 tipos
+- ❌ Export NO renderiza relaciones como wiki-links
+- ❌ 0 auto-linking (grafo 100% manual, muy disperso)
+- ✅ Estrategia híbrida sin IA: topic_key + FTS5 + sesión (costo cero)
+
+**Estrategias de auto-linking propuestas:**
+
+| Estrategia | Base | Costo | Fortaleza |
+|-----------|------|-------|-----------|
+| topic_key prefix | `architecture/auth-*` → related_to | Gratis | Determinista |
+| FTS5 keyword overlap | Comparten "JWT" en título | Gratis | Captura conexiones semánticas |
+| Sesión temporal | Misma sesión en 2h → related_to | Gratis | Links débiles pero útiles |
+
+**Alcance MVP:**
+1. `MarkdownRenderer`: agregar sección "Relations" con `[[wiki-links]]` a observaciones relacionadas
+2. `Exporter`: cargar relaciones al exportar (query a `MemoryRelationRepository`)
+3. `AutoLinker`: nuevo componente con estrategia por topic_key prefix
+4. Auto-links marcados con `auto_linked: true` en frontmatter (no contaminan DB)
+5. Tests: unit + integration
+
+**Criterios de aceptación:**
+- [ ] Export genera `.md` con wiki-links a observaciones relacionadas (manual + auto)
+- [ ] Obsidian Graph View muestra aristas entre notas conectadas
+- [ ] Auto-linking por topic_key prefix funciona (ej: `architecture/auth-*`)
+- [ ] Auto-links no se persisten en DB (solo en export)
+- [ ] Frontmatter incluye `auto_linked: [obs_id_1, obs_id_2]` para trazabilidad
+- [ ] Tests cubren: export con relaciones manuales, auto-link por topic_key, mixed
+
+**Archivos a modificar:**
+- `src/Engram.Obsidian/MarkdownRenderer.cs` — renderizar wiki-links de relaciones
+- `src/Engram.Obsidian/Exporter.cs` — cargar relaciones al exportar
+- `src/Engram.Obsidian/AutoLinker.cs` (nuevo) — lógica de auto-linking
+- `tests/Engram.Obsidian.Tests/` — nuevos tests
+
+**Depende de:** ENG-404 (memory relations ✅ Done), export Obsidian existente
+
+**Ver:** [context-map](../.ai-work/obsidian-memory-graph/context-map.md)
+
+**Estado:** Idea — pendiente spec.md (CKP-1)
 
