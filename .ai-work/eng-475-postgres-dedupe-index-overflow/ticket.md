@@ -151,9 +151,27 @@ sqlite3 ~/.engram/engram.db "UPDATE sync_mutations SET acked_at = datetime('now'
 
 ## Próximos Pasos
 
-1. **Corto plazo:** Aplicar workaround (marcar como acked)
-2. **Mediano plazo:** Crear ADR con la decisión de fix
-3. **Largo plazo:** Implementar fix en PostgresStore.cs y migración de índice
+1. **Corto plazo:** Aplicar workaround (marcar como acked) ✅ Hecho
+2. **Mediano plazo:** Crear ADR con la decisión de fix ✅ Hecho (en ticket)
+3. **Largo plazo:** Implementar fix en PostgresStore.cs y migración de índice ✅ Hecho
+
+---
+
+## Resolución (2026-07-25)
+
+**Status:** ✅ Done — PR #22 mergeado (`62eca98`)
+
+**Fix aplicado:**
+- Removido `title` de `idx_obs_dedupe` en PostgresStore.cs y SqliteStore.cs
+- Migración idempotente `MigrateDedupeIndex()` para DBs existentes
+- Tests regresión: 2/2 SQLite, 2/2 PostgreSQL (Testcontainers)
+
+**Verificación:**
+- Sync funcionando: 35 mutaciones pushed, 70 pulled
+- Sin errores, phase=healthy
+- CI pasó: SQLite 54s, PostgreSQL 1m19s
+
+**Commit:** `62eca98` (merge PR #22)
 
 ---
 
