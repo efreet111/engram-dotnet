@@ -2057,6 +2057,17 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(list);
     }
 
+    public Task<int> CountPendingSyncMutationsAsync(string targetKey, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*) FROM sync_mutations
+            WHERE target_key = @target AND source = 'local' AND acked_at IS NULL";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        var count = Convert.ToInt32(cmd.ExecuteScalar());
+        return Task.FromResult(count);
+    }
+
     public Task<List<PendingProjectCount>> CountPendingNonEnrolledAsync(string targetKey, CancellationToken ct = default)
     {
         var list = new List<PendingProjectCount>();

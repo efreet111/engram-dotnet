@@ -18,6 +18,12 @@ public interface ILocalSyncStore
     Task<List<SyncMutation>> ListPendingSyncMutationsAsync(string targetKey, int limit, CancellationToken ct = default);
 
     /// <summary>
+    /// Count pending local mutations (source='local' AND acked_at IS NULL) for a target.
+    /// Used for on-demand sync feedback in MCP tools.
+    /// </summary>
+    Task<int> CountPendingSyncMutationsAsync(string targetKey, CancellationToken ct = default);
+
+    /// <summary>
     /// Count pending non-enrolled mutations grouped by project.
     /// Used to detect when push should be blocked.
     /// </summary>

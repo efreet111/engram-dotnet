@@ -190,6 +190,7 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
             sp.GetRequiredService<ILogger<SyncManager>>(),
             syncMetrics));
         mcpBuilder.Services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncManager>());
+        mcpBuilder.Services.AddSingleton<ISyncOnDemandPusher>(sp => sp.GetRequiredService<SyncManager>());
         mcpBuilder.Services.AddHostedService(sp => sp.GetRequiredService<SyncManager>());
     }
     else if (syncConfig.Enabled && store is not ILocalSyncStore)
