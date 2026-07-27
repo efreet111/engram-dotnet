@@ -5,7 +5,9 @@
 
 ## [Unreleased]
 
-<!-- (empty — next release) -->
+### Fixed
+
+- **ENG-473**: `mem_relations` and `mem_lineage_obs` no longer crash with SQLite FK constraint violation — CLI `relations add` now creates the `rel-cli-{date}` session before saving observations. Commit `c88d31e`.
 
 ## [1.3.0] — 2026-07-06
 
