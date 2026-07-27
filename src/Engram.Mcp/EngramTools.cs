@@ -50,7 +50,7 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null, ISyncOnDemandPusher? syncPusher = null)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
@@ -59,6 +59,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     private readonly IDiagnosticService _diagnosticService = diagnosticService;
     private readonly Verification.MemoryRelationRepository _memRelRepo = memRelRepo;
     private readonly Verification.MemoryLineageBuilder _memLineageBuilder = memLineageBuilder;
+    private readonly ISyncOnDemandPusher? _syncPusher = syncPusher;
     
     /// <summary>
     /// Field initializer with side-effect: emits sync warning to stderr on construction.
@@ -78,6 +79,25 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// ENG-476: Fire-and-forget helper to trigger on-demand sync push
+    /// from MCP write tools (MemSave, MemUpdate, MemDelete).
+    /// Never throws — failures are logged at debug level.
+    /// </summary>
+    private async Task TriggerOnDemandPushInBackground()
+    {
+        if (_syncPusher is null) return;
+        try
+        {
+            await _syncPusher.TriggerPushAsync();
+        }
+        catch (Exception ex)
+        {
+            // Sync is best-effort; never fail the write because of a sync error
+            Console.Error.WriteLine($"[engram] on-demand push failed: {ex.Message}");
+        }
     }
 
     // ─── mem_search ──────────────────────────────────────────────────────────
@@ -236,6 +256,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
             _activity.RecordSave(session_id);
 
+            // ENG-476 FR-001: Fire-and-forget push after save
+            _ = TriggerOnDemandPushInBackground();
+
             var msg = $"Memory saved: \"{title}\" ({type})";
             if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
                 msg += $"\nSuggested topic_key: {suggestedKey}";
@@ -245,6 +268,25 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 msg += $"\n{normWarning}";
             if (!string.IsNullOrEmpty(similarWarning))
                 msg += $"\n{similarWarning}";
+
+            // ENG-476 FR-003: Snapshot feedback of pending mutations at save time.
+            // The count is captured AFTER triggering the fire-and-forget push (FR-001),
+            // so it may include mutations already being pushed in background.
+            // This is a best-effort snapshot — the actual pending count may decrease
+            // shortly after due to the concurrent background push.
+            if (_syncPusher is { IsEnabled: true })
+            {
+                try
+                {
+                    var pendingCount = await _syncPusher.CountPendingMutationsAsync(ct);
+                    if (pendingCount > 0)
+                        msg += $"\n⚠️ {pendingCount} mutation(s) pending sync";
+                }
+                catch
+                {
+                    // Best-effort feedback; don't fail the save
+                }
+            }
 
             return msg;
         });
@@ -293,6 +335,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             if (obs is null) return McpErrors.Structured(
                 "observation_not_found",
                 $"observation #{id} not found after update");
+
+            // ENG-476 FR-001: Fire-and-forget push after update
+            _ = TriggerOnDemandPushInBackground();
 
             var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
             if (content is not null && content.Length > store.MaxObservationLength)
@@ -345,6 +390,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             if (!ok) return McpErrors.Structured(
                 "observation_not_found",
                 $"observation #{id} not found");
+
+            // ENG-476 FR-001: Fire-and-forget push after delete
+            _ = TriggerOnDemandPushInBackground();
 
             var mode = hard_delete ? "permanently deleted" : "soft-deleted";
             return $"Memory #{id} {mode}";

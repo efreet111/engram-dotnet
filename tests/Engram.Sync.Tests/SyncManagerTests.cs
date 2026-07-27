@@ -897,4 +897,156 @@ public sealed class SyncManagerTests : IDisposable
             ?? throw new InvalidOperationException("WriteNotificationAsync did not return a Task");
         await task;
     }
+
+    // ─── ENG-476: ISyncOnDemandPusher ─────────────────────────────────────────
+
+    /// <summary>
+    /// Test: TriggerPushAsync skips when sync is disabled.
+    /// </summary>
+    [Fact]
+    public async Task OnDemandPush_Disabled_Skips()
+    {
+        // Arrange
+        var disabledConfig = _config with { Enabled = false };
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, disabledConfig, _loggerMock.Object, new SyncMetrics());
+
+        // Act
+        await syncManager.TriggerPushAsync();
+
+        // Assert: no lease acquired, no push attempted
+        _storeMock.Verify(s => s.AcquireSyncLeaseAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// Test: TriggerPushAsync acquires on-demand lease with different owner suffix.
+    /// </summary>
+    [Fact]
+    public async Task OnDemandPush_AcquiresLeaseWithDifferentOwner()
+    {
+        // Arrange
+        _storeMock.Setup(s => s.AcquireSyncLeaseAsync(
+                _config.TargetKey,
+                $"{_config.LeaseOwner}-on-demand",
+                TimeSpan.FromSeconds(30),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _storeMock.Setup(s => s.ListPendingSyncMutationsAsync(_config.TargetKey, _config.PushBatchSize, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SyncMutation>());
+        _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(
+                _config.TargetKey,
+                $"{_config.LeaseOwner}-on-demand",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
+
+        // Act
+        await syncManager.TriggerPushAsync();
+
+        // Assert
+        _storeMock.Verify(s => s.AcquireSyncLeaseAsync(
+            _config.TargetKey,
+            $"{_config.LeaseOwner}-on-demand",
+            TimeSpan.FromSeconds(30),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Test: TriggerPushAsync skips when lease is held by background.
+    /// </summary>
+    [Fact]
+    public async Task OnDemandPush_LeaseHeldByBackground_Skips()
+    {
+        // Arrange: on-demand lease acquisition returns false (background holds it)
+        _storeMock.Setup(s => s.AcquireSyncLeaseAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
+
+        // Act
+        await syncManager.TriggerPushAsync();
+
+        // Assert: no push attempted
+        _transportMock.Verify(t => t.PushMutationsAsync(
+            It.IsAny<IReadOnlyList<Transport.MutationEntry>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// Test: CountPendingMutationsAsync returns count from store.
+    /// </summary>
+    [Fact]
+    public async Task CountPendingMutations_ReturnsCountFromStore()
+    {
+        // Arrange
+        _storeMock.Setup(s => s.CountPendingSyncMutationsAsync(_config.TargetKey, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5);
+
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
+
+        // Act
+        var count = await syncManager.CountPendingMutationsAsync();
+
+        // Assert
+        Assert.Equal(5, count);
+    }
+
+    /// <summary>
+    /// Test: CountPendingMutationsAsync returns 0 on error (fire-and-forget safe).
+    /// </summary>
+    [Fact]
+    public async Task CountPendingMutations_OnError_ReturnsZero()
+    {
+        // Arrange
+        _storeMock.Setup(s => s.CountPendingSyncMutationsAsync(_config.TargetKey, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("test"));
+
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
+
+        // Act
+        var count = await syncManager.CountPendingMutationsAsync();
+
+        // Assert
+        Assert.Equal(0, count);
+    }
+
+    /// <summary>
+    /// Test: TriggerPushAsync catches transport exceptions (fire-and-forget safe).
+    /// </summary>
+    [Fact]
+    public async Task OnDemandPush_TransportThrows_DoesNotPropagate()
+    {
+        // Arrange
+        _storeMock.Setup(s => s.AcquireSyncLeaseAsync(
+                _config.TargetKey,
+                $"{_config.LeaseOwner}-on-demand",
+                TimeSpan.FromSeconds(30),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _storeMock.Setup(s => s.ListPendingSyncMutationsAsync(_config.TargetKey, _config.PushBatchSize, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SyncMutation>
+            {
+                new(1, _config.TargetKey, "observation", "obs-1", "upsert", "{}", "local", "team/test", DateTime.UtcNow, null)
+            });
+        _transportMock.Setup(t => t.PushMutationsAsync(
+                It.IsAny<IReadOnlyList<Transport.MutationEntry>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("transport error"));
+        _storeMock.Setup(s => s.ReleaseSyncLeaseAsync(
+                _config.TargetKey,
+                $"{_config.LeaseOwner}-on-demand",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var syncManager = new SyncManager(_storeMock.Object, _transportMock.Object, _config, _loggerMock.Object, new SyncMetrics());
+
+        // Act & Assert: should not throw
+        await syncManager.TriggerPushAsync();
+    }
 }

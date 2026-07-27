@@ -11,10 +11,12 @@ namespace Engram.Sync;
 /// <summary>
 /// Background service for automatic mutation-based sync.
 /// Implements debounce + poll pattern with push/pull cycles, failure ceiling, and panic recovery.
+/// Also implements ISyncOnDemandPusher for fire-and-forget pushes from MCP tools.
 /// Design: sdd/offline-first-sync/design/design.md §AD-5
 /// </summary>
-public sealed class SyncManager : BackgroundService, ISyncStatusProvider
+public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncOnDemandPusher
 {
+    private const string OnDemandLeaseOwnerSuffix = "-on-demand";
     private static readonly Action<ILogger, Exception?> CycleStart =
         LoggerMessage.Define(
             LogLevel.Information,
@@ -116,6 +118,18 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
         }
 
         SyncManagerStarting(_logger, _cfg.TargetKey, _cfg.PollInterval, null);
+
+        // ENG-476 FR-002: Immediate push of pending mutations on startup
+        // before entering the background loop, so any mutations left pending
+        // from a previous session get flushed ASAP.
+        try
+        {
+            await TriggerPushAsync(stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Startup on-demand push failed (continuing to background loop)");
+        }
 
         try
         {
@@ -279,6 +293,17 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
         var byProject = pending.GroupBy(m => m.Project).ToList();
         PushBatch(_logger, pending.Count, byProject.Count, null);
 
+        return await PushBatchInternalAsync(pending, ct);
+    }
+
+    /// <summary>
+    /// Push a batch of pending mutations to the server. Used by both the
+    /// background cycle and the on-demand trigger from MCP tools.
+    /// </summary>
+    private async Task<bool> PushBatchInternalAsync(IList<SyncMutation> pending, CancellationToken ct)
+    {
+        var byProject = pending.GroupBy(m => m.Project).ToList();
+
         foreach (var group in byProject)
         {
             var entries = group.Select(m => new MutationEntry(m.Project, m.Entity, m.EntityKey, m.Op, m.Payload)).ToList();
@@ -429,5 +454,71 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider
     {
         var backoff = _cfg.BaseBackoff * Math.Pow(2, _consecutiveFailures - 1);
         return backoff > _cfg.MaxBackoff ? _cfg.MaxBackoff : backoff;
+    }
+
+    // ─── ISyncOnDemandPusher (ENG-476) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Fire-and-forget push triggered by MCP tools after a write.
+    /// Respects lease (skips if background holds it) and backoff (skips if active).
+    /// Never throws to caller.
+    /// </summary>
+    public async Task TriggerPushAsync(CancellationToken ct = default)
+    {
+        if (!_cfg.Enabled) return;
+
+        // FR-005: Respect backoff
+        if (_backoffUntil.HasValue && DateTime.UtcNow < _backoffUntil.Value)
+        {
+            _logger.LogDebug("On-demand push skipped: in backoff until {BackoffUntil}", _backoffUntil.Value);
+            return;
+        }
+
+        // FR-004: Respect lease — use a different owner so we don't race the background loop.
+        var onDemandOwner = $"{_cfg.LeaseOwner}{OnDemandLeaseOwnerSuffix}";
+        var leaseAcquired = await _store.AcquireSyncLeaseAsync(
+            _cfg.TargetKey, onDemandOwner, TimeSpan.FromSeconds(30), ct);
+
+        if (!leaseAcquired)
+        {
+            _logger.LogDebug("On-demand push skipped: lease held by background");
+            return;
+        }
+
+        try
+        {
+            var pending = await _store.ListPendingSyncMutationsAsync(
+                _cfg.TargetKey, _cfg.PushBatchSize, ct);
+
+            if (pending.Count == 0)
+            {
+                _logger.LogDebug("On-demand push: no pending mutations");
+                return;
+            }
+
+            _logger.LogInformation("On-demand push starting: {Count} pending mutations", pending.Count);
+            await PushBatchInternalAsync(pending, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "On-demand push failed");
+        }
+        finally
+        {
+            await _store.ReleaseSyncLeaseAsync(_cfg.TargetKey, onDemandOwner, ct);
+        }
+    }
+
+    public async Task<int> CountPendingMutationsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _store.CountPendingSyncMutationsAsync(_cfg.TargetKey, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "CountPendingMutationsAsync failed");
+            return 0;
+        }
     }
 }
