@@ -588,6 +588,17 @@ CREATE TABLE IF NOT EXISTS observations (
 
         var title   = StripPrivateTags(p.Title);
         var content = StripPrivateTags(p.Content);
+
+        // ENG-475 follow-up: truncate title to prevent B-tree index overflow
+        if (title.Length > _cfg.MaxTitleLength)
+        {
+            var original = title;
+            title = title[.._cfg.MaxTitleLength] + "…";
+            _logger?.LogWarning(
+                "Title truncated from {OriginalLength} chars to {Max}. Original: {Preview}…",
+                original.Length, _cfg.MaxTitleLength, original[..Math.Min(100, original.Length)]);
+        }
+
         if (content.Length > _cfg.MaxObservationLength)
             content = content[.._cfg.MaxObservationLength] + "... [truncated]";
 

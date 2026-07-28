@@ -19,6 +19,13 @@ public class StoreConfig
 
     public int MaxObservationLength { get; init; } = 100_000;
 
+    /// <summary>
+    /// Maximum title length before truncation (ENG-475 follow-up).
+    /// Titles exceeding this limit are truncated and appended with "…" to make data loss visible.
+    /// Prevents PostgreSQL B-tree index overflow (idx_obs_dedupe).
+    /// </summary>
+    public int MaxTitleLength { get; init; } = 200;
+
     public string? JwtSecret { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_JWT_SECRET");
 
     public string? CorsOrigins { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_CORS_ORIGINS");
