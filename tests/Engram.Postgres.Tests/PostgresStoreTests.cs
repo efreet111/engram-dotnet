@@ -259,7 +259,8 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var obs = await _fixture.Store.GetObservationAsync(id);
         Assert.NotNull(obs);
         Assert.Equal(6000, obs.Content.Length);
-        Assert.Equal(500, obs.Title.Length);
+        // Title is truncated to MaxTitleLength (200) + "…" = 201 chars (ADR-013)
+        Assert.Equal(201, obs.Title.Length);
     }
 
     [Fact]
@@ -1256,5 +1257,128 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
             Assert.Equal(1, Convert.ToInt32(r["prompt_src"]));
             Assert.Equal(0, Convert.ToInt32(r["prompt_tgt"]));
         }
+    }
+
+    // ─── Title truncation (FR-006) ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddObservation_TitleAt150Chars_SavedVerbatim()
+    {
+        await SeedSession();
+        var title = new string('A', 150);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(150, obs.Title.Length);
+        Assert.Equal(title, obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt200Chars_SavedVerbatim()
+    {
+        await SeedSession();
+        var title = new string('B', 200);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(200, obs.Title.Length);
+        Assert.Equal(title, obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt250Chars_TruncatedTo200PlusEllipsis()
+    {
+        await SeedSession();
+        var title = new string('C', 250);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        // Truncated to 200 chars + "…" = 201 chars total
+        Assert.Equal(201, obs.Title.Length);
+        Assert.EndsWith("…", obs.Title);
+        Assert.Equal(new string('C', 200) + "…", obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt500Chars_TruncatedTo200PlusEllipsis()
+    {
+        await SeedSession();
+        var title = new string('D', 500);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(201, obs.Title.Length);
+        Assert.EndsWith("…", obs.Title);
+    }
+
+    // ─── Content truncation parity (FR-007) ────────────────────────────────────
+
+    [Fact]
+    public async Task AddObservation_ContentAt85K_SavedVerbatim()
+    {
+        await SeedSession();
+        var content = new string('X', 85_000);
+        var id = await SeedObservation("obs-85k", content);
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(85_000, obs.Content.Length);
+    }
+
+    [Fact]
+    public async Task AddObservation_ContentAt120K_TruncatedTo100KPlusMarker()
+    {
+        await SeedSession();
+        var content = new string('Y', 120_000);
+        var id = await SeedObservation("obs-120k", content);
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        // Truncated to 100_000 + "... [truncated]" = 100_015 chars
+        Assert.Equal(100_000 + "... [truncated]".Length, obs.Content.Length);
+        Assert.EndsWith("... [truncated]", obs.Content);
+    }
+
+    [Fact]
+    public async Task UpdateObservation_ContentOver100K_Truncated()
+    {
+        await SeedSession();
+        var id = await SeedObservation("update-test", "original content");
+
+        var longContent = new string('Z', 120_000);
+        await _fixture.Store.UpdateObservationAsync(id, new UpdateObservationParams
+        {
+            Content = longContent,
+        });
+
+        var obs = await _fixture.Store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(100_000 + "... [truncated]".Length, obs.Content.Length);
+        Assert.EndsWith("... [truncated]", obs.Content);
+    }
+
+    [Fact]
+    public async Task AddPrompt_ContentOver100K_Truncated()
+    {
+        await SeedSession();
+        var longContent = new string('P', 120_000);
+        var promptId = await _fixture.Store.AddPromptAsync(new AddPromptParams
+        {
+            SessionId = SessionId,
+            Content = longContent,
+            Project = "test-project",
+        });
+
+        Assert.True(promptId > 0);
+
+        var prompts = await _fixture.Store.RecentPromptsAsync("test-project", null, 10);
+        Assert.NotEmpty(prompts);
+        var prompt = prompts.First(p => p.Id == promptId);
+        Assert.Equal(100_000 + "... [truncated]".Length, prompt.Content.Length);
+        Assert.EndsWith("... [truncated]", prompt.Content);
     }
 }

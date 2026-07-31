@@ -289,7 +289,9 @@ public class SqliteStoreTests : IDisposable
         var obs = await _store.GetObservationAsync(id);
         Assert.NotNull(obs);
         Assert.Equal(6000, obs.Content.Length);
-        Assert.Equal(500, obs.Title.Length);
+        // Title truncated to MaxTitleLength (200) + "…" (1) = 201 chars
+        Assert.Equal(201, obs.Title.Length);
+        Assert.EndsWith("…", obs.Title);
     }
 
     [Fact]
@@ -307,6 +309,69 @@ public class SqliteStoreTests : IDisposable
         var obs = await _store.GetObservationAsync(id1);
         Assert.NotNull(obs);
         Assert.True(obs.DuplicateCount >= 2);
+    }
+
+    // ─── Title truncation (FR-006) ─────────────────────────────────────────────
+
+    [Fact]
+    public void StoreConfig_MaxTitleLength_DefaultsTo200()
+    {
+        var cfg = new StoreConfig();
+        Assert.Equal(200, cfg.MaxTitleLength);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt150Chars_SavedVerbatim()
+    {
+        await SeedSession();
+        var title = new string('A', 150);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(150, obs.Title.Length);
+        Assert.Equal(title, obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt200Chars_SavedVerbatim()
+    {
+        await SeedSession();
+        var title = new string('B', 200);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(200, obs.Title.Length);
+        Assert.Equal(title, obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt250Chars_TruncatedTo200PlusEllipsis()
+    {
+        await SeedSession();
+        var title = new string('C', 250);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        // Truncated to 200 chars + "…" = 201 chars total
+        Assert.Equal(201, obs.Title.Length);
+        Assert.EndsWith("…", obs.Title);
+        Assert.Equal(new string('C', 200) + "…", obs.Title);
+    }
+
+    [Fact]
+    public async Task AddObservation_TitleAt500Chars_TruncatedTo200PlusEllipsis()
+    {
+        await SeedSession();
+        var title = new string('D', 500);
+        var id = await SeedObservation(title, "content");
+
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal(201, obs.Title.Length);
+        Assert.EndsWith("…", obs.Title);
     }
 
     // ─── Search ───────────────────────────────────────────────────────────────

@@ -217,6 +217,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             var suggestedKey = Normalizers.SuggestTopicKey(type, title, content);
             var truncated    = content.Length > store.MaxObservationLength;
 
+            // 5K soft warning — additive, does NOT truncate
+            string? sizeWarning = null;
+            if (content.Length > 5_000)
+            {
+                sizeWarning = $"⚠ Content is {content.Length} chars (>5,000 threshold). " +
+                    "Consider splitting into multiple focused observations for better " +
+                    "searchability and maintainability. Save will proceed.";
+            }
+
             // ── Check for similar existing projects (only when this project has no observations) ──
             string? similarWarning = null;
             if (!string.IsNullOrEmpty(normalizedProject))
@@ -262,6 +271,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             var msg = $"Memory saved: \"{title}\" ({type})";
             if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
                 msg += $"\nSuggested topic_key: {suggestedKey}";
+            if (!string.IsNullOrEmpty(sizeWarning))
+                msg += $"\n{sizeWarning}";
             if (truncated)
                 msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
             if (!string.IsNullOrEmpty(normWarning))
@@ -340,6 +351,13 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             _ = TriggerOnDemandPushInBackground();
 
             var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
+
+            // 5K soft warning — additive, does NOT truncate
+            if (content is not null && content.Length > 5_000)
+                msg += $"\n⚠ Content is {content.Length} chars (>5,000 threshold). " +
+                    "Consider splitting into multiple focused observations for better " +
+                    "searchability and maintainability. Save will proceed.";
+
             if (content is not null && content.Length > store.MaxObservationLength)
                 msg += $"\n⚠ WARNING: Content was truncated to {store.MaxObservationLength} chars. Consider splitting into smaller observations.";
 

@@ -36,7 +36,7 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | ENG-452 | `fec9d73` | Self-loop detection — `engram serve` with SQLite no longer wastes CPU on doomed 501s. See ADR-008. |
 | ENG-435 rework cycle 2 | `4be21df` `62c1194` | Migration dry-run + mid-migration rollback integration tests. Closes rework cycle 2/3. |
 | ENG-456 | `5764ce1` | NoOpVerifier factory pattern — MCP server starts without `ANTHROPIC_API_KEY`. All 28 tools work; `mem_verify_artifact` returns structured `api_key_missing` error. 8 tests added. |
-| ENG-473 | (pending commit) | Fix `relations add` FK constraint violation — `rel-cli-{date}` session was generated but never created, breaking `mem_relations` and `mem_lineage_obs`. Fix: `CreateSessionAsync()` before `SaveRelationAsync()`. |
+| ENG-473 | `c88d31e` | Fix `relations add` FK constraint violation — `rel-cli-{date}` session was generated but never created, breaking `mem_relations` and `mem_lineage_obs`. Fix: `CreateSessionAsync()` before `SaveRelationAsync()`. |
 
 ---
 

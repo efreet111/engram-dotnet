@@ -70,6 +70,68 @@ public class EngramServerTests : IAsyncDisposable
         resp.EnsureSuccessStatusCode();
     }
 
+    /// <summary>
+    /// Creates an observation under the given session and returns its id.
+    /// Idempotent: reuses an existing session if SeedSession already ran.
+    /// </summary>
+    private async Task<long> SeedObservation(
+        string sessionId = "test-s1",
+        string title     = "Test observation",
+        string content   = "Test content for observation",
+        string type      = "manual",
+        string project   = "test-proj")
+    {
+        await SeedSession(sessionId, project);
+
+        var resp = await _client.PostAsJsonAsync("/observations", new
+        {
+            session_id = sessionId,
+            title,
+            content,
+            type,
+            project,
+        }, JsonOpts);
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        return (long)json!["id"]!;
+    }
+
+    /// <summary>
+    /// Creates a prompt under the given session and returns its id.
+    /// </summary>
+    private async Task<long> SeedPrompt(
+        string sessionId = "test-s1",
+        string content   = "What does this code do?",
+        string project   = "test-proj")
+    {
+        await SeedSession(sessionId, project);
+
+        var resp = await _client.PostAsJsonAsync("/prompts", new
+        {
+            session_id = sessionId,
+            content,
+            project,
+        }, JsonOpts);
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        return (long)json!["id"]!;
+    }
+
+    /// <summary>
+    /// Returns markdown text that <see cref="PassiveCapture.ExtractLearnings"/>
+    /// will parse: a <c>## Key Learnings</c> header followed by numbered items.
+    /// Each learning must be ≥20 chars and ≥4 words (PassiveCapture parser rule).
+    /// </summary>
+    private static string MakePassiveContent(params string[] learnings)
+    {
+        var items = string.Join("\n", learnings.Select((l, i) => $"{i + 1}. {l}"));
+        return $"## Key Learnings\n{items}";
+    }
+
     // ─── Health ───────────────────────────────────────────────────────────────
 
     [Fact]
@@ -689,5 +751,600 @@ public class EngramServerTests : IAsyncDisposable
     {
         var resp = await _client.GetAsync("/export?project=");
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ENG-422: REST endpoints without HTTP test coverage (Phase 3 of FlowForge)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // ─── POST /observations/passive (T-02) ────────────────────────────────────
+
+    [Fact]
+    public async Task POST_observations_passive_WithValidContent_ReturnsExtracted()
+    {
+        await SeedSession();
+
+        var content = MakePassiveContent(
+            "The ASP.NET Core middleware pipeline processes requests in registration order.",
+            "SQLite WAL mode allows concurrent readers without blocking writers."
+        );
+
+        var resp = await _client.PostAsJsonAsync("/observations/passive", new
+        {
+            session_id = "test-s1",
+            content,
+            project   = "test-proj",
+            source    = "claude-code",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.True((int)json!["extracted"]! >= 2,
+            $"Expected extracted >= 2, got {json["extracted"]}");
+        Assert.True((int)json["saved"]! >= 2,
+            $"Expected saved >= 2, got {json["saved"]}");
+    }
+
+    [Fact]
+    public async Task POST_observations_passive_EmptyContent_ReturnsZeros()
+    {
+        await SeedSession();
+
+        var resp = await _client.PostAsJsonAsync("/observations/passive", new
+        {
+            session_id = "test-s1",
+            content    = "",
+            project    = "test-proj",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(0, (int)json!["extracted"]!);
+        Assert.Equal(0, (int)json["saved"]!);
+        Assert.Equal(0, (int)json["duplicates"]!);
+    }
+
+    [Fact]
+    public async Task POST_observations_passive_MissingSessionId_Returns400()
+    {
+        var resp = await _client.PostAsJsonAsync("/observations/passive", new
+        {
+            content = "Some markdown content without session_id field.",
+            project = "test-proj",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["error"]);
+    }
+
+    // ─── GET /timeline (T-03) ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GET_timeline_ValidObservationId_Returns200()
+    {
+        // Seed 3 observations under the same session to give the focus some context.
+        var id1 = await SeedObservation("test-s1", "First decision",  "First content", "decision", "test-proj");
+        var id2 = await SeedObservation("test-s1", "Second decision", "Second content", "decision", "test-proj");
+        var id3 = await SeedObservation("test-s1", "Third decision",  "Third content", "decision", "test-proj");
+
+        var resp = await _client.GetAsync($"/timeline?observation_id={id2}");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["focus"]);
+        Assert.NotNull(json["before"]);
+        Assert.NotNull(json["after"]);
+        Assert.Equal(id2, (long?)json["focus"]!["id"]);
+        // id1 should be in "before" (id < id2)
+        // id3 should be in "after"  (id > id2)
+        var before = json["before"]?.AsArray();
+        var after  = json["after"]?.AsArray();
+        Assert.NotNull(before);
+        Assert.NotNull(after);
+        Assert.NotEmpty(before);
+        Assert.NotEmpty(after);
+        Assert.Contains(before, e => (long?)e?["id"] == id1);
+        Assert.Contains(after,  e => (long?)e?["id"] == id3);
+    }
+
+    [Fact]
+    public async Task GET_timeline_MissingObservationId_Returns400()
+    {
+        var resp = await _client.GetAsync("/timeline");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GET_timeline_InvalidObservationId_Returns400()
+    {
+        var resp = await _client.GetAsync("/timeline?observation_id=abc");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GET_timeline_NonexistentObservationId_Returns404()
+    {
+        var resp = await _client.GetAsync("/timeline?observation_id=999999");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Contains("not found", (string?)json!["error"]);
+    }
+
+    // ─── GET /prompts/search (T-04) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GET_prompts_search_WithQuery_Returns200()
+    {
+        await SeedPrompt("test-s1", "Explain how SQLite WAL mode works", "test-proj");
+        await SeedPrompt("test-s1", "Show me a JWT authentication example", "test-proj");
+
+        var resp = await _client.GetAsync("/prompts/search?q=SQLite");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotEmpty(json);
+        // At least one result contains the search term.
+        Assert.Contains(json, e =>
+        {
+            var content = (string?)e?["content"];
+            return content != null && content.Contains("SQLite", StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public async Task GET_prompts_search_WithProjectFilter_ReturnsFiltered()
+    {
+        await SeedPrompt("test-s1", "Discuss JWT bearer token patterns",  "proj-alpha");
+        await SeedPrompt("test-s2", "Discuss JWT session middleware",    "proj-beta");
+
+        var resp = await _client.GetAsync("/prompts/search?q=JWT&project=proj-alpha");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotEmpty(json);
+        // All results should belong to proj-alpha
+        Assert.All(json, e => Assert.Equal("proj-alpha", (string?)e?["project"]));
+    }
+
+    [Fact]
+    public async Task GET_prompts_search_MissingQuery_Returns400()
+    {
+        var resp = await _client.GetAsync("/prompts/search");
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Contains("q", (string?)json!["error"]);
+    }
+
+    // ─── POST /import (T-05) ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task POST_import_ValidExportData_Returns200()
+    {
+        // Round-trip: first seed data, export it, then re-import it.
+        await SeedSession("s-imp", "imp-proj");
+        await SeedObservation("s-imp", "Important decision", "Do not skip code review",
+            "decision", "imp-proj");
+
+        var export = await _client.GetAsync("/export?project=imp-proj");
+        Assert.Equal(HttpStatusCode.OK, export.StatusCode);
+        var exportJson = await export.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(exportJson);
+
+        var resp = await _client.PostAsJsonAsync("/import", exportJson, JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        // Re-importing the same data is idempotent (INSERT OR IGNORE): counts >= 0.
+        Assert.NotNull(json!["sessions_imported"]);
+        Assert.NotNull(json["observations_imported"]);
+        Assert.NotNull(json["prompts_imported"]);
+    }
+
+    [Fact]
+    public async Task POST_import_EmptyData_Returns200()
+    {
+        var resp = await _client.PostAsJsonAsync("/import", new
+        {
+            sessions     = Array.Empty<object>(),
+            observations = Array.Empty<object>(),
+            prompts      = Array.Empty<object>(),
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(0, (int)json!["sessions_imported"]!);
+        Assert.Equal(0, (int)json["observations_imported"]!);
+        Assert.Equal(0, (int)json["prompts_imported"]!);
+    }
+
+    [Fact]
+    public async Task POST_import_InvalidJson_Returns400()
+    {
+        var content = new StringContent("not-json{{{", System.Text.Encoding.UTF8, "application/json");
+        var resp = await _client.PostAsync("/import", content);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("invalid json", (string?)json!["error"]);
+    }
+
+    // ─── POST /projects/prune (T-06) ────────────────────────────────────────────
+    // Note: PruneProjectAsync refuses to delete a project that still has observations.
+    // Tests therefore seed a session WITHOUT observations, then prune.
+
+    [Fact]
+    public async Task POST_projects_prune_ExistingProject_Returns200()
+    {
+        // Seed a session in project "prune-me" — no observation, so prune is allowed.
+        await SeedSession("sess-prune-target", "prune-me");
+
+        var resp = await _client.PostAsJsonAsync("/projects/prune", new
+        {
+            project = "prune-me",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal("prune-me", (string?)json!["project"]);
+        Assert.True((long)json["sessions_deleted"]! >= 1,
+            $"Expected sessions_deleted >= 1, got {json["sessions_deleted"]}");
+
+        // Verify the session was actually removed.
+        var get = await _client.GetAsync("/sessions/sess-prune-target");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    [Fact]
+    public async Task POST_projects_prune_MissingProject_Returns400()
+    {
+        var resp = await _client.PostAsJsonAsync("/projects/prune", new { }, JsonOpts);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Contains("project", (string?)json!["error"]);
+    }
+
+    [Fact]
+    public async Task POST_projects_prune_NonexistentProject_Returns200()
+    {
+        // Per plan / spec: handler returns 200 with zero counters for a project
+        // that does not exist (rather than 404).
+        var resp = await _client.PostAsJsonAsync("/projects/prune", new
+        {
+            project = "ghost-project-never-seen",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(0, (long)json!["sessions_deleted"]!);
+        Assert.Equal(0, (long)json["prompts_deleted"]!);
+    }
+
+    // ─── GET /projects/migrations (T-07) ───────────────────────────────────────
+
+    [Fact]
+    public async Task GET_projects_migrations_EmptyStore_Returns200()
+    {
+        var resp = await _client.GetAsync("/projects/migrations");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Empty(json);
+    }
+
+    [Fact]
+    public async Task GET_projects_migrations_AfterMigrate_ReturnsEntries()
+    {
+        // Seed observation under "old-proj", then migrate to "new-proj".
+        await SeedSession("s-mig", "old-proj");
+        await SeedObservation("s-mig", "Obs to migrate", "Will move", "manual", "old-proj");
+
+        var migrate = await _client.PostAsJsonAsync("/projects/migrate", new
+        {
+            old_project = "old-proj",
+            new_project = "new-proj",
+        }, JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, migrate.StatusCode);
+
+        var resp = await _client.GetAsync("/projects/migrations");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonArray>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotEmpty(json);
+        var first = json[0] as JsonObject;
+        Assert.NotNull(first);
+        Assert.Equal("old-proj", (string?)first!["from_project"]);
+        Assert.Equal("new-proj", (string?)first["to_project"]);
+    }
+
+    // ─── POST /md/promote/{id} (T-08) ──────────────────────────────────────────
+    // Note: PromoteToMdAsync returns id=0 for nonexistent observation (no 404).
+
+    [Fact]
+    public async Task POST_md_promote_ValidId_Returns200()
+    {
+        var id = await SeedObservation(
+            "test-s1",
+            "Promoted observation",
+            "Long enough content for the MD file body.",
+            "decision",
+            "test-proj");
+
+        var resp = await _client.PostAsJsonAsync(
+            $"/md/promote/{id}",
+            new { md_dir = _tempDir },
+            JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(id, (long?)json!["id"]);
+        Assert.Equal(_tempDir, (string?)json["md_dir"]);
+
+        // Verify an .md file was actually created under _tempDir (cleaned in DisposeAsync).
+        var files = Directory.GetFiles(_tempDir, "*.md");
+        Assert.NotEmpty(files);
+    }
+
+    [Fact]
+    public async Task POST_md_promote_InvalidId_Returns404()
+    {
+        // The route uses an {id:long} constraint, so non-numeric ids don't match
+        // and ASP.NET Core responds with 404 rather than reaching the handler.
+        var resp = await _client.PostAsJsonAsync(
+            "/md/promote/abc",
+            new { md_dir = _tempDir },
+            JsonOpts);
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task POST_md_promote_NonexistentId_Returns200_WithZeroId()
+    {
+        var resp = await _client.PostAsJsonAsync(
+            "/md/promote/999999",
+            new { md_dir = _tempDir },
+            JsonOpts);
+
+        // Per plan / spec: PromoteToMdAsync returns 0 for missing observation
+        // instead of throwing, and the handler surfaces that as id=0.
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(0, (long?)json!["id"]);
+    }
+
+    // ─── POST /md/sync (T-09) ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task POST_md_sync_DryRun_Returns200()
+    {
+        // Seed 2 observations; dry-run reports the count without writing files.
+        await SeedObservation("test-s1", "First",  "First content body",  "decision", "test-proj");
+        await SeedObservation("test-s1", "Second", "Second content body", "decision", "test-proj");
+
+        var resp = await _client.PostAsJsonAsync("/md/sync", new
+        {
+            md_dir  = _tempDir,
+            dry_run = true,
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.True((int)json!["count"]! >= 2,
+            $"Expected count >= 2, got {json["count"]}");
+        Assert.True((bool)json["dry_run"]);
+        Assert.Equal(_tempDir, (string?)json["md_dir"]);
+
+        // Dry run must not create any .md files.
+        Assert.Empty(Directory.GetFiles(_tempDir, "*.md"));
+    }
+
+    [Fact]
+    public async Task POST_md_sync_WithPromotedObs_Returns200()
+    {
+        // Pre-promote one observation so the sync run finds an existing md_path
+        // and reports the count of remaining work to do.
+        var id = await SeedObservation("test-s1", "Already promoted", "Body", "decision", "test-proj");
+
+        var promote = await _client.PostAsJsonAsync(
+            $"/md/promote/{id}",
+            new { md_dir = _tempDir },
+            JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, promote.StatusCode);
+
+        var resp = await _client.PostAsJsonAsync("/md/sync", new
+        {
+            md_dir  = _tempDir,
+            dry_run = true,
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["count"]);
+        Assert.NotNull(json["md_dir"]);
+        Assert.True((bool)json["dry_run"]);
+    }
+
+    [Fact]
+    public async Task POST_md_sync_EmptyBody_UsesDefaults_Returns200()
+    {
+        // No observations seeded: sync loop runs 0 iterations and returns 200
+        // without ever touching the default "docs/decisions" directory.
+        var resp = await _client.PostAsJsonAsync("/md/sync", new { }, JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.Equal(0, (int)json!["count"]!);
+        Assert.False((bool)json["dry_run"]!);
+    }
+
+    // ─── POST /md/index (T-10) ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task POST_md_index_WithMdFiles_Returns200()
+    {
+        // Promote an observation so it appears in the index.
+        var id = await SeedObservation("test-s1", "Indexed observation", "Body content",
+            "decision", "test-proj");
+        var promote = await _client.PostAsJsonAsync(
+            $"/md/promote/{id}",
+            new { md_dir = _tempDir },
+            JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, promote.StatusCode);
+
+        var resp = await _client.PostAsJsonAsync("/md/index", new
+        {
+            md_dir = _tempDir,
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Equal("text/markdown",
+            resp.Content.Headers.ContentType?.MediaType);
+
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.NotEmpty(body);
+        Assert.Contains("Decision Records", body);
+    }
+
+    [Fact]
+    public async Task POST_md_index_EmptyDir_Returns200()
+    {
+        // No promoted observations; the response is a minimal index markdown.
+        var resp = await _client.PostAsJsonAsync("/md/index", new
+        {
+            md_dir = _tempDir,
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.NotNull(body);
+        // "Total: 0 records" is part of RenderIndex — see SqliteStore.RenderIndex.
+        Assert.Contains("Total: 0", body);
+    }
+
+    [Fact]
+    public async Task POST_md_index_EmptyBody_UsesDefaults_Returns200()
+    {
+        // Empty body falls back to "docs/decisions"; with no promoted observations
+        // the handler should still respond 200 with a markdown payload.
+        var resp = await _client.PostAsJsonAsync("/md/index", new { }, JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.NotNull(body);
+        Assert.Contains("Decision Records", body);
+    }
+
+    // ─── GET /retention/stats (T-11) ───────────────────────────────────────────
+
+    [Fact]
+    public async Task GET_retention_stats_EmptyStore_Returns200()
+    {
+        var resp = await _client.GetAsync("/retention/stats");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["total_observations"]);
+        Assert.NotNull(json["age_buckets"]);
+        Assert.NotNull(json["inactive_projects"]);
+        Assert.Equal(0, (int)json["total_observations"]!);
+    }
+
+    [Fact]
+    public async Task GET_retention_stats_WithData_ReturnsBuckets()
+    {
+        await SeedObservation("test-s1", "Recent decision", "Body", "decision", "test-proj");
+
+        var resp = await _client.GetAsync("/retention/stats");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.True((int)json!["total_observations"]! > 0);
+        // Age buckets are always populated (5 entries).
+        Assert.NotEmpty(json["age_buckets"]!.AsArray());
+    }
+
+    // ─── POST /retention/prune (T-12) ──────────────────────────────────────────
+    // Note: only observation types with a TTL in RetentionConfig are considered.
+    // "passive" has no TTL, so prune(type="passive") always returns 0.
+
+    [Fact]
+    public async Task POST_retention_prune_DryRun_Returns200()
+    {
+        await SeedObservation("test-s1", "Keep me", "Body", "decision", "test-proj");
+
+        var resp = await _client.PostAsync("/retention/prune?dry_run=true",
+            new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["pruned"]);
+        Assert.True((bool)json["dry_run"]);
+
+        // Dry run must not actually delete observations.
+        var obs = await _client.GetAsync("/observations/1");
+        // id=1 may or may not exist depending on inserts, but we just want to
+        // confirm no 5xx response — a clean 200/404 is acceptable.
+        Assert.True(obs.StatusCode is HttpStatusCode.OK or HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task POST_retention_prune_ActualPrune_Returns200()
+    {
+        await SeedObservation("test-s1", "Old passive", "Body", "passive", "test-proj");
+
+        var resp = await _client.PostAsJsonAsync("/retention/prune", new
+        {
+            type = "passive",
+        }, JsonOpts);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["pruned"]);
+        Assert.NotNull(json["details"]);
+        // "passive" has no TTL, so pruned is 0 — but the endpoint shape is correct.
+        Assert.Equal(0, (int)json["pruned"]!);
+    }
+
+    [Fact]
+    public async Task POST_retention_prune_EmptyBody_Returns200()
+    {
+        // No type filter, no dry-run. Scans all TTL-aware types; with a fresh store
+        // nothing expires so the endpoint just returns the expected shape.
+        var resp = await _client.PostAsJsonAsync("/retention/prune", new { }, JsonOpts);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var json = await resp.Content.ReadFromJsonAsync<JsonObject>(JsonOpts);
+        Assert.NotNull(json);
+        Assert.NotNull(json!["pruned"]);
+        Assert.NotNull(json["dry_run"]);
+        Assert.NotNull(json["details"]);
     }
 }

@@ -507,6 +507,117 @@ public class EngramToolsTests : IDisposable
         Assert.Contains("traced", result);
     }
 
+    // ─── 5K warning threshold (FR-008) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task MemSave_ContentUnder5K_NoSizeWarning()
+    {
+        var content = new string('A', 3_500);
+        var result = await _tools.MemSave(
+            title: "Short observation",
+            content: content,
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        Assert.DoesNotContain(">5,000 threshold", result);
+    }
+
+    [Fact]
+    public async Task MemSave_ContentAt5000_NoSizeWarning()
+    {
+        // Boundary: exactly 5000 chars → no warning (≤5K)
+        var content = new string('B', 5_000);
+        var result = await _tools.MemSave(
+            title: "Boundary observation",
+            content: content,
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        Assert.DoesNotContain(">5,000 threshold", result);
+    }
+
+    [Fact]
+    public async Task MemSave_ContentAt5001_SizeWarningEmitted()
+    {
+        // Boundary: 5001 chars → warning emitted (>5K)
+        var content = new string('C', 5_001);
+        var result = await _tools.MemSave(
+            title: "Just over boundary",
+            content: content,
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        Assert.Contains(">5,000 threshold", result);
+        Assert.Contains("Consider splitting", result);
+    }
+
+    [Fact]
+    public async Task MemSave_ContentAt6200_SizeWarningEmitted_NoTruncation()
+    {
+        var content = new string('D', 6_200);
+        var result = await _tools.MemSave(
+            title: "Medium observation",
+            content: content,
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        Assert.Contains(">5,000 threshold", result);
+        // Content should NOT be truncated (under 100K)
+        Assert.DoesNotContain("truncated to", result);
+    }
+
+    [Fact]
+    public async Task MemSave_ContentOver100K_BothWarningsEmitted()
+    {
+        var content = new string('E', 105_000);
+        var result = await _tools.MemSave(
+            title: "Very large observation",
+            content: content,
+            type: "manual",
+            project: "test-proj",
+            session_id: SessionId);
+
+        Assert.Contains("Memory saved", result);
+        // Both warnings should be present
+        Assert.Contains(">5,000 threshold", result);
+        Assert.Contains("truncated to", result);
+    }
+
+    [Fact]
+    public async Task MemUpdate_ContentOver5K_SizeWarningEmitted()
+    {
+        await SeedSession();
+        var id = await SeedObservation("Old title", "Short content");
+
+        var longContent = new string('F', 6_000);
+        var result = await _tools.MemUpdate(id, content: longContent);
+
+        Assert.Contains("updated", result.ToLower());
+        Assert.Contains(">5,000 threshold", result);
+        Assert.Contains("Consider splitting", result);
+    }
+
+    [Fact]
+    public async Task MemUpdate_ContentUnder5K_NoSizeWarning()
+    {
+        await SeedSession();
+        var id = await SeedObservation("Old title", "Short content");
+
+        var shortContent = new string('G', 3_000);
+        var result = await _tools.MemUpdate(id, content: shortContent);
+
+        Assert.Contains("updated", result.ToLower());
+        Assert.DoesNotContain(">5,000 threshold", result);
+    }
+
     // ─── ENG-429: mem_current_project MCP tool exposes project_id ────────
 
     [Fact]

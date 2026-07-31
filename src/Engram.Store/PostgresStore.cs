@@ -546,6 +546,30 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
+        // ENG-475 follow-up: truncate title to prevent B-tree index overflow
+        var title = p.Title;
+        if (title.Length > _cfg.MaxTitleLength)
+        {
+            var original = title;
+            title = title[.._cfg.MaxTitleLength] + "…";
+            _logger?.LogWarning(
+                "Title truncated from {OriginalLength} chars to {Max}. Original: {Preview}…",
+                original.Length, _cfg.MaxTitleLength, original[..Math.Min(100, original.Length)]);
+            p = p with { Title = title };
+        }
+
+        // Content truncation parity with SqliteStore
+        var content = p.Content;
+        if (content.Length > _cfg.MaxObservationLength)
+        {
+            var originalContent = content;
+            content = content[.._cfg.MaxObservationLength] + "... [truncated]";
+            _logger?.LogWarning(
+                "Content truncated from {OriginalLength} to {Max} chars.",
+                originalContent.Length, _cfg.MaxObservationLength);
+            p = p with { Content = content };
+        }
+
         // Path 1: topic_key upsert
         if (!string.IsNullOrWhiteSpace(p.TopicKey))
         {
@@ -693,6 +717,18 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
     public Task<bool> UpdateObservationAsync(long id, UpdateObservationParams p)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+        // Content truncation parity with SqliteStore
+        if (p.Content != null && p.Content.Length > _cfg.MaxObservationLength)
+        {
+            var originalContent = p.Content;
+            var truncated = p.Content[.._cfg.MaxObservationLength] + "... [truncated]";
+            _logger?.LogWarning(
+                "Content truncated from {OriginalLength} to {Max} chars.",
+                originalContent.Length, _cfg.MaxObservationLength);
+            p = p with { Content = truncated };
+        }
+
         var sql = new StringBuilder("UPDATE observations SET updated_at = @updated");
         var parms = new List<NpgsqlParameter>
         {
@@ -856,6 +892,17 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     public Task<long> AddPromptAsync(AddPromptParams p)
     {
+        // Content truncation parity with SqliteStore
+        var content = p.Content;
+        if (content.Length > _cfg.MaxObservationLength)
+        {
+            var originalContent = content;
+            content = content[.._cfg.MaxObservationLength] + "... [truncated]";
+            _logger?.LogWarning(
+                "Content truncated from {OriginalLength} to {Max} chars.",
+                originalContent.Length, _cfg.MaxObservationLength);
+        }
+
         using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO user_prompts (sync_id, session_id, content, project, created_by, created_at)
@@ -863,7 +910,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             RETURNING id";
         cmd.Parameters.AddWithValue("@sync_id", (object?)NewSyncId("prompt") ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@session_id", p.SessionId);
-        cmd.Parameters.AddWithValue("@content", p.Content);
+        cmd.Parameters.AddWithValue("@content", content);
         cmd.Parameters.AddWithValue("@project", (object?)p.Project ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@created_by", (object?)p.CreatedBy ?? DBNull.Value);
         return Task.FromResult((long)cmd.ExecuteScalar()!);
