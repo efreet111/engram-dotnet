@@ -145,7 +145,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-421 | P0 | Bug | ApplyPulledMutationAsync (sync pull) — resuelto como parte de ENG-425 (server-side apply, ADR-002) | Done | L | ← audit AUD-013 | Implementado en SqliteStore.cs:2082 + 11 tests |
 | ✓ | ENG-425 | P0 | Feature | Server-side mutation apply: servidor aplica mutations a PostgresStore | Done | L | ← ADR-002 decisión | [ADR-002](../docs/architecture/adr/ADR-002-sync-mutation-application.md) |
 | ✓ | ENG-426 | P0 | Architecture | ID mapping strategy: sync_id como canonical (sin mapping a server ID) | Done | M | ← ADR-002 decisión | Verificado V1-V6. Fix bug SQL en ListMutationsSinceAsync (L1703). |
-| — | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Ready | M | ← audit AUD-023 | /md/*, retention, import, timeline |
+| ✓ | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Done | M | ← audit AUD-023 | 32 tests HTTP agregados, 11/11 endpoints cubiertos |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
 | — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
 | ✓ | ENG-404 | P1 | Feature | Phase 4 — memory relations (grafo de observaciones) | Done | M | ← ENG-410 + spike 55bdbf8 | [spike learnings](../.ai-work/eng-404-spike/learnings.md) + MCP tools + CLI |
