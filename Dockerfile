@@ -22,8 +22,14 @@ RUN dotnet restore src/Engram.Cli/Engram.Cli.csproj
 COPY src/ src/
 COPY tests/ tests/
 
-ARG ENGRAM_VERSION=dev
-# Strip leading 'v' from version tag (NuGet requires semver: "1.3.0" not "v1.3.0")
+# Default version is a valid NuGet SemVer 2.0 string.
+# Override at build time: docker build --build-arg ENGRAM_VERSION=1.3.0 ...
+# Accepts "v1.3.0" or "1.3.0" — the shell strips the leading "v" so NuGet
+# receives a semver-compliant value (NuGet rejects "v1.3.0" but accepts "1.3.0").
+# Bug history: a previous default of "dev" caused `error: 'dev' is not a valid
+# version string` during `dotnet publish` on servers that built without
+# passing --build-arg. See docs/DOCKER-VANILLA.md for details.
+ARG ENGRAM_VERSION=0.0.0-dev
 RUN dotnet publish src/Engram.Cli/Engram.Cli.csproj \
     -c Release \
     -o /app/publish \
