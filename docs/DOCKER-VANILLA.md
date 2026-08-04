@@ -428,3 +428,135 @@ docker run -d --name engram \
   -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
+
+## 10. PostgreSQL connection guide
+
+When running engram-dotnet in Docker with PostgreSQL, you need to configure the connection correctly. The connection string uses the standard Npgsql format.
+
+### Connection string format
+
+```
+Host=<hostname>;Port=<port>;Database=<dbname>;Username=<user>;Password=<password>
+```
+
+**Example**:
+```
+Host=192.168.1.100;Port=5432;Database=engram;Username=engram;Password=secret123
+```
+
+### Scenario A: PostgreSQL on the same host (Docker Desktop / Docker Engine)
+
+If PostgreSQL is running on your host machine (not in a container), use `host.docker.internal`:
+
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  --add-host host.docker.internal:host-gateway \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=host.docker.internal;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- `--add-host host.docker.internal:host-gateway` is required on Linux (Docker Desktop includes it by default)
+- PostgreSQL must be configured to accept connections from Docker network (check `postgresql.conf` → `listen_addresses = '*'`)
+- Firewall must allow connections on port 5432
+
+### Scenario B: PostgreSQL in another Docker container
+
+If PostgreSQL is running in a separate container, use a Docker network:
+
+```bash
+# Create a custom network
+docker network create engram-net
+
+# Start PostgreSQL
+docker run -d --name postgres \
+  --network engram-net \
+  -e POSTGRES_DB=engram \
+  -e POSTGRES_USER=engram \
+  -e POSTGRES_PASSWORD=secret \
+  -v /path/to/pgdata:/var/lib/postgresql/data \
+  postgres:15
+
+# Start engram
+docker run -d --name engram \
+  --network engram-net \
+  -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=postgres;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- Both containers must be on the same Docker network
+- Use the container name (`postgres`) as the hostname
+- No need for `host.docker.internal` or IP addresses
+
+### Scenario C: PostgreSQL on a remote server
+
+If PostgreSQL is on a different server (e.g., cloud database, remote server):
+
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- Use the IP address or hostname of the remote server
+- Ensure firewall allows connections from your Docker host
+- PostgreSQL must be configured to accept remote connections
+
+### Testing the connection
+
+Verify that engram can connect to PostgreSQL:
+
+```bash
+# Check logs for connection errors
+docker logs engram | grep -i "postgres\|connection\|error"
+
+# Check health endpoint
+curl http://localhost:7437/health
+# Expected: {"status":"ok","service":"engram","version":"...","backend":"postgres"}
+
+# Check stats endpoint
+curl http://localhost:7437/stats
+# Expected: {"backend":"postgres",...}
+```
+
+### Common connection errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Connection refused` | PostgreSQL not listening or firewall blocking | Check `listen_addresses` in `postgresql.conf`, verify firewall rules |
+| `Authentication failed` | Wrong username/password | Verify credentials in connection string |
+| `Database "engram" does not exist` | Database not created | Create database: `CREATE DATABASE engram;` |
+| `host not found` | Incorrect hostname | Use correct hostname (container name, IP, or `host.docker.internal`) |
+| `timeout expired` | Network unreachable | Check network connectivity, Docker network configuration |
+
+### Using environment file for secrets
+
+Instead of passing secrets in the command line, use an environment file:
+
+```bash
+# Create .env file
+cat > .env <<EOF
+ENGRAM_DB_TYPE=postgres
+ENGRAM_PG_CONNECTION=Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret
+EOF
+
+# Run with env file
+docker run -d --name engram \
+  -p 7437:7437 \
+  --env-file .env \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Security**: Add `.env` to `.gitignore` to avoid committing secrets.
