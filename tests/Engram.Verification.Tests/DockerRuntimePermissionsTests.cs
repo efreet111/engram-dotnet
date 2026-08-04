@@ -15,10 +15,14 @@ public sealed class DockerRuntimePermissionsTests
         var entrypoint = ReadRepositoryFile("entrypoint.sh");
 
         Assert.StartsWith("#!/bin/bash", entrypoint, StringComparison.Ordinal);
-        Assert.Contains("set -e", entrypoint, StringComparison.Ordinal);
-        Assert.Contains("if [ -d \"/data/engram\" ]; then", entrypoint, StringComparison.Ordinal);
+        Assert.Contains("set -eEuo pipefail", entrypoint, StringComparison.Ordinal);
+        Assert.Contains("if [ -d \"/data/engram\" ] && [ ! -w \"/data/engram\" ]; then", entrypoint, StringComparison.Ordinal);
         Assert.Contains(
-            "chown -R engram:engram /data/engram 2>/dev/null || true",
+            "chown -R engram:engram /data/engram 2>&1",
+            entrypoint,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "echo \"[entrypoint] Warning: chown failed",
             entrypoint,
             StringComparison.Ordinal);
         Assert.Contains("exec gosu engram \"$@\"", entrypoint, StringComparison.Ordinal);
