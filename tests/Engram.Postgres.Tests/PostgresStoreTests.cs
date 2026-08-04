@@ -259,7 +259,8 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         var obs = await _fixture.Store.GetObservationAsync(id);
         Assert.NotNull(obs);
         Assert.Equal(6000, obs.Content.Length);
-        Assert.Equal(500, obs.Title.Length);
+        // Title is truncated to MaxTitleLength (200) + "…" = 201 chars (ADR-013)
+        Assert.Equal(201, obs.Title.Length);
     }
 
     [Fact]
