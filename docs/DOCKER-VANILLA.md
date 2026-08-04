@@ -317,9 +317,10 @@ Both Dockerfiles produce a two-stage image with this final structure:
 /data/engram/                # SQLite database + project identity
 ```
 
-The runtime image runs as a non-root user (`engram`, UID assigned at
-image build time). The `/data/engram` and `/app/docs` directories are
-writable by that user.
+The entrypoint starts as root so it can repair mounted-volume ownership; the
+application process then runs as a non-root user (`engram`, UID assigned at
+image build time). The `/data/engram` and `/app/docs` directories are writable
+by that user.
 
 ---
 
@@ -332,3 +333,230 @@ writable by that user.
 - [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) — what to
   click after the container is up.
 - [DEVELOPMENT.md](DEVELOPMENT.md) — local dev loop (without Docker).
+
+## 8. Volume permissions
+
+If you see `SQLite Error 14: 'unable to open database file'`, the volume
+mounted from the host has incorrect permissions. Docker mounts volumes as
+`root:root`, but the container runs as user `engram` (non-root).
+
+### Automatic fix (recommended)
+
+The entrypoint script automatically fixes permissions on startup. No
+manual intervention needed:
+
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+The entrypoint runs as root, does `chown -R engram:engram /data/engram`,
+then drops to the `engram` user via `gosu` before starting the app.
+
+### How it works
+
+1. Entrypoint script runs as **root** (default in Docker)
+2. Fixes ownership of `/data/engram` → `engram:engram`
+3. `exec gosu engram "$@"` — drops privileges and starts the app
+4. App runs as non-root user `engram`
+
+This pattern is used by official Docker images (PostgreSQL, Redis, etc.).
+See [gosu on GitHub](https://github.com/tianon/gosu).
+
+### Manual fix (if needed)
+
+If the automatic fix doesn't work, pre-create the directory with correct
+permissions:
+
+```bash
+# Create directory on host
+mkdir -p /path/to/data
+
+# Set ownership (UID 1000 is typically 'engram' in the container)
+sudo chown -R 1000:1000 /path/to/data
+
+# Run container
+docker run -d --name engram \
+  -p 7437:7437 \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+## 9. Environment variables reference
+
+| Variable | Default | Description | Example |
+|----------|---------|-------------|---------|
+| `ENGRAM_DATA_DIR` | `/data/engram` | Data directory (SQLite DB, exports) | `/custom/path` |
+| `ENGRAM_PORT` | `7437` | HTTP port for MCP server | `8080` |
+| `ENGRAM_DB_TYPE` | `sqlite` | Backend: `sqlite` or `postgres` | `postgres` |
+| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required if `ENGRAM_DB_TYPE=postgres`) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
+| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (for sync in team mode) | `http://192.168.1.100:7437` |
+| `ENGRAM_SYNC_ENABLED` | `false` | Enable sync (offline-first mode) | `true` |
+| `ENGRAM_USER` | — | User identity (required for sync in team mode) | `user@example.com` |
+| `ENGRAM_AUTO_ENROLL` | `true` | Auto-generate `.engram-id` on startup | `false` |
+| `ENGRAM_PROJECT` | — | Project name (auto-detected from git if not set) | `my-project` |
+| `ASPNETCORE_URLS` | `http://+:7437` | ASP.NET Core listening URLs | `http://+:8080` |
+
+### Examples
+
+**Local mode (SQLite, single user)**:
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Team mode (PostgreSQL, sync enabled)**:
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Custom port**:
+```bash
+docker run -d --name engram \
+  -p 8080:8080 \
+  -e ENGRAM_PORT=8080 \
+  -e ASPNETCORE_URLS="http://+:8080" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+## 10. PostgreSQL connection guide
+
+When running engram-dotnet in Docker with PostgreSQL, you need to configure the connection correctly. The connection string uses the standard Npgsql format.
+
+### Connection string format
+
+```
+Host=<hostname>;Port=<port>;Database=<dbname>;Username=<user>;Password=<password>
+```
+
+**Example**:
+```
+Host=192.168.1.100;Port=5432;Database=engram;Username=engram;Password=secret123
+```
+
+### Scenario A: PostgreSQL on the same host (Docker Desktop / Docker Engine)
+
+If PostgreSQL is running on your host machine (not in a container), use `host.docker.internal`:
+
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  --add-host host.docker.internal:host-gateway \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=host.docker.internal;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- `--add-host host.docker.internal:host-gateway` is required on Linux (Docker Desktop includes it by default)
+- PostgreSQL must be configured to accept connections from Docker network (check `postgresql.conf` → `listen_addresses = '*'`)
+- Firewall must allow connections on port 5432
+
+### Scenario B: PostgreSQL in another Docker container
+
+If PostgreSQL is running in a separate container, use a Docker network:
+
+```bash
+# Create a custom network
+docker network create engram-net
+
+# Start PostgreSQL
+docker run -d --name postgres \
+  --network engram-net \
+  -e POSTGRES_DB=engram \
+  -e POSTGRES_USER=engram \
+  -e POSTGRES_PASSWORD=secret \
+  -v /path/to/pgdata:/var/lib/postgresql/data \
+  postgres:15
+
+# Start engram
+docker run -d --name engram \
+  --network engram-net \
+  -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=postgres;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- Both containers must be on the same Docker network
+- Use the container name (`postgres`) as the hostname
+- No need for `host.docker.internal` or IP addresses
+
+### Scenario C: PostgreSQL on a remote server
+
+If PostgreSQL is on a different server (e.g., cloud database, remote server):
+
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Notes**:
+- Use the IP address or hostname of the remote server
+- Ensure firewall allows connections from your Docker host
+- PostgreSQL must be configured to accept remote connections
+
+### Testing the connection
+
+Verify that engram can connect to PostgreSQL:
+
+```bash
+# Check logs for connection errors
+docker logs engram | grep -i "postgres\|connection\|error"
+
+# Check health endpoint
+curl http://localhost:7437/health
+# Expected: {"status":"ok","service":"engram","version":"...","backend":"postgres"}
+
+# Check stats endpoint
+curl http://localhost:7437/stats
+# Expected: {"backend":"postgres",...}
+```
+
+### Common connection errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Connection refused` | PostgreSQL not listening or firewall blocking | Check `listen_addresses` in `postgresql.conf`, verify firewall rules |
+| `Authentication failed` | Wrong username/password | Verify credentials in connection string |
+| `Database "engram" does not exist` | Database not created | Create database: `CREATE DATABASE engram;` |
+| `host not found` | Incorrect hostname | Use correct hostname (container name, IP, or `host.docker.internal`) |
+| `timeout expired` | Network unreachable | Check network connectivity, Docker network configuration |
+
+### Using environment file for secrets
+
+Instead of passing secrets in the command line, use an environment file:
+
+```bash
+# Create .env file
+cat > .env <<EOF
+ENGRAM_DB_TYPE=postgres
+ENGRAM_PG_CONNECTION=Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret
+EOF
+
+# Run with env file
+docker run -d --name engram \
+  -p 7437:7437 \
+  --env-file .env \
+  -v /path/to/data:/data/engram \
+  engram-dotnet:latest
+```
+
+**Security**: Add `.env` to `.gitignore` to avoid committing secrets.

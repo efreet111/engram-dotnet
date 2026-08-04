@@ -116,10 +116,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Note: dotnet-install.sh --runtime uses the value "aspnetcore" (not "aspnet"
 # — that name is reserved for the older 5.x framework). The value "aspnetcore"
 # gives you the ASP.NET Core 10 shared framework that hosts the app.
-ARG DOTNET_VERSION=10.0.108
+# SDK patch versions and runtime patch versions use different numbering:
+# SDK 10.0.108 ships with the ASP.NET Core 10.0.8 runtime.
+ARG DOTNET_RUNTIME_VERSION=10.0.8
 RUN wget -qO /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh \
     && chmod +x /tmp/dotnet-install.sh \
-    && /tmp/dotnet-install.sh --version ${DOTNET_VERSION} --runtime aspnetcore --install-dir /usr/share/dotnet \
+    && /tmp/dotnet-install.sh --version ${DOTNET_RUNTIME_VERSION} --runtime aspnetcore --install-dir /usr/share/dotnet \
     && rm /tmp/dotnet-install.sh \
     && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
 
@@ -137,7 +139,18 @@ RUN useradd --create-home --shell /bin/bash engram \
 COPY --from=build /app/publish .
 RUN chmod +x ./engram
 
-USER engram
+# Install gosu for dropping privileges in entrypoint
+# https://github.com/tianon/gosu
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && gosu nobody true
+
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# NOTE: No USER directive here — entrypoint runs as root, then exec gosu engram
+# This allows fixing volume permissions before dropping privileges
 
 ENV ENGRAM_DATA_DIR=/data/engram
 ENV ENGRAM_PORT=7437
@@ -149,5 +162,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7437/health || exit 1
 
 # PublishSingleFile with Exe output produces a native executable (no .dll)
-ENTRYPOINT ["./engram"]
-CMD ["serve"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["./engram", "serve"]
