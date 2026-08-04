@@ -1,0 +1,166 @@
+# syntax=docker/dockerfile:1
+# ──────────────────────────────────────────────────────────────────────────────
+# Dockerfile.debian — alternative to the main Dockerfile for environments
+# without access to mcr.microsoft.com (air-gapped, restricted egress, mirrors
+# that don't proxy Microsoft's container registry).
+#
+# What it does:
+#   1. Uses debian:12-slim as the base (downloadable from docker.io / public
+#      registries; no Microsoft CDN dependency).
+#   2. Installs curl, wget, ca-certificates, and the .NET 10 SDK via the
+#      official dotnet-install.sh script.
+#   3. Reuses the same multi-stage build / publish / runtime layout as the
+#      main Dockerfile, but on top of the debian-based SDK and a debian-slim
+#      runtime image with the ASP.NET Core shared framework installed manually.
+#
+# Build:
+#   docker build -f Dockerfile.debian -t engram-dotnet:debian \
+#       --build-arg ENGRAM_VERSION=1.3.0 .
+#
+# Run:
+#   docker run -d --name engram -p 7437:7437 -v /data/engram:/data/engram \
+#       engram-dotnet:debian
+#
+# Notes:
+#   - The runtime stage installs libcurl4 + the ASP.NET shared framework, so
+#     the image is self-contained at the OS level (no dependency on
+#     mcr.microsoft.com/dotnet/aspnet).
+#   - Trade-off vs the main Dockerfile: ~5 min cold build (vs ~3 min with mcr)
+#     because we install the SDK from scratch instead of pulling the
+#     pre-layered Microsoft image. Final image size is similar (~360 MB virtual).
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Build stage ──────────────────────────────────────────────────────────────
+FROM debian:12-slim AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# OS packages required for the .NET SDK installer and build pipeline.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        wget \
+        ca-certificates \
+        curl \
+        gnupg \
+        libssl3 \
+        libicu72 \
+        liblttng-ust1 \
+        libkrb5-3 \
+        zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install .NET 10 SDK (matches global.json: 10.0.108, latestFeature rollForward).
+ARG DOTNET_VERSION=10.0.108
+RUN wget -qO /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --version ${DOTNET_VERSION} --install-dir /usr/share/dotnet \
+    && rm /tmp/dotnet-install.sh \
+    && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
+
+ENV PATH="/usr/share/dotnet:${PATH}"
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+
+WORKDIR /src
+
+# Copy solution/project files first for better layer caching
+COPY *.slnx ./
+COPY src/Engram.Store/Engram.Store.csproj src/Engram.Store/
+COPY src/Engram.Server/Engram.Server.csproj src/Engram.Server/
+COPY src/Engram.Mcp/Engram.Mcp.csproj src/Engram.Mcp/
+COPY src/Engram.Sync/Engram.Sync.csproj src/Engram.Sync/
+COPY src/Engram.Obsidian/Engram.Obsidian.csproj src/Engram.Obsidian/
+COPY src/Engram.Cli/Engram.Cli.csproj src/Engram.Cli/
+COPY tests/Engram.Store.Tests/Engram.Store.Tests.csproj tests/Engram.Store.Tests/
+COPY tests/Engram.Postgres.Tests/Engram.Postgres.Tests.csproj tests/Engram.Postgres.Tests/
+COPY tests/Engram.Server.Tests/Engram.Server.Tests.csproj tests/Engram.Server.Tests/
+COPY tests/Engram.HttpStore.Tests/Engram.HttpStore.Tests.csproj tests/Engram.HttpStore.Tests/
+COPY tests/Engram.Obsidian.Tests/Engram.Obsidian.Tests.csproj tests/Engram.Obsidian.Tests/
+
+RUN dotnet restore src/Engram.Cli/Engram.Cli.csproj
+
+# Copy source and build
+COPY src/ src/
+COPY tests/ tests/
+
+ARG ENGRAM_VERSION=0.0.0-dev
+RUN dotnet publish src/Engram.Cli/Engram.Cli.csproj \
+    -c Release \
+    -o /app/publish \
+    -p:PublishSingleFile=true \
+    -p:PublishTrimmed=false \
+    -p:InvariantGlobalization=true \
+    -p:Version=${ENGRAM_VERSION#v} \
+    --self-contained false
+
+# ─── Runtime stage ────────────────────────────────────────────────────────────
+FROM debian:12-slim AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime dependencies for the ASP.NET Core shared framework + healthcheck.
+# wget is needed to download the official dotnet-install.sh script in the
+# next step (the install script bootstraps the runtime framework on top
+# of the bare debian:12-slim base).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        wget \
+        libssl3 \
+        libicu72 \
+        liblttng-ust1 \
+        libkrb5-3 \
+        zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the ASP.NET Core shared framework (runtime only, no SDK).
+# Note: dotnet-install.sh --runtime uses the value "aspnetcore" (not "aspnet"
+# — that name is reserved for the older 5.x framework). The value "aspnetcore"
+# gives you the ASP.NET Core 10 shared framework that hosts the app.
+# SDK patch versions and runtime patch versions use different numbering:
+# SDK 10.0.108 ships with the ASP.NET Core 10.0.8 runtime.
+ARG DOTNET_RUNTIME_VERSION=10.0.8
+RUN wget -qO /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --version ${DOTNET_RUNTIME_VERSION} --runtime aspnetcore --install-dir /usr/share/dotnet \
+    && rm /tmp/dotnet-install.sh \
+    && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
+
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+ENV PATH="/usr/share/dotnet:${PATH}"
+
+WORKDIR /app
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash engram \
+    && mkdir -p /data/engram && chown engram:engram /data/engram \
+    && mkdir -p /app/docs && chown engram:engram /app/docs
+
+COPY --from=build /app/publish .
+RUN chmod +x ./engram
+
+# Install gosu for dropping privileges in entrypoint
+# https://github.com/tianon/gosu
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && gosu nobody true
+
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# NOTE: No USER directive here — entrypoint runs as root, then exec gosu engram
+# This allows fixing volume permissions before dropping privileges
+
+ENV ENGRAM_DATA_DIR=/data/engram
+ENV ENGRAM_PORT=7437
+ENV ASPNETCORE_URLS=http://+:7437
+
+EXPOSE 7437
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:7437/health || exit 1
+
+# PublishSingleFile with Exe output produces a native executable (no .dll)
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["./engram", "serve"]

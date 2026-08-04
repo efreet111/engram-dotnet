@@ -79,7 +79,7 @@ services:
       DOTNET_ENVIRONMENT: Development
     ports:
       - "7438:7438"
-    command: ["serve"]
+    command: ["./engram", "serve"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7438/health"]
       interval: 3s
@@ -113,7 +113,7 @@ services:
       DOTNET_ENVIRONMENT: Development
     ports:
       - "7439:7439"
-    command: ["serve"]
+    command: ["./engram", "serve"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7439/health"]
       interval: 3s

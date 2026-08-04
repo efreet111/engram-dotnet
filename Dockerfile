@@ -49,7 +49,18 @@ RUN mkdir -p /app/docs && chown engram:engram /app/docs
 COPY --from=build /app/publish .
 RUN chmod +x ./engram
 
-USER engram
+# Install gosu for dropping privileges in entrypoint
+# https://github.com/tianon/gosu
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && gosu nobody true
+
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# NOTE: No USER directive here — entrypoint runs as root, then exec gosu engram
+# This allows fixing volume permissions before dropping privileges
 
 ENV ENGRAM_DATA_DIR=/data/engram
 ENV ENGRAM_PORT=7437
@@ -61,5 +72,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7437/health || exit 1
 
 # PublishSingleFile with Exe output produces a native executable (no .dll)
-ENTRYPOINT ["./engram"]
-CMD ["serve"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["./engram", "serve"]
