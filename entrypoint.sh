@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eEuo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Entrypoint for engram-dotnet Docker container.
@@ -8,8 +8,9 @@ set -e
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Fix permissions for data directory (if mounted from host with root ownership)
-if [ -d "/data/engram" ]; then
-    chown -R engram:engram /data/engram 2>/dev/null || true
+# Only chown if necessary to avoid latency on large volumes
+if [ -d "/data/engram" ] && [ ! -w "/data/engram" ]; then
+    chown -R engram:engram /data/engram 2>&1 || echo "[entrypoint] Warning: chown failed — check volume permissions" >&2
 fi
 
 # Drop to non-root user and execute the command
