@@ -94,9 +94,10 @@ docker run -d \
     -p 7437:7437 \
     -e ENGRAM_DB_TYPE=postgres \
     -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
-    -v /var/lib/engram:/data/engram \
     engram-dotnet:latest
 ```
+
+> **Note:** The `-v /var/lib/engram:/data/engram` volume flag is **not required** when using PostgreSQL backend. `PostgresStore` uses only the connection string and never reads `DataDir`. You may omit the volume mount entirely for PostgreSQL deployments.
 
 `ENGRAM_PG_CONNECTION` follows the standard Npgsql connection-string
 syntax. See [API-REFERENCE.md](API-REFERENCE.md) for all environment
@@ -415,7 +416,6 @@ docker run -d --name engram \
   -p 7437:7437 \
   -e ENGRAM_DB_TYPE=postgres \
   -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
-  -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
 
@@ -454,7 +454,6 @@ docker run -d --name engram \
   --add-host host.docker.internal:host-gateway \
   -e ENGRAM_DB_TYPE=postgres \
   -e ENGRAM_PG_CONNECTION="Host=host.docker.internal;Port=5432;Database=engram;Username=engram;Password=secret" \
-  -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
 
@@ -486,7 +485,6 @@ docker run -d --name engram \
   -p 7437:7437 \
   -e ENGRAM_DB_TYPE=postgres \
   -e ENGRAM_PG_CONNECTION="Host=postgres;Port=5432;Database=engram;Username=engram;Password=secret" \
-  -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
 
@@ -504,7 +502,6 @@ docker run -d --name engram \
   -p 7437:7437 \
   -e ENGRAM_DB_TYPE=postgres \
   -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
-  -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
 
@@ -555,7 +552,6 @@ EOF
 docker run -d --name engram \
   -p 7437:7437 \
   --env-file .env \
-  -v /path/to/data:/data/engram \
   engram-dotnet:latest
 ```
 

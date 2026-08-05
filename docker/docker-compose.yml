@@ -1,6 +1,17 @@
 version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Engram — Docker Compose (backward-compatible default)
+#
+# This file mounts the SQLite data volume for backward compatibility.
+# For cleaner backend-specific setups, use:
+#   - docker-compose.postgres.yml  → PostgreSQL only (no volume mount)
+#   - docker-compose.sqlite.yml    → SQLite only (volume mount required)
+#
+# See docker/README.md for details.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Engram — Docker Compose (PostgreSQL externo de TrueNAS Apps)
 #
 # REQUISITOS:

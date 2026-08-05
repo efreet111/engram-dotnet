@@ -1,0 +1,44 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Engram — PostgreSQL-only Docker Compose
+# PostgreSQL stores data externally, so no /data/engram volume is mounted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  engram:
+    image: engram-dotnet:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v1.3.0
+    container_name: engram
+    restart: unless-stopped
+
+    ports:
+      - "7437:7437"
+
+    # Permite acceder al PostgreSQL del host (TrueNAS Apps) desde dentro del container
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-postgres}
+      ENGRAM_PORT: "7437"
+
+      # ── Sync (offline-first) ─────────────────────────────────────────────
+      # Con PostgreSQL este contenedor expone la API /sync/* (push, pull, enroll).
+      # El SyncManager (ENGRAM_SYNC_*) corre en cada PC de desarrollo con `engram mcp`
+      # + SQLite local — NO hace falta ENGRAM_SYNC_ENABLED aquí.
+      # En el MCP de cada dev: ENGRAM_SERVER_URL, ENGRAM_SYNC_ENABLED=true,
+      # ENGRAM_USER (obligatorio en equipos; ver docs/SYNC-SETUP.md).
+
+      ENGRAM_PG_CONNECTION: "Host=${ENGRAM_PG_HOST:-host.docker.internal};Port=${ENGRAM_PG_PORT:-5432};Database=${ENGRAM_PG_DATABASE:-engram};Username=${ENGRAM_PG_USER:-engram};Password=${ENGRAM_PG_PASSWORD}"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

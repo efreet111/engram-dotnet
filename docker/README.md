@@ -56,6 +56,37 @@ curl http://localhost:7437/health
 
 ---
 
+## Backend-specific compose files
+
+engram-dotnet supports two backends. Use the compose file that matches your choice:
+
+| File | Backend | Volume required? |
+|------|---------|-----------------|
+| `docker-compose.postgres.yml` | PostgreSQL | No |
+| `docker-compose.sqlite.yml` | SQLite | Yes |
+| `docker-compose.yml` | Both (default: postgres) | Yes (backward-compatible) |
+
+### PostgreSQL-only setup (recommended)
+
+```bash
+cd docker
+cp .env.example .env
+# Edit .env: set ENGRAM_DB_TYPE=postgres and PG credentials
+# ENGRAM_DATA_DIR_HOST is NOT needed — you can leave it or comment it out
+docker compose -f docker-compose.postgres.yml up -d --build
+```
+
+### SQLite setup
+
+```bash
+cd docker
+cp .env.example .env
+# Edit .env: set ENGRAM_DB_TYPE=sqlite and ENGRAM_DATA_DIR_HOST
+docker compose -f docker-compose.sqlite.yml up -d --build
+```
+
+---
+
 ## Ubicación del archivo `.env`
 
 El archivo `.env` debe estar en el **mismo directorio que `docker-compose.yml`**:
