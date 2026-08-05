@@ -1,7 +1,7 @@
 # Context Map: Optional SQLite Volume for PostgreSQL Backend
 
-**Feature slug:** `optional-sqlite-volume`  
-**Date:** 2026-08-05  
+**Feature slug:** `optional-sqlite-volume`
+**Date:** 2026-08-05
 **Reporter:** User (during Docker installation testing)
 
 ---
@@ -91,7 +91,7 @@ ENGRAM_DATA_DIR_HOST=./data
 
 ## Related Backlog Items
 
-**ENG-444** (✅ Done): Privacy/PII cleanup — removed IPs, passwords from docs  
+**ENG-444** (✅ Done): Privacy/PII cleanup — removed IPs, passwords from docs
 **ENG-479** (✅ Done): Docker runtime permissions — fixed volume ownership
 
 **No existing item** for optional SQLite volume.
@@ -121,7 +121,7 @@ services:
     profiles: ["sqlite"]
     volumes:
       - ${ENGRAM_DATA_DIR_HOST:-./data}:/data/engram
-  
+
   engram-postgres:
     profiles: ["postgres"]
     # No volume needed
@@ -147,7 +147,7 @@ Keep volume mount but document it as optional:
 2. Add comment in `docker-compose.yml` explaining when volume is needed
 3. Provide separate compose files or examples for each backend
 
-**Pros:** Simple, no code changes, backward compatible  
+**Pros:** Simple, no code changes, backward compatible
 **Cons:** Volume still mounted (harmless but unnecessary)
 
 ### Option D: Separate Compose Files
@@ -162,7 +162,7 @@ docker compose -f docker-compose.sqlite.yml up -d
 docker compose -f docker-compose.postgres.yml up -d
 ```
 
-**Pros:** Clean separation  
+**Pros:** Clean separation
 **Cons:** Duplication, harder to maintain
 
 ---
