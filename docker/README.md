@@ -1,194 +1,234 @@
 # Docker — engram-dotnet
 
-## Estrategia de build
-
-El proyecto utiliza una estrategia de compilación basada en código fuente dentro del servidor de Docker, siguiendo un enfoque de construcción multietapa. Se inicia con una imagen base `mcr.microsoft.com/dotnet/sdk:10.0-preview` para compilar el código y generar el binario autocontenido `engram`. Luego, la imagen final utiliza `mcr.microsoft.com/dotnet/runtime-deps:10.0-preview` para ejecutar el contenedor en un entorno más liviano.
+Guía para desplegar engram-dotnet como contenedor Docker.
 
 ## Prerequisitos
 
-Antes de comenzar, asegúrate de cumplir con los siguientes prerequisitos:
+- `git`
+- `docker` y `docker compose`
+- PostgreSQL 15+ (puede ser local, en contenedor, o remoto)
 
-- **Herramientas necesarias:**
-  - `git`
-  - `docker`
-  - `docker compose`
-- **Configuración inicial en TrueNAS SCALE:**
-  1. Clonar este repositorio en `/mnt/Pool_8TB/engram_data`.
-  2. Crear el directorio para los datos de la base de datos SQLite:
-     ```bash
-     mkdir -p /mnt/Pool_8TB/engram_data/database
-     ```
-  3. Ajustar los permisos del directorio de datos para el usuario del contenedor `appuser` (UID/GID 950):
-     ```bash
-     chown -R 950:950 /mnt/Pool_8TB/engram_data/database
-     ```
+## Quick Start
 
-## Build y deploy (TrueNAS SCALE)
+### 1. Clonar el repositorio
 
-Pasos detallados para construir y desplegar el contenedor en TrueNAS SCALE:
-
-1. **Clonar el repositorio:**
 ```bash
-git clone https://github.com/efreet111/engram-dotnet.git /mnt/Pool_8TB/engram_data
-cd /mnt/Pool_8TB/engram_data
+git clone https://github.com/efreet111/engram-dotnet.git
+cd engram-dotnet
 ```
 
-2. **Configurar el archivo de entorno:**
+### 2. Configurar variables de entorno
+
 ```bash
-cp docker/.env.example docker/.env
+cd docker
+cp .env.example .env
 ```
-Editar `docker/.env` y definir la ruta al directorio de datos:
+
+Edita `docker/.env` con tus valores:
+
 ```env
-ENGRAM_DATA_PATH=/mnt/Pool_8TB/engram_data/database
-ENGRAM_HOST_PORT=7437
+# Ruta donde se guardarán los datos en el host
+ENGRAM_DATA_DIR_HOST=./data
+
+# Configuración PostgreSQL
+ENGRAM_PG_HOST=host.docker.internal
+ENGRAM_PG_PORT=5432
+ENGRAM_PG_DATABASE=engram
+ENGRAM_PG_USER=engram
+ENGRAM_PG_PASSWORD=your-secure-password
+
+# Backend: postgres (default) o sqlite
+ENGRAM_DB_TYPE=postgres
 ```
 
-3. **Configurar permisos de datos:**
-   ```bash
-   chown -R 950:950 /mnt/Pool_8TB/engram_data/database
-   ```
+### 3. Levantar el contenedor
 
-4. **Construir y desplegar los servicios:**
-   ```bash
-   docker compose -f docker/docker-compose.yml build
-   docker compose -f docker/docker-compose.yml up -d
-   ```
+```bash
+docker compose up -d --build
+```
 
-## Sync offline-first (PostgreSQL en el servidor)
+### 4. Verificar
 
-Este contenedor con `ENGRAM_DB_TYPE=postgres` expone la API `/sync/*` para que los clientes hagan push/pull. **No** necesita `ENGRAM_SYNC_ENABLED` en el compose: el `SyncManager` corre en cada PC con `engram mcp` + SQLite local.
+```bash
+curl http://localhost:7437/health
+# → {"status":"ok","service":"engram","version":"...","backend":"postgres"}
+```
 
-Cada desarrollador debe configurar en su MCP:
+---
 
-- `ENGRAM_SERVER_URL` — URL de este servidor (ej. `http://localhost:7437`)
-- `ENGRAM_SYNC_ENABLED=true`
-- **`ENGRAM_USER`** — identidad única (si falta, se usa el usuario del SO y varias personas pueden pisarse)
+## Ubicación del archivo `.env`
 
-Detalle: [docs/SYNC-SETUP.md](../docs/SYNC-SETUP.md).
+El archivo `.env` debe estar en el **mismo directorio que `docker-compose.yml`**:
 
-Tras desplegar, `curl http://localhost:7437/sync/status` debe responder con `"phase":"cloud"` y `"sync_enabled":true`.
+```
+engram-dotnet/
+└── docker/
+    ├── docker-compose.yml
+    ├── .env.example
+    └── .env              ← aquí
+```
 
-## Verificar que funciona
+Docker Compose lee automáticamente el `.env` de su directorio actual.
 
-Después de iniciar los servicios, verifica que todo esté funcionando correctamente:
-
-1. **Listar contenedores en ejecución:**
-   ```bash
-   docker ps
-   ```
-
-2. **Ver los logs del contenedor:**
-   ```bash
-   docker logs engram
-   ```
-
-3. **Consultar el endpoint de health check:**
-   ```bash
-   wget -qO- http://localhost:7437/health
-   ```
-   Respuesta esperada:
-   ```json
-    {"status":"ok","service":"engram","version":"1.1.0"}
-   ```
-
-4. **Obtener estadísticas del contenedor:**
-   ```bash
-   docker stats engram
-   ```
-
-## Variables del host (docker/.env)
-
-Estas variables configuran cómo Docker mapea recursos del host al contenedor. Se definen en `docker/.env` (no commiteado) a partir de `docker/.env.example`.
-
-| Variable | Descripción | Ejemplo |
-|---|---|---|
-| `ENGRAM_DATA_PATH` | Ruta en el host al directorio de datos SQLite | `/mnt/Pool_8TB/engram_data/database` |
-| `ENGRAM_HOST_PORT` | Puerto expuesto en el host (default: `7437`) | `7437` |
+---
 
 ## Variables de entorno
 
-### Configurables
+### Variables del `.env` (host → contenedor)
 
-| Nombre            | Descripción                                  | Valor por defecto      | Obligatorio |
-|-------------------|----------------------------------------------|------------------------|-------------|
-| `ENGRAM_DATA_DIR` | Ruta al directorio de datos dentro del contenedor | `/app/database`       | No          |
-| `ENGRAM_PORT`     | Puerto en el que se expone el servicio       | `7437`                | No          |
-| `ENGRAM_JWT_SECRET` | Clave secreta para JWT                     | *(vacío)*              | Sí          |
-| `ENGRAM_CORS_ORIGINS` | Orígenes para CORS                       | *(vacío)*              | No          |
+Estas variables se definen en `docker/.env` y controlan cómo Docker mapea recursos:
 
-## Volumen de datos
+| Variable | Descripción | Ejemplo |
+|----------|-------------|---------|
+| `ENGRAM_DATA_DIR_HOST` | Ruta en el host para datos persistentes (SQLite, exports) | `./data` o `/var/lib/engram` |
+| `ENGRAM_PG_HOST` | Host de PostgreSQL | `host.docker.internal`, `postgres`, `db.example.com` |
+| `ENGRAM_PG_PORT` | Puerto de PostgreSQL | `5432` |
+| `ENGRAM_PG_DATABASE` | Nombre de la base de datos | `engram` |
+| `ENGRAM_PG_USER` | Usuario de PostgreSQL | `engram` |
+| `ENGRAM_PG_PASSWORD` | Password de PostgreSQL (obligatorio) | `your-secure-password` |
+| `ENGRAM_DB_TYPE` | Backend: `postgres` o `sqlite` | `postgres` |
 
-El contenedor utiliza un volumen persistente configurado en `/mnt/Pool_8TB/engram_data/database` dentro del servidor TrueNAS. Este almacenamiento se utiliza para guardar la base de datos SQLite.
+### Variables opcionales
 
-### Backup manual
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `ENGRAM_JWT_SECRET` | Clave para autenticación JWT | *(vacío)* |
+| `ENGRAM_CORS_ORIGINS` | Orígenes permitidos para CORS | *(vacío)* |
 
-Para realizar un respaldo manual de los datos, copia el contenido del directorio:
-```bash
-rsync -av /mnt/Pool_8TB/engram_data/database /ruta/de/backup/
+### Variables internas del contenedor
+
+Estas las configura el `docker-compose.yml` automáticamente:
+
+| Variable | Descripción | Valor |
+|----------|-------------|-------|
+| `ENGRAM_DATA_DIR` | Ruta interna de datos | `/data/engram` |
+| `ENGRAM_PORT` | Puerto interno del servicio | `7437` |
+
+---
+
+## Escenarios de PostgreSQL
+
+### Escenario A: PostgreSQL en el mismo host
+
+Si PostgreSQL corre en tu máquina (fuera de Docker):
+
+```env
+ENGRAM_PG_HOST=host.docker.internal
 ```
 
-### Restauración manual
+El `docker-compose.yml` incluye `extra_hosts` para resolver `host.docker.internal` automáticamente.
 
-Para restaurar un backup, copia los datos al directorio de datos y ajusta los permisos:
-```bash
-rsync -av /ruta/de/backup/ /mnt/Pool_8TB/engram_data/database
-chown -R 950:950 /mnt/Pool_8TB/engram_data/database
+**Requisitos:**
+- PostgreSQL debe escuchar en todas las interfaces (`postgresql.conf`: `listen_addresses = '*'`)
+- Firewall debe permitir conexiones desde Docker
+
+### Escenario B: PostgreSQL en otro contenedor
+
+Si PostgreSQL corre en un contenedor separado, usa el nombre del contenedor:
+
+```env
+ENGRAM_PG_HOST=postgres
 ```
 
-## Actualizar a nueva versión
+**Requisitos:**
+- Ambos contenedores deben estar en la misma red Docker
 
-Para actualizar a una nueva versión del proyecto:
+### Escenario C: PostgreSQL remoto
 
-1. Detener los servicios:
-   ```bash
-   docker compose -f docker/docker-compose.yml down
-   ```
+Si PostgreSQL está en otro servidor:
 
-2. Descargar los últimos cambios del repositorio:
-   ```bash
-   git pull
-   ```
+```env
+ENGRAM_PG_HOST=db.example.com
+# o
+ENGRAM_PG_HOST=192.168.1.100
+```
 
-3. Reconstruir y reiniciar los servicios:
-   ```bash
-   docker compose -f docker/docker-compose.yml build
-   docker compose -f docker/docker-compose.yml up -d
-   ```
+---
+
+## Sync offline-first
+
+Con `ENGRAM_DB_TYPE=postgres`, el contenedor expone la API `/sync/*` para que los clientes hagan push/pull.
+
+**No** necesitas `ENGRAM_SYNC_ENABLED` en el compose — el `SyncManager` corre en cada PC de desarrollo con `engram mcp` + SQLite local.
+
+Cada desarrollador debe configurar en su MCP:
+
+- `ENGRAM_SERVER_URL` — URL de este servidor (ej. `http://your-server:7437`)
+- `ENGRAM_SYNC_ENABLED=true`
+- `ENGRAM_USER` — identidad única (obligatorio en equipos)
+
+Ver [docs/SYNC-SETUP.md](../docs/SYNC-SETUP.md) para más detalles.
+
+---
+
+## Comandos útiles
+
+```bash
+# Ver logs
+docker compose logs -f
+
+# Ver contenedores
+docker compose ps
+
+# Reiniciar
+docker compose restart
+
+# Actualizar a nueva versión
+git pull
+docker compose up -d --build
+
+# Detener
+docker compose down
+```
+
+---
 
 ## Troubleshooting
 
-### Permisos incorrectos en el directorio de datos
-
-Asegúrate de que el directorio de datos tenga los permisos correctos:
-```bash
-chown -R 950:950 /mnt/Pool_8TB/engram_data/database
-```
-
 ### Puerto 7437 ya está en uso
 
-Verifica qué servicio está ocupando el puerto:
 ```bash
 sudo lsof -i :7437
+# Cambiar puerto en docker-compose.yml si es necesario
 ```
-Detén el servicio correspondiente o cambia el puerto en `docker-compose.yml`.
+
+### Error de permisos en el volumen
+
+El contenedor ajusta permisos automáticamente al iniciar. Si persiste:
+
+```bash
+sudo chown -R 1000:1000 ./data
+```
+
+### PostgreSQL no conecta
+
+```bash
+# Verificar logs
+docker compose logs engram | grep -i postgres
+
+# Verificar health
+curl http://localhost:7437/health
+# Debe mostrar "backend":"postgres"
+```
 
 ### Health check falla
 
-1. Asegúrate de que el contenedor esté en ejecución:
-   ```bash
-   docker ps
-   ```
+```bash
+# Verificar que el contenedor está corriendo
+docker compose ps
 
-2. Revisa los logs del contenedor para detectar errores:
-   ```bash
-   docker logs engram
-   ```
+# Ver logs
+docker compose logs engram
 
-3. Verifica la conectividad al puerto:
-   ```bash
-   wget -qO- http://localhost:7437/health
-   ```
+# Probar manualmente
+curl http://localhost:7437/health
+```
 
-## CI/CD futuro
+---
 
-Se encuentra planificado implementar un pipeline de CI/CD. Para más detalles, consulta [`docs/CICD-SPEC.md`](../docs/CICD-SPEC.md).
+## Ver también
+
+- [docs/DOCKER-VANILLA.md](../docs/DOCKER-VANILLA.md) — Docker sin Compose
+- [docs/POSTGRES-SETUP.md](../docs/POSTGRES-SETUP.md) — Setup detallado de PostgreSQL
+- [docs/SYNC-SETUP.md](../docs/SYNC-SETUP.md) — Configuración de sync para equipos
+- [docs/API-REFERENCE.md](../docs/API-REFERENCE.md) — Referencia completa de variables y endpoints

@@ -30,7 +30,7 @@
 └────────────────────────┬────────────────────────────┘
                          │ HTTP (port 7437)
 ┌────────────────────────▼────────────────────────────┐
-│                  SERVER (TrueNAS/Linux)                │
+│                  SERVER (Docker/Linux)                 │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │  PostgreSQL: cloud_mutations, enrolled_projects │ │
 │  │  REST API: 8 sync endpoints                     │ │
@@ -64,7 +64,7 @@ Ver también [MCP-CONFIG.md](MCP-CONFIG.md) y [MULTI-USER.md](MULTI-USER.md).
 
 ---
 
-## Server Setup (TrueNAS / Debian)
+## Server Setup (Docker / Linux)
 
 ### Prerequisites
 
@@ -75,7 +75,7 @@ Ver también [MCP-CONFIG.md](MCP-CONFIG.md) y [MULTI-USER.md](MULTI-USER.md).
 
 ### Option A: Docker Compose (Recommended)
 
-Usá el compose del repo: [`docker/docker-compose.yml`](../docker/docker-compose.yml) (TrueNAS + Postgres externo).
+Usá el compose del repo: [`docker/docker-compose.yml`](../docker/docker-compose.yml) (Docker + Postgres externo).
 
 Ejemplo mínimo con Postgres en el mismo compose:
 
@@ -188,7 +188,7 @@ curl -X POST http://localhost:7442/sync/enroll \
 curl http://localhost:7442/sync/status
 
 # Check enrolled projects
-curl -H "X-Engram-User: victor" http://localhost:7442/sync/enroll
+curl -H "X-Engram-User: your-username" http://localhost:7442/sync/enroll
 ```
 
 ---
@@ -278,5 +278,5 @@ stderr warning rather than logging 501 forever:
 
 The server continues to accept HTTP traffic and local writes; only the
 background push/pull cycle is skipped. To enable remote sync, set
-`ENGRAM_SERVER_URL` to the relay server (the TrueNAS PostgreSQL-backed
+`ENGRAM_SERVER_URL` to the relay server (the central PostgreSQL-backed
 server in most deployments).

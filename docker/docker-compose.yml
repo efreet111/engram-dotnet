@@ -33,9 +33,9 @@ services:
       - "host.docker.internal:host-gateway"
 
     volumes:
-      # Dataset de TrueNAS para datos (SQLite fallback, exports, etc.)
-      # Ajustar la ruta izquierda si tu dataset está en otro lugar
-      - /mnt/Pool_8TB/engram_data:/data/engram
+      # Datos persistentes (SQLite fallback, exports, etc.)
+      # La ruta del host se configura via ENGRAM_DATA_DIR_HOST en .env
+      - ${ENGRAM_DATA_DIR_HOST:-./data}:/data/engram
 
     environment:
       # Backend selection: sqlite (default) | postgres

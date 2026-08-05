@@ -392,7 +392,7 @@ docker run -d --name engram \
 | `ENGRAM_PORT` | `7437` | HTTP port for MCP server | `8080` |
 | `ENGRAM_DB_TYPE` | `sqlite` | Backend: `sqlite` or `postgres` | `postgres` |
 | `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required if `ENGRAM_DB_TYPE=postgres`) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
-| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (for sync in team mode) | `http://192.168.1.100:7437` |
+| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (for sync in team mode) | `http://your-server:7437` |
 | `ENGRAM_SYNC_ENABLED` | `false` | Enable sync (offline-first mode) | `true` |
 | `ENGRAM_USER` | — | User identity (required for sync in team mode) | `user@example.com` |
 | `ENGRAM_AUTO_ENROLL` | `true` | Auto-generate `.engram-id` on startup | `false` |
@@ -441,7 +441,7 @@ Host=<hostname>;Port=<port>;Database=<dbname>;Username=<user>;Password=<password
 
 **Example**:
 ```
-Host=192.168.1.100;Port=5432;Database=engram;Username=engram;Password=secret123
+Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=your-secure-password
 ```
 
 ### Scenario A: PostgreSQL on the same host (Docker Desktop / Docker Engine)
