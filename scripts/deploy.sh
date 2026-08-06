@@ -64,7 +64,7 @@ Examples:
 Environment (in docker/.env):
   ENGRAM_PROFILE       Deployment profile: local (default), remote-server, offline-first, desktop
   ENGRAM_DB_MODE       Database mode: external (default), embedded
-  ENGRAM_PG_CONNECTION Required for remote-server and desktop profiles
+  ENGRAM_PG_HOST, ENGRAM_PG_PASSWORD  Required for remote-server and desktop profiles
   ENGRAM_SERVER_URL    Required for offline-first and desktop profiles
   ENGRAM_USER          Required for remote-server, offline-first, and desktop profiles
   ENGRAM_IMAGE         Override image (default: ${DEFAULT_IMAGE})
@@ -118,16 +118,21 @@ validate_profile() {
       ;;
     remote-server)
       local errors=0
-      if [[ -z "${ENGRAM_PG_CONNECTION:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_CONNECTION but it is not set." >&2
+      # Validate individual PG variables (docker-compose.yml constructs ENGRAM_PG_CONNECTION from these)
+      if [[ -z "${ENGRAM_PG_HOST:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_HOST but it is not set." >&2
+        ((errors++))
+      fi
+      if [[ -z "${ENGRAM_PG_PASSWORD:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_PASSWORD but it is not set." >&2
         ((errors++))
       fi
       # Safety: reject localhost connections for remote-server profile
-      if [[ -n "${ENGRAM_PG_CONNECTION:-}" ]]; then
+      if [[ -n "${ENGRAM_PG_HOST:-}" ]]; then
         local lower
-        lower=$(echo "$ENGRAM_PG_CONNECTION" | tr '[:upper:]' '[:lower:]')
-        if echo "$lower" | grep -qE '(host|server|data source)\s*=\s*(localhost|127\.0\.0\.1|::1)'; then
-          echo "  ✗ Error: ENGRAM_PROFILE=remote-server must NOT use localhost for PG connection." >&2
+        lower=$(echo "$ENGRAM_PG_HOST" | tr '[:upper:]' '[:lower:]')
+        if [[ "$lower" == "localhost" || "$lower" == "127.0.0.1" || "$lower" == "::1" ]]; then
+          echo "  ✗ Error: ENGRAM_PROFILE=remote-server must NOT use localhost for PG host." >&2
           ((errors++))
         fi
       fi
