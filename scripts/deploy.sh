@@ -415,11 +415,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Apply profile from args (overrides .env if provided)
-[[ -n "$PROFILE" ]] && export ENGRAM_PROFILE="$PROFILE"
-
-# Load env from .env file (must happen before any command that needs env)
+# Load env from .env file first
 load_env
+
+# Apply profile from args AFTER loading .env (overrides .env if provided)
+[[ -n "$PROFILE" ]] && export ENGRAM_PROFILE="$PROFILE"
 
 if [[ -z "$COMMAND" ]]; then
   usage
