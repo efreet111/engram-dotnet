@@ -1381,6 +1381,11 @@ static IStore OpenStore(StoreConfig? cfg = null)
 {
     cfg ??= StoreConfig.FromEnvironment();
 
+    // Validate deployment profile requirements before any store is created.
+    // Throws InvalidOperationException with missing var names if the effective
+    // configuration requires variables that are not set.
+    ProfileValidator.Validate(cfg);
+
     // Remote mode: connect to server via HTTP
     if (cfg.IsRemote)
         return new HttpStore(cfg);

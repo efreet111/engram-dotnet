@@ -49,6 +49,10 @@ services:
       - ${ENGRAM_DATA_DIR_HOST:-./data}:/data/engram
 
     environment:
+      # ── Deployment Profile ───────────────────────────────────────────
+      # local | server | sync — see .env.example for details
+      ENGRAM_PROFILE: ${ENGRAM_PROFILE:-local}
+
       # Backend selection: sqlite (default) | postgres
       ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-postgres}
       ENGRAM_DATA_DIR: /data/engram
@@ -77,3 +81,32 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # ── Embedded PostgreSQL (only when ENGRAM_DB_MODE=embedded) ──────────────
+  # Activated via `--profile embedded` or by docker-compose.embedded.yml.
+  postgres:
+    image: postgres:16-alpine
+    container_name: engram-postgres
+    restart: unless-stopped
+    profiles: ["embedded"]
+
+    ports:
+      - "${ENGRAM_PG_PORT:-5432}:5432"
+
+    environment:
+      POSTGRES_DB: ${ENGRAM_PG_DATABASE:-engram}
+      POSTGRES_USER: ${ENGRAM_PG_USER:-engram}
+      POSTGRES_PASSWORD: ${ENGRAM_PG_PASSWORD}
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ENGRAM_PG_USER:-engram} -d ${ENGRAM_PG_DATABASE:-engram}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  pgdata:

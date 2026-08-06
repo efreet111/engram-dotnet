@@ -64,6 +64,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | # | ID | P | Tipo | Feature | Estado | Effort | Origen | Spec / notas |
 |---|-----|---|------|---------|--------|--------|--------|--------------|
 | — | **Hecho recientemente (2026-05-27/28 y 2026-06-18)** |
+| ✓ | HU-010 | P1 | Feature | Deployment Profile System (`ENGRAM_PROFILE`: local/server/sync) | ✅ Done | M | HU-010 | `docs/tasks/HU-001-HU-099/HU-010-deploy-profile-system.md` |
 | ✓ | ENG-101 | — | Bug | Sincronización doc/código (versión CLI, conteo MCP, CHANGELOG) | Done | S | testing | `69e83d7` |
 | ✓ | ENG-102 | — | Bug | `mem_current_project` implementado en código | Done | S | testing | `69e83d7` |
 | ✓ | ENG-103 | — | Bug | Tests Obsidian CRLF (LF en markdown) | Done | S | testing | `69e83d7` |

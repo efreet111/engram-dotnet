@@ -198,14 +198,44 @@ Add to your IDE's MCP config:
 }
 ```
 
+### Deployment Profiles
+
+Instead of setting 10+ variables manually, use `ENGRAM_PROFILE` to pick your deployment mode in one line:
+
+| Profile | Who it's for | Backend | Sync |
+|---------|-------------|---------|------|
+| `local` (default) | Solo developer | SQLite | ❌ |
+| `server` | Small team, shared DB | PostgreSQL | ❌ |
+| `sync` | Large team, offline-first | PostgreSQL | ✅ |
+
+```json
+// OpenCode example — just set ENGRAM_PROFILE:
+{
+  "mcpServers": {
+    "engram": {
+      "command": "engram",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_PROFILE": "local",
+        "ENGRAM_USER": "your-username"
+      }
+    }
+  }
+}
+```
+
+Each profile sets sensible defaults (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) that you can override individually. Required vars per profile are validated at startup so you catch misconfiguration early.
+
 ### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `ENGRAM_PROFILE` | Deployment profile: `local`, `server`, `sync` | `local` |
 | `ENGRAM_DATA_DIR` | Data directory | `~/.engram` |
-| `ENGRAM_USER` | Your identity (required for teams) | System user |
-| `ENGRAM_SERVER_URL` | Server URL (for sync mode) | — |
-| `ENGRAM_SYNC_ENABLED` | Enable sync | `false` |
+| `ENGRAM_USER` | Your identity (required for `server` and `sync`) | System user |
+| `ENGRAM_SERVER_URL` | Server URL (required for `sync`) | — |
+| `ENGRAM_SYNC_ENABLED` | Enable sync (auto-set by profile) | `false` |
+| `ENGRAM_DB_TYPE` | Backend: `sqlite` or `postgres` (auto-set by profile) | `sqlite` |
 
 **See also**: [MCP Configuration Guide](MCP-CONFIG.md) for all options.
 
@@ -244,48 +274,67 @@ engram sync status
 
 ## 6. Next Steps
 
-### Choose your mode
+### Choose your profile
 
-| Mode | Use case | Setup |
-|------|----------|-------|
-| **Local** | Solo developer, no sharing | Default (no extra config) |
-| **Team** | Shared server, no offline | [Team Setup](#team-mode) |
-| **Sync** | Offline-first, multi-device | [Sync Setup](SYNC-SETUP.md) |
+Set `ENGRAM_PROFILE` and the required variables for your use case:
 
-### Team Mode
+| Profile | Use case | Required vars |
+|---------|----------|---------------|
+| **`local`** (default) | Solo developer, no sharing | *(none)* |
+| **`server`** | Shared server, no offline | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| **`sync`** | Offline-first, multi-device | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+
+### Profile: `local`
+
+```bash
+# Profile is "local" by default — no extra vars needed
+./engram serve
+# → SQLite backend, sync disabled
+```
+
+### Profile: `server`
 
 For shared PostgreSQL server:
 
 ```bash
 # Server
-ENGRAM_DB_TYPE=postgres \
+ENGRAM_PROFILE=server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_USER=admin \
 ./engram serve
 
-# Each developer
+# Each developer (MCP client — uses remote URL, not profile)
 export ENGRAM_URL="http://server:7437"
 export ENGRAM_USER="your-username"
 ```
 
+The server profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. You only need to supply the connection string and user.
+
 **See also**: [01-QUICK-START.md](01-QUICK-START.md) for detailed team setup.
 
-### Sync Mode (Offline-First)
+### Profile: `sync`
 
-For multi-device sync with local SQLite:
+For offline-first multi-device sync:
 
 ```bash
-# Enable sync in your MCP config
-export ENGRAM_SERVER_URL="http://server:7437"
-export ENGRAM_SYNC_ENABLED="true"
-export ENGRAM_USER="your-username"
+# Server
+ENGRAM_PROFILE=sync \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_SERVER_URL="http://server:7437" \
+ENGRAM_USER=admin \
+./engram serve
 
 # Enroll your project
 curl -X POST http://server:7437/sync/enroll \
-  -H "X-Engram-User: your-username" \
+  -H "X-Engram-User: admin" \
   -d '{"project":"your-project"}'
 ```
 
+The sync profile auto-sets `ENGRAM_DB_TYPE=postgres`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`.
+
 **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync documentation.
+
+> **Backward compatible**: All existing env vars still work. If you don't set `ENGRAM_PROFILE`, the system behaves exactly as before — no migration needed.
 
 ---
 

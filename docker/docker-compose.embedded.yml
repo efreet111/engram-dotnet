@@ -1,0 +1,98 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Engram — Docker Compose (Embedded PostgreSQL)
+#
+# Este compose incluye un servicio PostgreSQL gestionado por Docker.
+# Engram espera hasta que PostgreSQL esté healthy antes de arrancar.
+#
+# REQUISITOS:
+#   1. Archivo .env con las credenciales (ver .env.example)
+#      ENGRAM_PROFILE=server  (o sync)
+#      ENGRAM_DB_MODE=embedded
+#      ENGRAM_USER=usuario
+#
+# USO:
+#   cp .env.example .env          # editar con tus credenciales
+#   docker compose -f docker-compose.embedded.yml up -d --build
+#   docker compose -f docker-compose.embedded.yml logs -f
+#
+# NOTA: La data de PostgreSQL es persistente via volumen pgdata.
+#       Para borrar todo: docker compose -f docker-compose.embedded.yml down -v
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: engram-postgres
+    restart: unless-stopped
+
+    ports:
+      - "${ENGRAM_PG_PORT:-5432}:5432"
+
+    environment:
+      POSTGRES_DB: ${ENGRAM_PG_DATABASE:-engram}
+      POSTGRES_USER: ${ENGRAM_PG_USER:-engram}
+      POSTGRES_PASSWORD: ${ENGRAM_PG_PASSWORD}
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ENGRAM_PG_USER:-engram} -d ${ENGRAM_PG_DATABASE:-engram}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  engram:
+    image: engram-dotnet:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        ENGRAM_VERSION: v1.3.0
+    container_name: engram
+    restart: unless-stopped
+
+    # PostgreSQL está en este compose — esperar a que esté healthy
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "7437:7437"
+
+    volumes:
+      - ${ENGRAM_DATA_DIR_HOST:-./data}:/data/engram
+
+    environment:
+      # ── Deployment Profile ───────────────────────────────────────────
+      ENGRAM_PROFILE: ${ENGRAM_PROFILE:-server}
+
+      # Backend: siempre postgres en embedded
+      ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-postgres}
+      ENGRAM_DATA_DIR: /data/engram
+      ENGRAM_PORT: "7437"
+
+      # ── Sync (offline-first) ─────────────────────────────────────────
+      # Ver docs/SYNC-SETUP.md para configurar sync.
+
+      # PostgreSQL connection — apunta al servicio postgres de este compose
+      ENGRAM_PG_CONNECTION: "Host=${ENGRAM_PG_HOST:-postgres};Port=${ENGRAM_PG_PORT:-5432};Database=${ENGRAM_PG_DATABASE:-engram};Username=${ENGRAM_PG_USER:-engram};Password=${ENGRAM_PG_PASSWORD}"
+
+      # Opcional — habilitar auth JWT (descomentar y cambiar el valor)
+      # ENGRAM_JWT_SECRET: "cambia_esto_por_un_secreto_seguro"
+
+      # Opcional — CORS si accedés al servidor desde un dashboard web
+      # ENGRAM_CORS_ORIGINS: "http://localhost:8080"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7437/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pgdata:

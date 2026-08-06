@@ -13,6 +13,13 @@ public class StoreConfig
     public int Port { get; init; } = int.TryParse(Environment.GetEnvironmentVariable("ENGRAM_PORT"), out var port)
         ? port : 7437;
 
+    /// <summary>
+    /// Deployment profile that sets default values for database type, sync behavior,
+    /// and other configuration. Parsed from <c>ENGRAM_PROFILE</c> environment variable.
+    /// Defaults to <see cref="DeployProfile.Local"/> when unset or empty.
+    /// </summary>
+    public DeployProfile Profile { get; init; } = DeployProfileExtensions.FromEnvironment();
+
     public string? Project { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_PROJECT");
 
     public TimeSpan DedupeWindow { get; init; } = TimeSpan.FromMinutes(15);
@@ -31,11 +38,11 @@ public class StoreConfig
     public string? CorsOrigins { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_CORS_ORIGINS");
 
     /// <summary>
-    /// Remote server URL for team/centralized mode (env: ENGRAM_URL).
+    /// Remote server URL for team/centralized mode (env: ENGRAM_SERVER_URL).
     /// When set, the MCP client acts as an HTTP proxy instead of using a local SQLite store.
     /// Example: http://10.0.0.5:7437
     /// </summary>
-    public string? RemoteUrl { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_URL");
+    public string? RemoteUrl { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
 
     /// <summary>
     /// Identifies the developer using this client (env: ENGRAM_USER).
@@ -69,6 +76,24 @@ public class StoreConfig
     /// </summary>
     public bool IsRemote => !string.IsNullOrWhiteSpace(RemoteUrl);
 
+    /// <summary>
+    /// True when sync is enabled via ENGRAM_SYNC_ENABLED env var.
+    /// Honors the same merge precedence as SyncManagerConfig: explicit env var > profile default > false.
+    /// </summary>
+    public bool IsSyncEnabled
+    {
+        get
+        {
+            var raw = Environment.GetEnvironmentVariable("ENGRAM_SYNC_ENABLED");
+            if (raw is not null)
+                return raw.Trim().ToLowerInvariant() is not ("false" or "0");
+            // Profile defaults may enable sync
+            if (Profile is DeployProfile.Sync)
+                return true;
+            return false;
+        }
+    }
+
     private static StoreDbType ParseDbType(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return StoreDbType.Sqlite;
@@ -79,5 +104,26 @@ public class StoreConfig
         };
     }
 
-    public static StoreConfig FromEnvironment() => new();
+    /// <summary>
+    /// Creates a <see cref="StoreConfig"/> from environment variables using the profile-based
+    /// merge pattern: <c>explicit env var > profile default > hardcoded default</c>.
+    /// </summary>
+    public static StoreConfig FromEnvironment()
+    {
+        var profile = DeployProfileExtensions.FromEnvironment();
+        var defaults = ProfileDefaults.For(profile);
+
+        string? Resolve(string key, string? hc = null) =>
+            Environment.GetEnvironmentVariable(key)
+            ?? (defaults.TryGetValue(key, out var d) ? d : null)
+            ?? hc;
+
+        return new StoreConfig
+        {
+            Profile = profile,
+            DbType = ParseDbType(Resolve("ENGRAM_DB_TYPE", "sqlite")),
+            PgConnectionString = Resolve("ENGRAM_PG_CONNECTION"),
+            User = Resolve("ENGRAM_USER") ?? Environment.UserName,
+        };
+    }
 }

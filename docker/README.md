@@ -8,6 +8,47 @@ Guía para desplegar engram-dotnet como contenedor Docker.
 - `docker` y `docker compose`
 - PostgreSQL 15+ (puede ser local, en contenedor, o remoto)
 
+---
+
+## Perfiles de despliegue (`ENGRAM_PROFILE`)
+
+En lugar de configurar `ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED` y otras variables una por una, usá `ENGRAM_PROFILE` para elegir tu modo de despliegue en una sola línea:
+
+| Perfil | Para quién | Backend | Sync | Variables requeridas |
+|--------|-----------|---------|------|---------------------|
+| `local` (default) | Desarrollador solo | SQLite | ❌ | *(ninguna)* |
+| `server` | Equipo pequeño (2-5), BD compartida | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| `sync` | Equipo grande (5-20), offline-first | PostgreSQL | ✅ | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+
+Cada perfil define valores por defecto que podés sobrescribir individualmente:
+
+| Variable | `local` | `server` | `sync` |
+|----------|---------|----------|--------|
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `postgres` |
+| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` |
+| `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` |
+| `ENGRAM_SYNC_TARGET` | — | — | `cloud` |
+
+**Precedencia**: variable explícita > valor por defecto del perfil > valor hardcodeado. Si ponés `ENGRAM_PROFILE=server` pero también `ENGRAM_DB_TYPE=sqlite`, SQLite gana — tu override siempre tiene prioridad.
+
+### Modo de base de datos (`ENGRAM_DB_MODE`)
+
+Controla si PostgreSQL corre como servicio embebido junto a Engram o se conecta a una instancia externa:
+
+| Valor | Comportamiento |
+|-------|---------------|
+| `external` (default) | PostgreSQL está en el host o red — pasás `ENGRAM_PG_CONNECTION` con host/puerto |
+| `embedded` | Docker Compose levanta un servicio `postgres` junto a Engram — cero configuración manual de PG |
+
+`ENGRAM_DB_MODE` solo aplica con `ENGRAM_PROFILE=server` o `sync` (ambos requieren PostgreSQL). Con `local` se ignora.
+
+```bash
+# Modo embedded: PostgreSQL se levanta solo
+ENGRAM_PROFILE=server ENGRAM_DB_MODE=embedded docker compose up -d
+```
+
+> **Retrocompatible**: No querés usar perfiles? Todas las variables existentes (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) siguen funcionando igual. Sin `ENGRAM_PROFILE` el sistema se comporta exactamente como antes.
+
 ## Quick Start
 
 ### 1. Clonar el repositorio
@@ -24,22 +65,38 @@ cd docker
 cp .env.example .env
 ```
 
-Edita `docker/.env` con tus valores:
+Editá `docker/.env` con tus valores. Elegí un perfil según tu caso:
 
+**Perfil `local` (SQLite, desarrollo solo)**:
 ```env
-# Ruta donde se guardarán los datos en el host
+# Sin ENGRAM_PROFILE o ENGRAM_PROFILE=local — SQLite por defecto
 ENGRAM_DATA_DIR_HOST=./data
+```
 
-# Configuración PostgreSQL
+**Perfil `server` (PostgreSQL, equipo pequeño)**:
+```env
+ENGRAM_PROFILE=server
 ENGRAM_PG_HOST=host.docker.internal
 ENGRAM_PG_PORT=5432
 ENGRAM_PG_DATABASE=engram
 ENGRAM_PG_USER=engram
 ENGRAM_PG_PASSWORD=your-secure-password
-
-# Backend: postgres (default) o sqlite
-ENGRAM_DB_TYPE=postgres
+ENGRAM_USER=admin
 ```
+
+**Perfil `sync` (PostgreSQL + sync, equipo grande)**:
+```env
+ENGRAM_PROFILE=sync
+ENGRAM_PG_HOST=host.docker.internal
+ENGRAM_PG_PORT=5432
+ENGRAM_PG_DATABASE=engram
+ENGRAM_PG_USER=engram
+ENGRAM_PG_PASSWORD=your-secure-password
+ENGRAM_USER=admin
+# ENGRAM_SERVER_URL va en el comando o en .env según tu setup
+```
+
+> **Sin perfil (retrocompatible)**: Si no ponés `ENGRAM_PROFILE`, el sistema funciona como antes. Seguí usando `ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc. manualmente.
 
 ### 3. Levantar el contenedor
 
@@ -51,7 +108,8 @@ docker compose up -d --build
 
 ```bash
 curl http://localhost:7437/health
-# → {"status":"ok","service":"engram","version":"...","backend":"postgres"}
+# → {"status":"ok","service":"engram","version":"...","backend":"sqlite"}  (local)
+# → {"status":"ok","service":"engram","version":"...","backend":"postgres"} (server/sync)
 ```
 
 ---
@@ -66,13 +124,15 @@ engram-dotnet supports two backends. Use the compose file that matches your choi
 | `docker-compose.sqlite.yml` | SQLite | Yes |
 | `docker-compose.yml` | Both (default: postgres) | Yes (backward-compatible) |
 
+> **Con perfil, rara vez necesitás archivos separados.** Poné `ENGRAM_PROFILE=server` o `sync` en tu `.env` y usá `docker-compose.yml` — el perfil configura PostgreSQL automáticamente. Los archivos `*-postgres.yml` y `*-sqlite.yml` existen para setups avanzados y retrocompatibilidad.
+
 ### PostgreSQL-only setup (recommended)
 
 ```bash
 cd docker
 cp .env.example .env
-# Edit .env: set ENGRAM_DB_TYPE=postgres and PG credentials
-# ENGRAM_DATA_DIR_HOST is NOT needed — you can leave it or comment it out
+# Editá .env: poné ENGRAM_PROFILE=server y configurá las credenciales PG
+# ENGRAM_DATA_DIR_HOST no es necesario con PostgreSQL — podés dejarlo o comentarlo
 docker compose -f docker-compose.postgres.yml up -d --build
 ```
 
@@ -81,7 +141,7 @@ docker compose -f docker-compose.postgres.yml up -d --build
 ```bash
 cd docker
 cp .env.example .env
-# Edit .env: set ENGRAM_DB_TYPE=sqlite and ENGRAM_DATA_DIR_HOST
+# Editá .env: poné ENGRAM_PROFILE=local y configurá ENGRAM_DATA_DIR_HOST
 docker compose -f docker-compose.sqlite.yml up -d --build
 ```
 
@@ -111,13 +171,15 @@ Estas variables se definen en `docker/.env` y controlan cómo Docker mapea recur
 
 | Variable | Descripción | Ejemplo |
 |----------|-------------|---------|
+| `ENGRAM_PROFILE` | Perfil de despliegue: `local`, `server`, `sync` | `server` |
+| `ENGRAM_DB_MODE` | Modo PostgreSQL: `external` (host/red) o `embedded` (servicio compose) | `embedded` |
 | `ENGRAM_DATA_DIR_HOST` | Ruta en el host para datos persistentes (SQLite, exports) | `./data` o `/var/lib/engram` |
 | `ENGRAM_PG_HOST` | Host de PostgreSQL | `host.docker.internal`, `postgres`, `db.example.com` |
 | `ENGRAM_PG_PORT` | Puerto de PostgreSQL | `5432` |
 | `ENGRAM_PG_DATABASE` | Nombre de la base de datos | `engram` |
 | `ENGRAM_PG_USER` | Usuario de PostgreSQL | `engram` |
 | `ENGRAM_PG_PASSWORD` | Password de PostgreSQL (obligatorio) | `your-secure-password` |
-| `ENGRAM_DB_TYPE` | Backend: `postgres` o `sqlite` | `postgres` |
+| `ENGRAM_USER` | Identidad del usuario (requerido para `server`/`sync`) | `admin` |
 
 ### Variables opcionales
 
@@ -178,9 +240,11 @@ ENGRAM_PG_HOST=192.168.1.100
 
 ## Sync offline-first
 
-Con `ENGRAM_DB_TYPE=postgres`, el contenedor expone la API `/sync/*` para que los clientes hagan push/pull.
+Con `ENGRAM_PROFILE=sync`, el contenedor expone la API `/sync/*` para que los clientes hagan push/pull. El perfil `sync` auto-configura `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, y `ENGRAM_SYNC_TARGET=cloud`.
 
-**No** necesitas `ENGRAM_SYNC_ENABLED` en el compose — el `SyncManager` corre en cada PC de desarrollo con `engram mcp` + SQLite local.
+También podés usar `ENGRAM_PROFILE=server` con variables explícitas si preferís control manual.
+
+**No** necesitás `ENGRAM_SYNC_ENABLED` en el compose si usás perfil — el `SyncManager` corre en cada PC de desarrollo con `engram mcp` + SQLite local.
 
 Cada desarrollador debe configurar en su MCP:
 

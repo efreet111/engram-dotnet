@@ -8,48 +8,48 @@
 
 ## Acceptance Criteria
 
-- [ ] `ENGRAM_PROFILE=local` → SQLite backend, sync disabled (current default for dev)
-- [ ] `ENGRAM_PROFILE=server` → PostgreSQL backend, sync disabled, multi-user isolation via `X-Engram-User` header
-- [ ] `ENGRAM_PROFILE=sync` → PostgreSQL backend + SyncManager enabled, offline-first mode
-- [ ] `ENGRAM_PROFILE` defaults to `local` if not set (backward compatible)
-- [ ] Individual env vars (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) override profile defaults (explicit > profile > hardcoded)
-- [ ] Missing required vars for a profile produce a clear validation error at startup (not silent fallback)
-- [ ] Docker Compose uses `ENGRAM_PROFILE` to select which profile preset to apply
-- [ ] `docker-compose.yml` works out-of-the-box for each profile with minimal extra config
-- [ ] Documentation updated: `INSTALL.md`, `01-QUICK-START.md`, `DOCKER-VANILLA.md`
-- [ ] Deploy script (`scripts/deploy.sh`) created with start/stop/remove/recreate commands
+- [x] `ENGRAM_PROFILE=local` → SQLite backend, sync disabled (current default for dev)
+- [x] `ENGRAM_PROFILE=server` → PostgreSQL backend, sync disabled, multi-user isolation via `X-Engram-User` header
+- [x] `ENGRAM_PROFILE=sync` → PostgreSQL backend + SyncManager enabled, offline-first mode
+- [x] `ENGRAM_PROFILE` defaults to `local` if not set (backward compatible)
+- [x] Individual env vars (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) override profile defaults (explicit > profile > hardcoded)
+- [x] Missing required vars for a profile produce a clear validation error at startup (not silent fallback)
+- [x] Docker Compose uses `ENGRAM_PROFILE` to select which profile preset to apply
+- [x] `docker-compose.yml` works out-of-the-box for each profile with minimal extra config
+- [x] Documentation updated: `INSTALL.md`, `01-QUICK-START.md`, `DOCKER-VANILLA.md`
+- [x] Deploy script (`scripts/deploy.sh`) created with start/stop/remove/recreate commands
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] Create `DeployProfile` enum (`Local`, `Server`, `Sync`) in `Engram.Store` or new `Engram.Configuration` namespace
-- [ ] Create `ProfileDefaults` static class with `For(DeployProfile)` method returning `Dictionary<string, string?>`
-- [ ] Modify `StoreConfig.FromEnvironment()` to merge profile defaults before reading individual env vars
-- [ ] Modify `SyncManagerConfig.FromEnvironment()` same pattern
-- [ ] Add `ValidateProfile()` method that throws with clear message if required vars are missing (e.g., `ENGRAM_PG_CONNECTION` missing when `profile=server`)
-- [ ] Add `ENGRAM_PROFILE` to `Dockerfile` ENV defaults
-- [ ] Update `docker-compose.yml` to use `ENGRAM_PROFILE` env var with profile-specific overrides
-- [ ] Update `docker/.env.example` with `ENGRAM_PROFILE` and per-profile documentation
-- [ ] Update `docs/INSTALL.md` to show `ENGRAM_PROFILE` usage
-- [ ] Update `docs/01-QUICK-START.md` — replace manual var lists with profile selection
-- [ ] Add T1 test: `ENGRAM_PROFILE=local` starts with SQLite
-- [ ] Add T1 test: `ENGRAM_PROFILE=server` with missing `ENGRAM_PG_CONNECTION` → clear validation error
-- [ ] Add T1 test: explicit `ENGRAM_DB_TYPE=sqlite` overrides `ENGRAM_PROFILE=server`
-- [ ] Create `scripts/deploy.sh` with: start, stop, remove, recreate, logs, status, restart commands
-- [ ] Script validates required env vars before deploy (profile validation)
-- [ ] Script supports `--profile local|server|sync` flag
-- [ ] Script reads `.env` from `docker/` directory automatically
-- [ ] `ENGRAM_DB_MODE` env var: `external` (PostgreSQL on host/network) or `embedded` (PostgreSQL as Docker service)
-- [ ] `external` mode: assumes PostgreSQL is external (host), uses `host.docker.internal`
-- [ ] `embedded` mode: includes PostgreSQL as a service in docker-compose (fullstack)
-- [ ] Create `docker/docker-compose.embedded.yml` with PostgreSQL service included
-- [ ] Create `scripts/backup.sh` for data backup before recreate/update
-- [ ] Create `scripts/update.sh` for pulling new image + recreate
-- [ ] Update `docker/.env.example` with new vars and profiles documented
-- [ ] Deploy script supports `--image` flag to use pre-built image (`ghcr.io/efreet111/engram-dotnet:latest`) instead of local build
-- [ ] Deploy script validates that `.env` file is not committed to git (safety check)
-- [ ] Documentation updated: `INSTALL.md`, `01-QUICK-START.md`, `DOCKER-VANILLA.md`, `docker/README.md`
+- [x] Create `DeployProfile` enum (`Local`, `Server`, `Sync`) in `Engram.Store` or new `Engram.Configuration` namespace
+- [x] Create `ProfileDefaults` static class with `For(DeployProfile)` method returning `Dictionary<string, string?>`
+- [x] Modify `StoreConfig.FromEnvironment()` to merge profile defaults before reading individual env vars
+- [x] Modify `SyncManagerConfig.FromEnvironment()` same pattern
+- [x] Add `ValidateProfile()` method that throws with clear message if required vars are missing (e.g., `ENGRAM_PG_CONNECTION` missing when `profile=server`)
+- [x] Add `ENGRAM_PROFILE` to `Dockerfile` ENV defaults
+- [x] Update `docker-compose.yml` to use `ENGRAM_PROFILE` env var with profile-specific overrides
+- [x] Update `docker/.env.example` with `ENGRAM_PROFILE` and per-profile documentation
+- [x] Update `docs/INSTALL.md` to show `ENGRAM_PROFILE` usage
+- [x] Update `docs/01-QUICK-START.md` — replace manual var lists with profile selection
+- [x] Add T1 test: `ENGRAM_PROFILE=local` starts with SQLite
+- [x] Add T1 test: `ENGRAM_PROFILE=server` with missing `ENGRAM_PG_CONNECTION` → clear validation error
+- [x] Add T1 test: explicit `ENGRAM_DB_TYPE=sqlite` overrides `ENGRAM_PROFILE=server`
+- [x] Create `scripts/deploy.sh` with: start, stop, remove, recreate, logs, status, restart commands
+- [x] Script validates required env vars before deploy (profile validation)
+- [x] Script supports `--profile local|server|sync` flag
+- [x] Script reads `.env` from `docker/` directory automatically
+- [x] `ENGRAM_DB_MODE` env var: `external` (PostgreSQL on host/network) or `embedded` (PostgreSQL as Docker service)
+- [x] `external` mode: assumes PostgreSQL is external (host), uses `host.docker.internal`
+- [x] `embedded` mode: includes PostgreSQL as a service in docker-compose (fullstack)
+- [x] Create `docker/docker-compose.embedded.yml` with PostgreSQL service included
+- [x] Create `scripts/backup.sh` for data backup before recreate/update
+- [x] Create `scripts/update.sh` for pulling new image + recreate
+- [x] Update `docker/.env.example` with new vars and profiles documented
+- [x] Deploy script supports `--image` flag to use pre-built image (`ghcr.io/efreet111/engram-dotnet:latest`) instead of local build
+- [x] Deploy script validates that `.env` file is not committed to git (safety check)
+- [x] Documentation updated: `INSTALL.md`, `01-QUICK-START.md`, `DOCKER-VANILLA.md`, `docker/README.md`
 
 ---
 
@@ -500,6 +500,30 @@ ENGRAM_USER=<required — identifies the developer>
 ```
 
 **When to use**: 5–20 person team, offline-first, each dev has local SQLite + SyncManager.
+
+---
+
+## Verification
+
+**Fecha de verificación:** 2026-08-06
+
+### Tests
+- 260 tests passed via `bash scripts/run-tests.sh`
+- Tests de `DeployProfileTests.cs` cubren:
+  - `ENGRAM_PROFILE=local` → SQLite backend, sync disabled
+  - `ENGRAM_PROFILE=server` → PostgreSQL backend, sync disabled
+  - `ENGRAM_PROFILE=sync` → PostgreSQL backend + SyncManager enabled
+  - Override: explicit `ENGRAM_DB_TYPE=sqlite` prevalece sobre profile default
+  - Validación: `ENGRAM_PROFILE=server` sin `ENGRAM_PG_CONNECTION` → `InvalidOperationException`
+
+### Bug fix: `StoreConfig.RemoteUrl` canonical env var
+- **Problema**: `StoreConfig.RemoteUrl` leía `ENGRAM_URL` pero el resto del codebase usa `ENGRAM_SERVER_URL`
+- **Fix**: `StoreConfig.cs:45` ahora lee `ENGRAM_SERVER_URL` como variable canónica
+- **ADR**: Ver [ADR-011](docs/architecture/adr/ADR-011-engram-url-env-var.md)
+- **Impacto**: Deployments existentes que usan `ENGRAM_URL` deben migrar a `ENGRAM_SERVER_URL`
+
+### Test pollution pre-existente
+Los tests de `DeployProfileTests.cs` modifican `Environment.GetEnvironmentVariable()` lo cual puede afectar otros tests corriendo en el mismo proceso. Los tests usan `try/finally` para restaurar el estado original, pero tests que no siguen este patrón pueden ver valores contaminados. Ver `DeployProfileTests.cs:180-200` para el patrón correcto de isolation.
 
 ---
 

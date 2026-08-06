@@ -36,13 +36,87 @@ Choose one of two registries:
 
 ---
 
-## 2. Path A — Default Dockerfile (uses `mcr.microsoft.com`)
+## 2. Profiles — Pick your deployment mode
+
+Instead of configuring `ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, and other vars
+one by one, you can use the `ENGRAM_PROFILE` env var to set sensible defaults
+for your use case:
+
+| Profile | Backend | Sync | Required vars | Typical use |
+|---------|---------|------|---------------|-------------|
+| `local` (default) | SQLite | ❌ | *(none)* | Solo developer |
+| `server` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Small team, shared DB |
+| `sync` | PostgreSQL | ✅ | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` | Large team, offline-first |
+
+Profile defaults (applied when the var is not explicitly set):
+
+| Key | `local` | `server` | `sync` |
+|-----|---------|----------|--------|
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `postgres` |
+| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` |
+| `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` |
+| `ENGRAM_SYNC_TARGET` | — | — | `cloud` |
+
+**Merging rules**: explicit env var > profile default > built-in default.
+If you set `ENGRAM_PROFILE=server` but also `ENGRAM_DB_TYPE=sqlite`,
+SQLite wins — your explicit override always takes precedence.
+
+### 2.1 Database mode (`ENGRAM_DB_MODE`)
+
+Controls whether PostgreSQL runs as an embedded service alongside Engram or
+connects to an external instance:
+
+| Value | Behavior |
+|-------|----------|
+| `external` (default) | PostgreSQL is on the host or network — pass `ENGRAM_PG_CONNECTION` with host/port |
+| `embedded` | Docker Compose starts a `postgres` service alongside Engram — no manual PG setup |
+
+`ENGRAM_DB_MODE` is only meaningful with `ENGRAM_PROFILE=server` or `sync`
+(both require PostgreSQL). With `local`, the mode is ignored — SQLite has no
+external dependency.
+
+```bash
+# External PostgreSQL (the default — PG already running somewhere):
+docker run -d --name engram \
+  -p 7437:7437 \
+  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
+  -e ENGRAM_USER=admin \
+  engram-dotnet:latest
+
+# Embedded PostgreSQL (via docker compose — see docker/README.md):
+ENGRAM_PROFILE=server ENGRAM_DB_MODE=embedded docker compose up -d
+```
+
+### 2.2 Quick comparison — with and without profiles
+
+```bash
+# Before (manual vars — still works):
+docker run -d --name engram -p 7437:7437 \
+  -e ENGRAM_DB_TYPE=postgres \
+  -e ENGRAM_PG_CONNECTION="Host=...;..." \
+  engram-dotnet:latest
+
+# After (profile — cleaner):
+docker run -d --name engram -p 7437:7437 \
+  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PG_CONNECTION="Host=...;..." \
+  -e ENGRAM_USER=admin \
+  engram-dotnet:latest
+```
+
+Both produce identical behavior. Profiles are a convenience — they don't lock
+you in. You can always override individual vars.
+
+---
+
+## 3. Path A — Default Dockerfile (uses `mcr.microsoft.com`)
 
 This is the recommended path. The build uses Microsoft's pre-layered .NET
 SDK and ASP.NET images, so it is fast (~2–4 min on a warm cache) and small
 (~250 MB final image).
 
-### 2.1 Build
+### 3.1 Build
 
 ```bash
 # From the repo root:
@@ -61,9 +135,9 @@ docker build \
 > **Note:** If you omit `--build-arg ENGRAM_VERSION`, the image is tagged
 > `0.0.0-dev`. This is a valid NuGet SemVer 2.0 string; the previous
 > default of `dev` was **invalid** and made `dotnet publish` fail with
-> `error: 'dev' is not a valid version string`. See [§ 5.1](#51-nuget-version-error).
+> `error: 'dev' is not a valid version string`. See [§ 6.1](#61-nuget-version-error).
 
-### 2.2 Run (SQLite, local mode)
+### 3.2 Run (SQLite, local mode)
 
 ```bash
 docker run -d \
@@ -75,7 +149,16 @@ docker run -d \
 ```
 
 The container stores its SQLite database in `/data/engram` (mounted from
-the host). The MCP HTTP transport is exposed on port 7437.
+the host). The MCP HTTP transport is exposed on port 7437. Profile defaults
+to `local` — you don't need to set `ENGRAM_PROFILE` for SQLite.
+
+To be explicit (same result):
+```bash
+docker run -d --name engram --restart unless-stopped \
+  -p 7437:7437 -v /var/lib/engram:/data/engram \
+  -e ENGRAM_PROFILE=local \
+  engram-dotnet:latest
+```
 
 Verify it is healthy:
 
@@ -85,15 +168,26 @@ curl -fsS http://localhost:7437/health
 # → {"status":"healthy",...}
 ```
 
-### 2.3 Run (PostgreSQL, sync mode)
+### 3.3 Run (PostgreSQL, sync mode)
 
 ```bash
+# With explicit vars (backward compatible):
 docker run -d \
     --name engram \
     --restart unless-stopped \
     -p 7437:7437 \
     -e ENGRAM_DB_TYPE=postgres \
     -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
+    engram-dotnet:latest
+
+# With profile (recommended — cleaner):
+docker run -d \
+    --name engram \
+    --restart unless-stopped \
+    -p 7437:7437 \
+    -e ENGRAM_PROFILE=server \
+    -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
+    -e ENGRAM_USER=admin \
     engram-dotnet:latest
 ```
 
@@ -103,7 +197,7 @@ docker run -d \
 syntax. See [API-REFERENCE.md](API-REFERENCE.md) for all environment
 variables.
 
-### 2.4 Logs and lifecycle
+### 3.4 Logs and lifecycle
 
 ```bash
 docker logs -f engram               # tail logs
@@ -113,7 +207,7 @@ docker stop engram && docker rm engram   # tear down (data volume kept)
 
 ---
 
-## 3. Path B — Debian fallback (`Dockerfile.debian`)
+## 5. Path B — Debian fallback (`Dockerfile.debian`)
 
 Use this when your server cannot reach `mcr.microsoft.com`. The build
 downloads `debian:12-slim` from Docker Hub (or any mirror you have
@@ -138,7 +232,7 @@ Trade-offs vs Path A:
 > estimates (some guides quote ~500 MB for this approach, but that's
 > based on installing the full SDK in both stages).
 
-### 3.1 Build
+### 4.1 Build
 
 ```bash
 docker build \
@@ -154,7 +248,7 @@ The build has two stages:
 - **runtime** — `debian:12-slim` + installs only the ASP.NET Core shared
   framework (no SDK, no compiler).
 
-### 3.2 Run
+### 4.2 Run
 
 Identical to Path A — the runtime image exposes the same `engram`
 executable and listens on the same port:
@@ -169,7 +263,7 @@ docker run -d \
 curl -fsS http://localhost:7437/health
 ```
 
-### 3.3 Behind a registry mirror
+### 4.3 Behind a registry mirror
 
 If you have an internal Docker registry that mirrors `mcr.microsoft.com`,
 configure the daemon and stick with Path A:
@@ -188,7 +282,7 @@ mirror transparently.
 
 ---
 
-## 4. Verification checklist
+## 5. Verification checklist
 
 After `docker run`, confirm the following before declaring success:
 
@@ -211,9 +305,9 @@ against a running container and is safe to wire into CI.
 
 ---
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
-### 5.1 NuGet version error
+### 6.1 NuGet version error
 
 **Symptom:**
 
@@ -231,7 +325,7 @@ a valid SemVer 2.0 string.
 to a version that contains the fix, or pass
 `--build-arg ENGRAM_VERSION=1.3.0` (or any valid SemVer) explicitly.
 
-### 5.2 Cannot reach `mcr.microsoft.com`
+### 6.2 Cannot reach `mcr.microsoft.com`
 
 **Symptom:**
 
@@ -262,7 +356,7 @@ docker save -o base-images.tar \
 docker load -i base-images.tar
 ```
 
-### 5.3 Port 7437 already in use
+### 6.3 Port 7437 already in use
 
 **Symptom:**
 
@@ -277,7 +371,7 @@ docker run -d --name engram -p 18080:7437 engram-dotnet:latest
 # Then: curl http://localhost:18080/health
 ```
 
-### 5.4 `SQLitePCLRaw.lib.e_sqlite3 2.1.10 has a known high severity vulnerability`
+### 6.4 `SQLitePCLRaw.lib.e_sqlite3 2.1.10 has a known high severity vulnerability`
 
 **Symptom:** A `NU1903` warning during `dotnet restore`. The build
 succeeds but NuGet emits:
@@ -295,7 +389,7 @@ pulls `e_sqlite3 >= 3.46.x`; tracked in a follow-up CHANGELOG entry.
 
 This is a **warning**, not an error — the build is not blocked.
 
-### 5.5 Build context too large
+### 6.5 Build context too large
 
 **Symptom:** `Sending build context to Docker daemon  1.5GB` is slow.
 
@@ -306,7 +400,7 @@ add them to `.dockerignore`.
 
 ---
 
-## 6. Image layout reference
+## 7. Image layout reference
 
 Both Dockerfiles produce a two-stage image with this final structure:
 
@@ -325,7 +419,7 @@ by that user.
 
 ---
 
-## 7. See also
+## 8. See also
 
 - [DOCKER.md](DOCKER.md) — Compose / Kubernetes recipes (if you want
   more than a single container).
@@ -335,7 +429,7 @@ by that user.
   click after the container is up.
 - [DEVELOPMENT.md](DEVELOPMENT.md) — local dev loop (without Docker).
 
-## 8. Volume permissions
+## 9. Volume permissions
 
 If you see `SQLite Error 14: 'unable to open database file'`, the volume
 mounted from the host has incorrect permissions. Docker mounts volumes as
@@ -385,17 +479,19 @@ docker run -d --name engram \
   engram-dotnet:latest
 ```
 
-## 9. Environment variables reference
+## 10. Environment variables reference
 
 | Variable | Default | Description | Example |
 |----------|---------|-------------|---------|
+| `ENGRAM_PROFILE` | `local` | Deployment profile: `local`, `server`, `sync` | `server` |
 | `ENGRAM_DATA_DIR` | `/data/engram` | Data directory (SQLite DB, exports) | `/custom/path` |
 | `ENGRAM_PORT` | `7437` | HTTP port for MCP server | `8080` |
-| `ENGRAM_DB_TYPE` | `sqlite` | Backend: `sqlite` or `postgres` | `postgres` |
-| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required if `ENGRAM_DB_TYPE=postgres`) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
-| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (for sync in team mode) | `http://your-server:7437` |
-| `ENGRAM_SYNC_ENABLED` | `false` | Enable sync (offline-first mode) | `true` |
-| `ENGRAM_USER` | — | User identity (required for sync in team mode) | `user@example.com` |
+| `ENGRAM_DB_TYPE` | (profile default) | Backend: `sqlite` or `postgres`. Auto-set by `ENGRAM_PROFILE`. | `postgres` |
+| `ENGRAM_DB_MODE` | `external` | PostgreSQL mode: `external` (host/network) or `embedded` (compose service) | `embedded` |
+| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required for `server`/`sync` profiles) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
+| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (required for `sync` profile) | `http://your-server:7437` |
+| `ENGRAM_SYNC_ENABLED` | (profile default) | Enable sync. Auto-set by `ENGRAM_PROFILE`. | `true` |
+| `ENGRAM_USER` | — | User identity (required for `server`/`sync` profiles) | `user@example.com` |
 | `ENGRAM_AUTO_ENROLL` | `true` | Auto-generate `.engram-id` on startup | `false` |
 | `ENGRAM_PROJECT` | — | Project name (auto-detected from git if not set) | `my-project` |
 | `ASPNETCORE_URLS` | `http://+:7437` | ASP.NET Core listening URLs | `http://+:8080` |
@@ -410,7 +506,17 @@ docker run -d --name engram \
   engram-dotnet:latest
 ```
 
-**Team mode (PostgreSQL, sync enabled)**:
+**Server mode (PostgreSQL, team — with profile, recommended)**:
+```bash
+docker run -d --name engram \
+  -p 7437:7437 \
+  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
+  -e ENGRAM_USER=admin \
+  engram-dotnet:latest
+```
+
+**Server mode (PostgreSQL, team — manual vars, backward compatible)**:
 ```bash
 docker run -d --name engram \
   -p 7437:7437 \
@@ -429,7 +535,7 @@ docker run -d --name engram \
   engram-dotnet:latest
 ```
 
-## 10. PostgreSQL connection guide
+## 11. PostgreSQL connection guide
 
 When running engram-dotnet in Docker with PostgreSQL, you need to configure the connection correctly. The connection string uses the standard Npgsql format.
 

@@ -4,9 +4,31 @@
 
 ---
 
+## 🚀 TL;DR — Profiles at a Glance
+
+Pick a profile and set the vars it asks for:
+
+| Profile | Who | Backend | Required vars | Command |
+|---------|-----|---------|---------------|---------|
+| `local` | Solo dev | SQLite | *(none)* | `./engram serve` |
+| `server` | Small team (2-5) | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=server ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
+| `sync` | Large team (5-20) | PostgreSQL + Sync | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` | `ENGRAM_PROFILE=sync ENGRAM_PG_CONNECTION=... ENGRAM_SERVER_URL=... ENGRAM_USER=... ./engram serve` |
+
+> **Backward compatible**: Don't want to use profiles? All existing env vars (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) continue working identically. No migration needed.
+
+---
+
 ## 🧑 Solo Developer
 
 **Goal**: Use Engram locally with SQLite, no shared server. Ideal for a single developer working with their AI agent.
+
+### Profile
+
+```
+ENGRAM_PROFILE=local   # ← or just omit it (local is the default)
+```
+
+This auto-sets: SQLite backend + sync disabled. Zero configuration needed.
 
 ### Prerequisites
 
@@ -60,6 +82,14 @@ Your AI agent can now use `mem_save`, `mem_search`, `mem_context`, `mem_session_
 
 **Goal**: Shared PostgreSQL server with multi-user isolation. Each developer connects to the central server with their own identity. No offline-first sync.
 
+### Profile
+
+```
+ENGRAM_PROFILE=server   # ← auto-sets: PostgreSQL + sync disabled
+```
+
+This auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. You only need to supply the connection string and user.
+
 ### Architecture
 
 ```
@@ -90,11 +120,14 @@ git clone https://github.com/efreet111/engram-dotnet
 cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
-# Start with PostgreSQL
-ENGRAM_DB_TYPE=postgres \
+# Start with the server profile
+ENGRAM_PROFILE=server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_USER=admin \
 ./dist/engram serve
 ```
+
+The `server` profile auto-sets `ENGRAM_DB_TYPE=postgres` — no need to specify it manually.
 
 ### 3. Configure Each Developer
 
@@ -135,6 +168,14 @@ curl -H "X-Engram-User: juan" http://server:7437/search?q=note
 
 **Goal**: PostgreSQL + offline-first sync with enrollment, pause/resume, and automatic SyncManager. Developers work offline and sync when connected.
 
+### Profile
+
+```
+ENGRAM_PROFILE=sync   # ← auto-sets: PostgreSQL + sync enabled + poll 30s + target cloud
+```
+
+This auto-sets `ENGRAM_DB_TYPE=postgres`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`. You only need the connection string, server URL, and user.
+
 ### Architecture
 
 ```
@@ -165,13 +206,14 @@ CREATE DATABASE engram;
 ### 2. Server
 
 ```bash
-ENGRAM_DB_TYPE=postgres \
+ENGRAM_PROFILE=sync \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=postgres;Password=REPLACE_ME" \
-ENGRAM_SYNC_ENABLED=true \
-ENGRAM_SYNC_TARGET=cloud \
-ENGRAM_SYNC_POLL_SECONDS=30 \
+ENGRAM_SERVER_URL="http://server:7437" \
+ENGRAM_USER=admin \
 ./engram serve
 ```
+
+The `sync` profile auto-sets `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud` — no need to set those manually.
 
 ### 3. Each Developer
 
