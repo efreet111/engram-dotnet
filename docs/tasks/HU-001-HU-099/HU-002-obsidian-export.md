@@ -52,13 +52,59 @@ Original artifacts:
 
 ---
 
-## 📝 Notes
+---
 
-This HU was created during FlowDoc adoption (2026-06-01) to consolidate documentation into the FlowDoc structure.
+## As a user...
+
+**As**: Developer using Engram
+**I want**: export Engram memories to an Obsidian vault as structured markdown files
+**To**: make my memories searchable, linkable, and visible outside of the Engram agent
 
 ---
 
-## 🔄 Migration Reference
+## Acceptance Criteria
+
+- [ ] `IObsidianStoreReader` interface defined (read-only contract over `IStore`)
+- [ ] `Slugify(title, id)` generates filesystem-safe filenames
+- [ ] `ObservationToMarkdown()` produces markdown with YAML frontmatter, H1 title, content, and wikilink footer
+- [ ] `buildWikilinks()` generates session and topic cross-reference links
+- [ ] Session hub notes created at `_sessions/{sessionId}.md`
+- [ ] Topic hub notes created at `_topics/{prefix}.md`
+- [ ] `GraphConfigMode` (preserve/force/skip) implemented; `graph.json` embedded as resource
+- [ ] `WriteGraphConfig()` writes `.obsidian/graph.json`
+- [ ] `SyncState` JSON persists incremental export state
+- [ ] `ExportResult` reports created/updated/deleted/skipped/hubs/errors counts
+- [ ] Deleted observations (with `deleted_at` set) remove their corresponding files
+- [ ] `--project` flag filters export to a single project
+- [ ] Only `scope=team` exported by default; `scope=personal` requires `--include-personal` flag
+- [ ] CLI command `engram obsidian-export` registered in `Program.cs`
+- [ ] Test coverage matches Go original (slug, markdown, hub, state, exporter, graph)
+
+---
+
+## Tasks (Implementation)
+
+- [ ] Create `src/Engram.Obsidian/` class library project
+- [ ] Implement `Slugify(title, id)` for filesystem-safe filenames
+- [ ] Implement `ObservationToMarkdown()` with YAML frontmatter
+- [ ] Implement `buildWikilinks()` for session and topic cross-references
+- [ ] Implement `SyncState` JSON persistence for incremental export
+- [ ] Implement `ExportResult` summary type
+- [ ] Implement session hub notes (`_sessions/{sessionId}.md`)
+- [ ] Implement topic hub notes (`_topics/{prefix}.md`)
+- [ ] Implement `GraphConfigMode` and `WriteGraphConfig()`
+- [ ] Implement deleted observation cleanup
+- [ ] Implement `Exporter` class with full and incremental export
+- [ ] Add `--project` flag and `--include-personal` flag
+- [ ] Register `engram obsidian-export` CLI command in `Program.cs`
+- [ ] Write unit tests (slug, markdown, hub, state, exporter, graph)
+- [ ] Update `docs/ROADMAP.md` if needed
+
+---
+
+## 📝 Notes
+
+This HU was created during FlowDoc adoption (2026-06-01) to consolidate documentation into the FlowDoc structure.
 
 Original location: `sdd/obsidian-export/`
 Current status: Migrated to FlowDoc

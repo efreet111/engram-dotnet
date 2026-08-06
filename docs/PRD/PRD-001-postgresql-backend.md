@@ -1,4 +1,4 @@
-[← Volver al README](../../README.md) | [← RFC-001](../rfcs/RFC-001-postgresql-backend.md)
+[← Volver al README](../README.md) | [← RFC-001](../architecture/rfc/RFC-001-project-identity.md)
 
 # PRD-001 — PostgreSQL Backend para engram-dotnet
 
