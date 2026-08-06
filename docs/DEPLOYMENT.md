@@ -13,8 +13,8 @@ El sistema de Deployment Profiles (`ENGRAM_PROFILE`) permite configurar engram-d
 | Profile | Backend | Sync | Caso de uso | Requisitos |
 |---------|---------|------|-------------|------------|
 | `local` | SQLite | ❌ | Dev individual, sin compartir | Ninguno |
-| `remote-server` | PostgreSQL | ❌ | Equipo pequeño (2-5), DB compartida | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
-| `offline-first` | PostgreSQL | ✅ | Equipo grande (5-20), offline-first | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+| `remote-server` | PostgreSQL | ❌ | Equipo pequeño (2-5), DB compartida | `ENGRAM_PG_CONNECTION` |
+| `offline-first` | SQLite | ✅ | Equipo grande (5-20), offline-first | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 | `desktop` | PostgreSQL | ✅ | Desktop↔laptop sync con PostgreSQL local | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 ### Cuándo usar cada profile

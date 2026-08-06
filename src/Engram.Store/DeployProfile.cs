@@ -19,7 +19,9 @@ public enum DeployProfile
 
     /// <summary>
     /// Team shared DB on a remote server — PostgreSQL backend, no sync, multi-user isolation via X-Engram-User header.
-    /// Requires <c>ENGRAM_PG_CONNECTION</c> (non-localhost) and <c>ENGRAM_USER</c>.
+    /// Requires <c>ENGRAM_PG_CONNECTION</c> (non-localhost).
+    /// Does <b>not</b> require <c>ENGRAM_USER</c> because the server does not save memories with its own identity;
+    /// clients identify themselves via the X-Engram-User header on each request.
     /// </summary>
     RemoteServer,
 
@@ -104,7 +106,8 @@ public static class ProfileDefaults
 ///   <item><b>PostgreSQL backend</b>: <c>ENGRAM_PG_CONNECTION</c> required</item>
 ///   <item><b>RemoteServer profile</b>: <c>ENGRAM_PG_CONNECTION</c> must NOT point to localhost (security gate)</item>
 ///   <item><b>Sync enabled</b>: <c>ENGRAM_SERVER_URL</c> required</item>
-///   <item><b>RemoteServer/Desktop/OfflineFirst profiles</b>: <c>ENGRAM_USER</c> strongly recommended</item>
+///   <item><b>Desktop/OfflineFirst profiles (sync profiles)</b>: <c>ENGRAM_USER</c> required for sync identity</item>
+///   <item><b>RemoteServer profile</b>: <c>ENGRAM_USER</c> NOT required — the server uses X-Engram-User header from clients</item>
 /// </list>
 /// </remarks>
 public static class ProfileValidator

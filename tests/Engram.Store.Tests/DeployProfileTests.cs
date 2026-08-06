@@ -144,14 +144,12 @@ public class DeployProfileTests
     public void Validate_RemoteServerWithPostgresMissingConnection_Throws()
     {
         var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
-        var originalUser = Environment.GetEnvironmentVariable("ENGRAM_USER");
         var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
         try
         {
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
             Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
             Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", null);
-            Environment.SetEnvironmentVariable("ENGRAM_USER", "test-user");
 
             var cfg = StoreConfig.FromEnvironment();
             var ex = Assert.Throws<InvalidOperationException>(
@@ -161,7 +159,6 @@ public class DeployProfileTests
         finally
         {
             Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", originalPg);
-            Environment.SetEnvironmentVariable("ENGRAM_USER", originalUser);
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
         }
     }
@@ -170,14 +167,12 @@ public class DeployProfileTests
     public void Validate_RemoteServerWithPostgresAllSet_Passes()
     {
         var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
-        var originalUser = Environment.GetEnvironmentVariable("ENGRAM_USER");
         var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
         try
         {
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
             Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
             Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", "Host=db.example.com;Database=test");
-            Environment.SetEnvironmentVariable("ENGRAM_USER", "test-user");
 
             var cfg = StoreConfig.FromEnvironment();
             ProfileValidator.Validate(cfg); // Should not throw
@@ -185,7 +180,6 @@ public class DeployProfileTests
         finally
         {
             Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", originalPg);
-            Environment.SetEnvironmentVariable("ENGRAM_USER", originalUser);
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
         }
     }
@@ -194,20 +188,47 @@ public class DeployProfileTests
     public void Validate_RemoteServerWithLocalhost_Throws()
     {
         var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
-        var originalUser = Environment.GetEnvironmentVariable("ENGRAM_USER");
         var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
         try
         {
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
             Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
             Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", "Host=localhost;Database=test");
-            Environment.SetEnvironmentVariable("ENGRAM_USER", "test-user");
 
             var cfg = StoreConfig.FromEnvironment();
             var ex = Assert.Throws<InvalidOperationException>(
                 () => ProfileValidator.Validate(cfg));
             Assert.Contains("localhost", ex.Message);
             Assert.Contains("ENGRAM_PG_CONNECTION", ex.Message);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", originalPg);
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+        }
+    }
+
+    [Fact]
+    public void Validate_RemoteServerWithoutEngramUser_Passes()
+    {
+        // RemoteServer does NOT require ENGRAM_USER because clients identify
+        // themselves via the X-Engram-User header on each request. The server
+        // falls back to OS user name via StoreConfig.User.
+        var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
+        var originalUser = Environment.GetEnvironmentVariable("ENGRAM_USER");
+        var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
+        try
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
+            Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", "Host=db.example.com;Database=test");
+            Environment.SetEnvironmentVariable("ENGRAM_USER", null);
+
+            var cfg = StoreConfig.FromEnvironment();
+            ProfileValidator.Validate(cfg); // Should NOT throw — ENGRAM_USER is not required
+
+            // Verify the fallback works
+            Assert.NotNull(cfg.User); // Should fall back to OS user name
         }
         finally
         {
