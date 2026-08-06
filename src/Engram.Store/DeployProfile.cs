@@ -18,16 +18,22 @@ public enum DeployProfile
     Local,
 
     /// <summary>
-    /// Small team shared DB — PostgreSQL backend, no sync, multi-user isolation via X-Engram-User header.
-    /// Requires <c>ENGRAM_PG_CONNECTION</c> and <c>ENGRAM_USER</c>.
+    /// Team shared DB on a remote server — PostgreSQL backend, no sync, multi-user isolation via X-Engram-User header.
+    /// Requires <c>ENGRAM_PG_CONNECTION</c> (non-localhost) and <c>ENGRAM_USER</c>.
     /// </summary>
-    Server,
+    RemoteServer,
 
     /// <summary>
-    /// Large team offline-first — PostgreSQL backend + SyncManager enabled.
+    /// Large team offline-first — SQLite backend + SyncManager enabled.
+    /// Requires <c>ENGRAM_SERVER_URL</c> and <c>ENGRAM_USER</c>.
+    /// </summary>
+    OfflineFirst,
+
+    /// <summary>
+    /// Desktop app with full stack — PostgreSQL backend + SyncManager enabled.
     /// Requires <c>ENGRAM_PG_CONNECTION</c>, <c>ENGRAM_SERVER_URL</c>, and <c>ENGRAM_USER</c>.
     /// </summary>
-    Sync,
+    Desktop,
 }
 
 /// <summary>
@@ -49,11 +55,12 @@ public static class DeployProfileExtensions
         if (string.IsNullOrWhiteSpace(raw)) return DeployProfile.Local;
         return raw.Trim().ToLowerInvariant() switch
         {
-            "local"  => DeployProfile.Local,
-            "server" => DeployProfile.Server,
-            "sync"   => DeployProfile.Sync,
+            "local"          => DeployProfile.Local,
+            "remote-server"  => DeployProfile.RemoteServer,
+            "offline-first"  => DeployProfile.OfflineFirst,
+            "desktop"        => DeployProfile.Desktop,
             _ => throw new InvalidOperationException(
-                $"Unknown profile '{raw}'. Use local, server, or sync."),
+                $"Unknown profile '{raw}'. Use local, remote-server, offline-first, or desktop."),
         };
     }
 }
@@ -76,10 +83,12 @@ public static class ProfileDefaults
     /// <returns>A dictionary mapping env var names to their profile-default values.</returns>
     public static Dictionary<string, string?> For(DeployProfile p) => p switch
     {
-        DeployProfile.Local  => new() { ["ENGRAM_DB_TYPE"] = "sqlite",   ["ENGRAM_SYNC_ENABLED"] = "false" },
-        DeployProfile.Server => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "false" },
-        DeployProfile.Sync   => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "true",
-                                        ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
+        DeployProfile.Local       => new() { ["ENGRAM_DB_TYPE"] = "sqlite",   ["ENGRAM_SYNC_ENABLED"] = "false" },
+        DeployProfile.RemoteServer => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "false" },
+        DeployProfile.OfflineFirst => new() { ["ENGRAM_DB_TYPE"] = "sqlite",   ["ENGRAM_SYNC_ENABLED"] = "true",
+                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
+        DeployProfile.Desktop     => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "true",
+                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
     };
 }
 
@@ -91,20 +100,23 @@ public static class ProfileDefaults
 /// Validation is based on the effective configuration (after profile defaults are merged):
 /// <list type="bullet">
 ///   <item><b>Local</b>: none required</item>
+///   <item><b>OfflineFirst</b>: <c>ENGRAM_SERVER_URL</c> required (sync enabled)</item>
 ///   <item><b>PostgreSQL backend</b>: <c>ENGRAM_PG_CONNECTION</c> required</item>
+///   <item><b>RemoteServer profile</b>: <c>ENGRAM_PG_CONNECTION</c> must NOT point to localhost (security gate)</item>
 ///   <item><b>Sync enabled</b>: <c>ENGRAM_SERVER_URL</c> required</item>
-///   <item><b>Server/Sync profiles</b>: <c>ENGRAM_USER</c> strongly recommended</item>
+///   <item><b>RemoteServer/Desktop/OfflineFirst profiles</b>: <c>ENGRAM_USER</c> strongly recommended</item>
 /// </list>
 /// </remarks>
 public static class ProfileValidator
 {
     /// <summary>
     /// Checks that all required environment variables for the effective config are set
-    /// and are non-empty. Throws immediately, naming every missing variable.
+    /// and are non-empty. Throws immediately, naming every missing or invalid variable.
     /// </summary>
-    /// <param name="cfg">The store configuration to validate (uses effective DbType and sync settings).</param>
+    /// <param name="cfg">The store configuration to validate (uses effective DbType, sync settings, and profile).</param>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when one or more required variables are missing or empty.
+    /// Thrown when one or more required variables are missing or empty, or when
+    /// the RemoteServer profile uses a localhost connection string.
     /// Message includes all missing variable names.
     /// </exception>
     public static void Validate(StoreConfig cfg)
@@ -119,9 +131,46 @@ public static class ProfileValidator
         if (cfg.IsSyncEnabled && string.IsNullOrWhiteSpace(cfg.RemoteUrl))
             missing.Add("ENGRAM_SERVER_URL");
 
+        // RemoteServer profile: reject localhost connection strings (security gate)
+        if (cfg.Profile is DeployProfile.RemoteServer && !string.IsNullOrWhiteSpace(cfg.PgConnectionString))
+        {
+            if (IsLocalhostConnection(cfg.PgConnectionString))
+                missing.Add("ENGRAM_PG_CONNECTION (localhost not allowed for remote-server profile)");
+        }
+
         if (missing.Count > 0)
             throw new InvalidOperationException(
                 $"Configuration requires: {string.Join(", ", missing)}. Set them in docker/.env or environment.");
+    }
+
+    /// <summary>
+    /// Checks if a PostgreSQL connection string points to localhost, 127.0.0.1, or ::1.
+    /// Matches <c>Host=localhost</c>, <c>Server=127.0.0.1</c>, and <c>Data Source=::1</c> patterns case-insensitively.
+    /// </summary>
+    private static bool IsLocalhostConnection(string connectionString)
+    {
+        // Normalize to lowercase for case-insensitive matching
+        var lower = connectionString.ToLowerInvariant();
+
+        // Check for Host= or Server= patterns with localhost/IPs
+        var hostKeyPatterns = new[] { "host=", "server=", "data source=" };
+        foreach (var key in hostKeyPatterns)
+        {
+            var index = lower.IndexOf(key, StringComparison.Ordinal);
+            if (index < 0) continue;
+
+            var valueStart = index + key.Length;
+            // Find the end of the value (next semicolon or end of string)
+            var valueEnd = lower.IndexOf(';', valueStart);
+            var value = valueEnd >= 0
+                ? lower[valueStart..valueEnd].Trim()
+                : lower[valueStart..].Trim();
+
+            if (value is "localhost" or "127.0.0.1" or "::1")
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

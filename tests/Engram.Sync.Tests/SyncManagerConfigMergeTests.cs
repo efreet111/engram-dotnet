@@ -7,10 +7,11 @@ namespace Engram.Sync.Tests;
 /// <summary>
 /// Integration tests for <see cref="SyncManagerConfig.FromEnvironment"/> merge precedence.
 /// Design: sdd/deploy-profile-system/design/design.md
-/// Tasks: Phase 3 (3.3)
+/// Tasks: HU-012
 ///
 /// Precedence rule: explicit env var > profile default > hardcoded default.
 /// </summary>
+[Collection("ENGRAM_PROFILE")]
 public class SyncManagerConfigMergeTests : IDisposable
 {
     private readonly string? _originalProfile;
@@ -37,9 +38,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     // ─── Profile enables sync ───────────────────────────────────────────────
 
     [Fact]
-    public void FromEnvironment_SyncProfile_EnablesSync()
+    public void FromEnvironment_OfflineFirstProfile_EnablesSync()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_ENABLED", null);
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -48,9 +49,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     }
 
     [Fact]
-    public void FromEnvironment_SyncProfile_SetsTargetToCloud()
+    public void FromEnvironment_OfflineFirstProfile_SetsTargetToCloud()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_TARGET", null);
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -83,10 +84,10 @@ public class SyncManagerConfigMergeTests : IDisposable
     // ─── Explicit env var > profile default ────────────────────────────────
 
     [Fact]
-    public void FromEnvironment_SyncProfile_ExplicitDisable_Overrides()
+    public void FromEnvironment_OfflineFirstProfile_ExplicitDisable_Overrides()
     {
-        // Sync profile enables sync by default, but explicit false overrides
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        // OfflineFirst profile enables sync by default, but explicit false overrides
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_ENABLED", "false");
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -95,9 +96,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     }
 
     [Fact]
-    public void FromEnvironment_SyncProfile_ExplicitDisableZero_Overrides()
+    public void FromEnvironment_OfflineFirstProfile_ExplicitDisableZero_Overrides()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_ENABLED", "0");
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -106,9 +107,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     }
 
     [Fact]
-    public void FromEnvironment_SyncProfile_ExplicitTarget_Overrides()
+    public void FromEnvironment_OfflineFirstProfile_ExplicitTarget_Overrides()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_TARGET", "custom-server");
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -143,9 +144,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     // ─── Full precedence chain ──────────────────────────────────────────────
 
     [Fact]
-    public void FromEnvironment_SyncProfile_PollSecondsFromProfile()
+    public void FromEnvironment_OfflineFirstProfile_PollSecondsFromProfile()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_POLL_SECONDS", null);
 
         var cfg = SyncManagerConfig.FromEnvironment();
@@ -154,9 +155,9 @@ public class SyncManagerConfigMergeTests : IDisposable
     }
 
     [Fact]
-    public void FromEnvironment_SyncProfile_ExplicitPollSeconds_Overrides()
+    public void FromEnvironment_OfflineFirstProfile_ExplicitPollSeconds_Overrides()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_SYNC_POLL_SECONDS", "60000");
 
         var cfg = SyncManagerConfig.FromEnvironment();

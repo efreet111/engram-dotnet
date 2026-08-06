@@ -3,11 +3,13 @@
 **Status:** Accepted
 **Date:** 2026-08-06
 **Deciders:** victor
-**Related:** HU-010, ENG-452, ADR-008
+**Related:** HU-010, HU-012, ENG-452, ADR-008
 
 ## Context
 
-Durante la implementación de HU-010 (Deployment Profile System), se identificó una inconsistencia en las variables de entorno relacionadas con la URL del servidor remoto:
+Durante la implementación de HU-010 (Deployment Profile System), se identificó una inconsistencia en las variables de entorno relacionadas con la URL del servidor remoto.
+
+> **Nota HU-012**: HU-012 renombró los profiles (`sync` → `offline-first`, `server` → `remote-server`) y agregó el profile `desktop`. Este ADR sigue siendo válido para la variable `ENGRAM_SERVER_URL` ya que su propósito no cambió.
 
 ### Inconsistencia encontrada
 

@@ -6,10 +6,11 @@ namespace Engram.Store.Tests;
 /// <summary>
 /// Integration tests for <see cref="StoreConfig.FromEnvironment"/> merge precedence.
 /// Design: sdd/deploy-profile-system/design/design.md
-/// Tasks: Phase 3 (3.2)
+/// Tasks: HU-012
 /// 
 /// Precedence rule: explicit env var > profile default > hardcoded default.
 /// </summary>
+[Collection("ENGRAM_PROFILE")]
 public class StoreConfigMergeTests : IDisposable
 {
     private readonly string? _originalProfile;
@@ -36,14 +37,14 @@ public class StoreConfigMergeTests : IDisposable
     // ─── Profile default > hardcoded ───────────────────────────────────────
 
     [Fact]
-    public void FromEnvironment_ServerProfile_SetsDbTypeToPostgres()
+    public void FromEnvironment_RemoteServerProfile_SetsDbTypeToPostgres()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "server");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
         Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", null);
 
         var cfg = StoreConfig.FromEnvironment();
 
-        Assert.Equal(DeployProfile.Server, cfg.Profile);
+        Assert.Equal(DeployProfile.RemoteServer, cfg.Profile);
         Assert.Equal(StoreDbType.Postgres, cfg.DbType);
     }
 
@@ -64,13 +65,13 @@ public class StoreConfigMergeTests : IDisposable
     [Fact]
     public void FromEnvironment_ExplicitDbType_OverridesProfileDefault()
     {
-        // Server profile defaults to postgres, but explicit sqlite wins
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "server");
+        // RemoteServer profile defaults to postgres, but explicit sqlite wins
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
         Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "sqlite");
 
         var cfg = StoreConfig.FromEnvironment();
 
-        Assert.Equal(DeployProfile.Server, cfg.Profile);
+        Assert.Equal(DeployProfile.RemoteServer, cfg.Profile);
         Assert.Equal(StoreDbType.Sqlite, cfg.DbType); // explicit wins over profile default
     }
 
@@ -90,7 +91,7 @@ public class StoreConfigMergeTests : IDisposable
     [Fact]
     public void FromEnvironment_ExplicitUser_OverridesProfileDefault()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "server");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
         Environment.SetEnvironmentVariable("ENGRAM_USER", "explicit-user");
 
         var cfg = StoreConfig.FromEnvironment();
@@ -101,9 +102,9 @@ public class StoreConfigMergeTests : IDisposable
     // ─── Full precedence chain: env > profile > hardcoded ─────────────────
 
     [Fact]
-    public void FromEnvironment_ProfileSync_ExplicitPgConn_Overrides()
+    public void FromEnvironment_ProfileOfflineFirst_ExplicitPgConn_Overrides()
     {
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
         Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", "Host=override;Database=test");
 
         var cfg = StoreConfig.FromEnvironment();
@@ -112,17 +113,17 @@ public class StoreConfigMergeTests : IDisposable
     }
 
     [Fact]
-    public void FromEnvironment_ProfileServer_NoExplicitVars_UsesProfileDefaults()
+    public void FromEnvironment_ProfileRemoteServer_NoExplicitVars_UsesProfileDefaults()
     {
-        // Server profile set, but no explicit vars — profile defaults should be used
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "server");
+        // RemoteServer profile set, but no explicit vars — profile defaults should be used
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
         Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", null);
         Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", null);
         Environment.SetEnvironmentVariable("ENGRAM_USER", null);
 
         var cfg = StoreConfig.FromEnvironment();
 
-        Assert.Equal(DeployProfile.Server, cfg.Profile);
+        Assert.Equal(DeployProfile.RemoteServer, cfg.Profile);
         Assert.Equal(StoreDbType.Postgres, cfg.DbType);
         Assert.Null(cfg.PgConnectionString); // profile default is null (not in ProfileDefaults)
         Assert.Equal(Environment.UserName, cfg.User); // falls back to OS user
@@ -131,16 +132,16 @@ public class StoreConfigMergeTests : IDisposable
     [Fact]
     public void FromEnvironment_MixedExplicitAndProfile_PrecedenceHolds()
     {
-        // Sync profile with one explicit override, one from profile, one from hardcoded
-        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "sync");
-        Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", null);      // → profile: postgres
+        // OfflineFirst profile with one explicit override, one from profile, one from hardcoded
+        Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "offline-first");
+        Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", null);      // → profile: sqlite
         Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", "Host=explicit;Database=db"); // explicit
         Environment.SetEnvironmentVariable("ENGRAM_USER", null);         // → hardcoded OS user
 
         var cfg = StoreConfig.FromEnvironment();
 
-        Assert.Equal(DeployProfile.Sync, cfg.Profile);
-        Assert.Equal(StoreDbType.Postgres, cfg.DbType);                  // profile default
+        Assert.Equal(DeployProfile.OfflineFirst, cfg.Profile);
+        Assert.Equal(StoreDbType.Sqlite, cfg.DbType);                    // profile default (sqlite)
         Assert.Equal("Host=explicit;Database=db", cfg.PgConnectionString); // explicit env
         Assert.Equal(Environment.UserName, cfg.User);                     // hardcoded fallback
     }

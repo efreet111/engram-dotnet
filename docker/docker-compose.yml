@@ -50,7 +50,7 @@ services:
 
     environment:
       # ── Deployment Profile ───────────────────────────────────────────
-      # local | server | sync — see .env.example for details
+      # local | remote-server | offline-first | desktop — see .env.example for details
       ENGRAM_PROFILE: ${ENGRAM_PROFILE:-local}
 
       # Backend selection: sqlite (default) | postgres

@@ -205,8 +205,9 @@ Instead of setting 10+ variables manually, use `ENGRAM_PROFILE` to pick your dep
 | Profile | Who it's for | Backend | Sync |
 |---------|-------------|---------|------|
 | `local` (default) | Solo developer | SQLite | ❌ |
-| `server` | Small team, shared DB | PostgreSQL | ❌ |
-| `sync` | Large team, offline-first | PostgreSQL | ✅ |
+| `remote-server` | Small team, shared DB | PostgreSQL | ❌ |
+| `offline-first` | Large team, offline-first | SQLite (local) + PostgreSQL (server) | ✅ |
+| `desktop` | Personal/shared workstation | PostgreSQL | ❌ |
 
 ```json
 // OpenCode example — just set ENGRAM_PROFILE:
@@ -230,10 +231,10 @@ Each profile sets sensible defaults (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, et
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ENGRAM_PROFILE` | Deployment profile: `local`, `server`, `sync` | `local` |
+| `ENGRAM_PROFILE` | Deployment profile: `local`, `remote-server`, `offline-first`, `desktop` | `local` |
 | `ENGRAM_DATA_DIR` | Data directory | `~/.engram` |
-| `ENGRAM_USER` | Your identity (required for `server` and `sync`) | System user |
-| `ENGRAM_SERVER_URL` | Server URL (required for `sync`) | — |
+| `ENGRAM_USER` | Your identity (required for `remote-server`, `offline-first`, `desktop`) | System user |
+| `ENGRAM_SERVER_URL` | Server URL (required for `offline-first`) | — |
 | `ENGRAM_SYNC_ENABLED` | Enable sync (auto-set by profile) | `false` |
 | `ENGRAM_DB_TYPE` | Backend: `sqlite` or `postgres` (auto-set by profile) | `sqlite` |
 
@@ -281,8 +282,9 @@ Set `ENGRAM_PROFILE` and the required variables for your use case:
 | Profile | Use case | Required vars |
 |---------|----------|---------------|
 | **`local`** (default) | Solo developer, no sharing | *(none)* |
-| **`server`** | Shared server, no offline | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
-| **`sync`** | Offline-first, multi-device | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+| **`remote-server`** | Shared server, no offline | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| **`offline-first`** | Offline-first, multi-device | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+| **`desktop`** | Personal/shared workstation | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
 
 ### Profile: `local`
 
@@ -292,13 +294,13 @@ Set `ENGRAM_PROFILE` and the required variables for your use case:
 # → SQLite backend, sync disabled
 ```
 
-### Profile: `server`
+### Profile: `remote-server`
 
-For shared PostgreSQL server:
+For shared PostgreSQL server (team leader):
 
 ```bash
 # Server
-ENGRAM_PROFILE=server \
+ENGRAM_PROFILE=remote-server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
 ENGRAM_USER=admin \
 ./engram serve
@@ -308,20 +310,25 @@ export ENGRAM_URL="http://server:7437"
 export ENGRAM_USER="your-username"
 ```
 
-The server profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. You only need to supply the connection string and user.
+The `remote-server` profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. You only need to supply the connection string and user.
 
 **See also**: [01-QUICK-START.md](01-QUICK-START.md) for detailed team setup.
 
-### Profile: `sync`
+### Profile: `offline-first`
 
-For offline-first multi-device sync:
+For offline-first multi-device sync (IT Admin):
 
 ```bash
-# Server
-ENGRAM_PROFILE=sync \
+# On the server (remote-server profile):
+ENGRAM_PROFILE=remote-server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
-ENGRAM_SERVER_URL="http://server:7437" \
 ENGRAM_USER=admin \
+./engram serve
+
+# On each developer machine (offline-first profile):
+ENGRAM_PROFILE=offline-first \
+ENGRAM_SERVER_URL="http://server:7437" \
+ENGRAM_USER=your-username \
 ./engram serve
 
 # Enroll your project
@@ -330,9 +337,24 @@ curl -X POST http://server:7437/sync/enroll \
   -d '{"project":"your-project"}'
 ```
 
-The sync profile auto-sets `ENGRAM_DB_TYPE=postgres`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`.
+The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`.
+
+> **Note**: `offline-first` uses SQLite locally on each developer machine, NOT PostgreSQL. The server runs `remote-server` profile with PostgreSQL.
 
 **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync documentation.
+
+### Profile: `desktop`
+
+For personal use or shared workstation with PostgreSQL:
+
+```bash
+ENGRAM_PROFILE=desktop \
+ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_USER=your-username \
+./engram serve
+```
+
+The `desktop` profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. Allows both local and external connections.
 
 > **Backward compatible**: All existing env vars still work. If you don't set `ENGRAM_PROFILE`, the system behaves exactly as before — no migration needed.
 

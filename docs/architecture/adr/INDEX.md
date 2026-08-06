@@ -17,6 +17,7 @@
 | [ADR-009](./ADR-009-two-version-model.md) | Two-version model: product version vs API/schema version | Accepted | 2026-07-06 | victor |
 | [ADR-010](./ADR-010-historical-docs-immutability.md) | Historical documentation immutability policy | Accepted | 2026-07-06 | victor |
 | [ADR-011](./ADR-011-engram-url-env-var.md) | Estandarización de `ENGRAM_SERVER_URL` como variable canónica | Accepted | 2026-08-06 | victor |
+| [ADR-012](./ADR-012-remote-server-localhost-blocking.md) | Bloqueo de conexiones localhost en perfil `remote-server` | Accepted | 2026-08-06 | victor |
 
 ---
 

@@ -88,7 +88,7 @@ public class StoreConfig
             if (raw is not null)
                 return raw.Trim().ToLowerInvariant() is not ("false" or "0");
             // Profile defaults may enable sync
-            if (Profile is DeployProfile.Sync)
+            if (Profile is DeployProfile.OfflineFirst or DeployProfile.Desktop)
                 return true;
             return false;
         }

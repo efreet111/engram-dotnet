@@ -11,8 +11,9 @@ Pick a profile and set the vars it asks for:
 | Profile | Who | Backend | Required vars | Command |
 |---------|-----|---------|---------------|---------|
 | `local` | Solo dev | SQLite | *(none)* | `./engram serve` |
-| `server` | Small team (2-5) | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=server ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
-| `sync` | Large team (5-20) | PostgreSQL + Sync | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` | `ENGRAM_PROFILE=sync ENGRAM_PG_CONNECTION=... ENGRAM_SERVER_URL=... ENGRAM_USER=... ./engram serve` |
+| `remote-server` | Small team (2-5) | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=remote-server ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
+| `offline-first` | Large team (5-20) | SQLite + Sync | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | `ENGRAM_PROFILE=offline-first ENGRAM_SERVER_URL=... ENGRAM_USER=... ./engram serve` |
+| `desktop` | Personal/shared workstation | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=desktop ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
 
 > **Backward compatible**: Don't want to use profiles? All existing env vars (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) continue working identically. No migration needed.
 
@@ -85,7 +86,7 @@ Your AI agent can now use `mem_save`, `mem_search`, `mem_context`, `mem_session_
 ### Profile
 
 ```
-ENGRAM_PROFILE=server   # ← auto-sets: PostgreSQL + sync disabled
+ENGRAM_PROFILE=remote-server   # ← auto-sets: PostgreSQL + sync disabled
 ```
 
 This auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. You only need to supply the connection string and user.
@@ -120,14 +121,14 @@ git clone https://github.com/efreet111/engram-dotnet
 cd engram-dotnet
 dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
-# Start with the server profile
-ENGRAM_PROFILE=server \
+# Start with the remote-server profile
+ENGRAM_PROFILE=remote-server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
 ENGRAM_USER=admin \
 ./dist/engram serve
 ```
 
-The `server` profile auto-sets `ENGRAM_DB_TYPE=postgres` — no need to specify it manually.
+The `remote-server` profile auto-sets `ENGRAM_DB_TYPE=postgres` — no need to specify it manually.
 
 ### 3. Configure Each Developer
 
@@ -166,15 +167,15 @@ curl -H "X-Engram-User: juan" http://server:7437/search?q=note
 
 ## 🏢 IT Admin (5-20 people)
 
-**Goal**: PostgreSQL + offline-first sync with enrollment, pause/resume, and automatic SyncManager. Developers work offline and sync when connected.
+**Goal**: SQLite local + offline-first sync with enrollment, pause/resume, and automatic SyncManager. Developers work offline and sync when connected.
 
 ### Profile
 
 ```
-ENGRAM_PROFILE=sync   # ← auto-sets: PostgreSQL + sync enabled + poll 30s + target cloud
+ENGRAM_PROFILE=offline-first   # ← auto-sets: SQLite local + sync enabled + poll 30s + target cloud
 ```
 
-This auto-sets `ENGRAM_DB_TYPE=postgres`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`. You only need the connection string, server URL, and user.
+This auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud`. You only need the server URL and user.
 
 ### Architecture
 
@@ -190,32 +191,46 @@ Each Developer:                 Server:
      └── Connection = auto sync      │
 ```
 
+> **Note**: The server uses PostgreSQL; each developer uses SQLite locally. SyncManager handles the bridge.
+
 ### Requirements
 
-Same as Team Leader, plus:
-- **SyncManager** active (requires `ENGRAM_SYNC_ENABLED=true`)
+- Linux x64 server with PostgreSQL 15+
+- **SyncManager** active on each developer machine (requires `ENGRAM_SYNC_ENABLED=true`)
 - **Firewall**: Ensure port `7437` is open between developers and server
 
-### 1. PostgreSQL
+### 1. PostgreSQL (server side)
 
 ```sql
 CREATE DATABASE engram;
 -- Tables are created automatically when the server starts
 ```
 
-### 2. Server
+### 2. Server (remote-server profile)
 
 ```bash
-ENGRAM_PROFILE=sync \
+ENGRAM_PROFILE=remote-server \
 ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=postgres;Password=REPLACE_ME" \
-ENGRAM_SERVER_URL="http://server:7437" \
 ENGRAM_USER=admin \
 ./engram serve
 ```
 
-The `sync` profile auto-sets `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud` — no need to set those manually.
+The `remote-server` profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false` — the server does NOT run SyncManager, it just serves mutations.
 
-### 3. Each Developer
+### 3. Each Developer (offline-first profile)
+
+Each developer runs the `offline-first` profile locally with SQLite:
+
+```bash
+ENGRAM_PROFILE=offline-first \
+ENGRAM_SERVER_URL="http://server:7437" \
+ENGRAM_USER=your-username \
+./engram serve
+```
+
+The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECONDS=30`, and `ENGRAM_SYNC_TARGET=cloud` — no need to set those manually.
+
+### 4. Each Developer (MCP config)
 
 ```json
 {
@@ -224,10 +239,9 @@ The `sync` profile auto-sets `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECON
       "command": "engram",
       "args": ["mcp"],
       "env": {
-        "ENGRAM_SERVER_URL": "http://localhost:7437",
+        "ENGRAM_PROFILE": "offline-first",
+        "ENGRAM_SERVER_URL": "http://your-server:7437",
         "ENGRAM_USER": "your-username",
-        "ENGRAM_SYNC_ENABLED": "true",
-        "ENGRAM_SYNC_TARGET": "cloud",
         "ENGRAM_DATA_DIR": "~/.engram"
       }
     }
@@ -235,7 +249,9 @@ The `sync` profile auto-sets `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SYNC_POLL_SECON
 }
 ```
 
-### 4. Enroll Projects
+> With `offline-first` profile, `ENGRAM_SYNC_ENABLED=true` and `ENGRAM_SYNC_TARGET=cloud` are auto-set. You only need `ENGRAM_SERVER_URL` and `ENGRAM_USER`.
+
+### 5. Enroll Projects
 
 ```bash
 curl -X POST http://localhost:7437/sync/enroll \
@@ -243,7 +259,7 @@ curl -X POST http://localhost:7437/sync/enroll \
   -d '{"project":"team/mi-api"}'
 ```
 
-### 5. Verify Sync
+### 6. Verify Sync
 
 ```bash
 # Check sync status (from CLI)
@@ -256,7 +272,7 @@ curl -H "X-Engram-User: victor" http://localhost:7437/sync/enroll
 curl http://localhost:7437/sync/status
 ```
 
-### Pause Sync (Admin)
+### 7. Pause Sync (Admin)
 
 ```bash
 # Pause (maintenance)
@@ -273,21 +289,22 @@ curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
 
 ## ⚙️ Mode Comparison
 
-| Aspect | Solo Developer | Team Leader | IT Admin |
-|--------|---------------|-------------|----------|
-| **Backend** | Local SQLite | PostgreSQL | PostgreSQL |
-| **Sync** | ❌ No | ❌ No | ✅ Offline-First |
-| **Multi-User** | ❌ No | ✅ RFC-002 | ✅ RFC-002 |
-| **Enrollment** | ❌ No | ❌ No | ✅ Required |
-| **Pause/Resume** | ❌ No | ❌ No | ✅ Admin |
-| **Offline tolerance** | N/A | ❌ (needs connection) | ✅ Unlimited |
-| **Complexity** | Low | Medium | High |
+| Aspect | `local` | `remote-server` | `offline-first` | `desktop` |
+|--------|---------|----------------|-----------------|-----------|
+| **Backend** | SQLite | PostgreSQL | SQLite (local) + PostgreSQL (server) | PostgreSQL |
+| **Sync** | ❌ No | ❌ No | ✅ Offline-First | ❌ No |
+| **Multi-User** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Enrollment** | ❌ No | ❌ No | ✅ Required | ❌ No |
+| **Pause/Resume** | ❌ No | ❌ No | ✅ Admin | ❌ No |
+| **Offline tolerance** | N/A | ❌ (needs connection) | ✅ Unlimited | ❌ (needs connection) |
+| **Complexity** | Low | Medium | High | Medium |
+| **Use case** | Solo dev | Shared server | Distributed team | Personal/shared workstation |
 
 ---
 
-## 🔧 Troubleshooting by Persona
+## 🔧 Troubleshooting by Profile
 
-### Solo Developer
+### `local` profile
 
 ```bash
 # Error: Unable to load shared library 'e_sqlite3'
@@ -299,7 +316,7 @@ curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
 fuser -k 7437/tcp
 ```
 
-### Team Leader
+### `remote-server` / `desktop` profile
 
 ```bash
 # Error: 28P01 (password authentication failed)
@@ -310,7 +327,7 @@ fuser -k 7437/tcp
 # Make sure the PostgreSQL user has CREATE permissions.
 ```
 
-### IT Admin
+### `offline-first` profile
 
 ```bash
 # Error: 42P10 (no unique constraint matching ON CONFLICT)
@@ -318,7 +335,7 @@ fuser -k 7437/tcp
 # The server creates it automatically in the latest version.
 
 # Error: Sync disabled in /sync/status
-# Fix: Set ENGRAM_SYNC_ENABLED=true
+# Fix: Set ENGRAM_SYNC_ENABLED=true (or use offline-first profile)
 
 # Error: project not found in pull
 # Fix: Enroll the project first with POST /sync/enroll

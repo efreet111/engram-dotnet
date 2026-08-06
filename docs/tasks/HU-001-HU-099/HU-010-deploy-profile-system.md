@@ -1,5 +1,11 @@
 # HU-010 — Deployment Profile System
 
+> **⚠️ HU-012 supersedes este documento para definición de profiles.**
+> HU-012 renombró los profiles: `sync` → `offline-first`, `server` → `remote-server`, y agregó `desktop`.
+> Ver [HU-012](./HU-012-offline-first-profiles.md) para la definición actual.
+
+---
+
 **As**: Developer or IT Admin deploying engram-dotnet  
 **I want**: Set deployment behavior via a single `ENGRAM_PROFILE` environment variable (`local`, `server`, `sync`)  
 **To**: Simplify configuration instead of setting 10+ environment variables manually, and prevent misconfiguration at startup

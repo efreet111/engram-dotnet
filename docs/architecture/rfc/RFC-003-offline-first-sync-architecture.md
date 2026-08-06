@@ -1,4 +1,4 @@
-# RFC-001: Offline-First Sync Architecture — Chunk + Mutation Hybrid Protocol
+# RFC-003: Offline-First Sync Architecture — Chunk + Mutation Hybrid Protocol
 
 **Status**: Draft  
 **Author**: SDD Analysis Team  
@@ -93,6 +93,54 @@ Security principle: Deny by default. Only return data for explicitly enrolled pr
 - 409 Conflict with structured error envelope
 
 **Tradeoff**: Extra table, extra check on every push. But necessary for team management.
+
+---
+
+## Deployment Profiles
+
+El sistema de sync soporta múltiples configuraciones de deployment mediante profiles:
+
+### Profile: `offline-first` (anteriormente `sync`)
+
+Configuración para equipos que operan offline-frequently. Cada máquina tiene PostgreSQL local y sincroniza con un remote-server.
+
+```
+ENGRAM_PROFILE=offline-first
+ENGRAM_DB_TYPE=postgres
+ENGRAM_SYNC_ENABLED=true
+ENGRAM_SERVER_URL=<URL del remote-server>
+ENGRAM_USER=<identificador del dev>
+```
+
+**Caso de uso**: Equipos distribuidos, trabajo remoto, sync entre múltiples máquinas del mismo usuario.
+
+### Profile: `remote-server` (anteriormente `server`)
+
+Configuración para equipos pequeños con PostgreSQL compartido, acceso directo por HTTP sin sync.
+
+```
+ENGRAM_PROFILE=remote-server
+ENGRAM_DB_TYPE=postgres
+ENGRAM_SYNC_ENABLED=false
+ENGRAM_PG_CONNECTION=<connection string>
+ENGRAM_USER=<identificador del dev>
+```
+
+**Caso de uso**: Equipo 2-5 en oficina, PostgreSQL en TrueNAS, conexión estable.
+
+### Profile: `desktop`
+
+Configuración especializada para sync desktop↔laptop con PostgreSQL local. Diseñado para usuarios con múltiples máquinas físicas que mantienen sus memorias sincronizadas.
+
+```
+ENGRAM_PROFILE=desktop
+ENGRAM_DB_TYPE=postgres
+ENGRAM_SYNC_ENABLED=true
+ENGRAM_SERVER_URL=http://<otra-maquina>:7437
+ENGRAM_USER=<identificador del dev>
+```
+
+**Caso de uso**: Usuario con desktop y laptop, PostgreSQL corriendo en una de las máquinas (o en NAS), sync bidireccional entre ambas.
 
 ---
 

@@ -8,7 +8,7 @@ version: "3.8"
 #
 # REQUISITOS:
 #   1. Archivo .env con las credenciales (ver .env.example)
-#      ENGRAM_PROFILE=server  (o sync)
+#      ENGRAM_PROFILE=remote-server  (o offline-first, o desktop)
 #      ENGRAM_DB_MODE=embedded
 #      ENGRAM_USER=usuario
 #
@@ -68,7 +68,7 @@ services:
 
     environment:
       # ── Deployment Profile ───────────────────────────────────────────
-      ENGRAM_PROFILE: ${ENGRAM_PROFILE:-server}
+      ENGRAM_PROFILE: ${ENGRAM_PROFILE:-remote-server}
 
       # Backend: siempre postgres en embedded
       ENGRAM_DB_TYPE: ${ENGRAM_DB_TYPE:-postgres}

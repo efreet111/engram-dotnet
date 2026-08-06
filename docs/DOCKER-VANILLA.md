@@ -45,20 +45,21 @@ for your use case:
 | Profile | Backend | Sync | Required vars | Typical use |
 |---------|---------|------|---------------|-------------|
 | `local` (default) | SQLite | ❌ | *(none)* | Solo developer |
-| `server` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Small team, shared DB |
-| `sync` | PostgreSQL | ✅ | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` | Large team, offline-first |
+| `remote-server` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Small team, shared DB |
+| `offline-first` | SQLite (local) + PostgreSQL (server) | ✅ | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | Large team, offline-first |
+| `desktop` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Personal/shared workstation |
 
 Profile defaults (applied when the var is not explicitly set):
 
-| Key | `local` | `server` | `sync` |
-|-----|---------|----------|--------|
-| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `postgres` |
-| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` |
-| `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` |
-| `ENGRAM_SYNC_TARGET` | — | — | `cloud` |
+| Key | `local` | `remote-server` | `offline-first` | `desktop` |
+|-----|---------|----------------|-----------------|-----------|
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `postgres` |
+| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `false` |
+| `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` | — |
+| `ENGRAM_SYNC_TARGET` | — | — | `cloud` | — |
 
 **Merging rules**: explicit env var > profile default > built-in default.
-If you set `ENGRAM_PROFILE=server` but also `ENGRAM_DB_TYPE=sqlite`,
+If you set `ENGRAM_PROFILE=remote-server` but also `ENGRAM_DB_TYPE=sqlite`,
 SQLite wins — your explicit override always takes precedence.
 
 ### 2.1 Database mode (`ENGRAM_DB_MODE`)
@@ -71,21 +72,21 @@ connects to an external instance:
 | `external` (default) | PostgreSQL is on the host or network — pass `ENGRAM_PG_CONNECTION` with host/port |
 | `embedded` | Docker Compose starts a `postgres` service alongside Engram — no manual PG setup |
 
-`ENGRAM_DB_MODE` is only meaningful with `ENGRAM_PROFILE=server` or `sync`
-(both require PostgreSQL). With `local`, the mode is ignored — SQLite has no
-external dependency.
+`ENGRAM_DB_MODE` is only meaningful with `ENGRAM_PROFILE=remote-server` or `desktop`
+(both require PostgreSQL). With `local` or `offline-first`, the mode is ignored —
+SQLite has no external dependency.
 
 ```bash
 # External PostgreSQL (the default — PG already running somewhere):
 docker run -d --name engram \
   -p 7437:7437 \
-  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PROFILE=remote-server \
   -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
   -e ENGRAM_USER=admin \
   engram-dotnet:latest
 
 # Embedded PostgreSQL (via docker compose — see docker/README.md):
-ENGRAM_PROFILE=server ENGRAM_DB_MODE=embedded docker compose up -d
+ENGRAM_PROFILE=remote-server ENGRAM_DB_MODE=embedded docker compose up -d
 ```
 
 ### 2.2 Quick comparison — with and without profiles
@@ -99,7 +100,7 @@ docker run -d --name engram -p 7437:7437 \
 
 # After (profile — cleaner):
 docker run -d --name engram -p 7437:7437 \
-  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PROFILE=remote-server \
   -e ENGRAM_PG_CONNECTION="Host=...;..." \
   -e ENGRAM_USER=admin \
   engram-dotnet:latest
@@ -168,7 +169,7 @@ curl -fsS http://localhost:7437/health
 # → {"status":"healthy",...}
 ```
 
-### 3.3 Run (PostgreSQL, sync mode)
+### 3.3 Run (PostgreSQL, remote-server or desktop)
 
 ```bash
 # With explicit vars (backward compatible):
@@ -185,7 +186,7 @@ docker run -d \
     --name engram \
     --restart unless-stopped \
     -p 7437:7437 \
-    -e ENGRAM_PROFILE=server \
+    -e ENGRAM_PROFILE=remote-server \
     -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME" \
     -e ENGRAM_USER=admin \
     engram-dotnet:latest
@@ -483,15 +484,15 @@ docker run -d --name engram \
 
 | Variable | Default | Description | Example |
 |----------|---------|-------------|---------|
-| `ENGRAM_PROFILE` | `local` | Deployment profile: `local`, `server`, `sync` | `server` |
+| `ENGRAM_PROFILE` | `local` | Deployment profile: `local`, `remote-server`, `offline-first`, `desktop` | `remote-server` |
 | `ENGRAM_DATA_DIR` | `/data/engram` | Data directory (SQLite DB, exports) | `/custom/path` |
 | `ENGRAM_PORT` | `7437` | HTTP port for MCP server | `8080` |
 | `ENGRAM_DB_TYPE` | (profile default) | Backend: `sqlite` or `postgres`. Auto-set by `ENGRAM_PROFILE`. | `postgres` |
 | `ENGRAM_DB_MODE` | `external` | PostgreSQL mode: `external` (host/network) or `embedded` (compose service) | `embedded` |
-| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required for `server`/`sync` profiles) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
-| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (required for `sync` profile) | `http://your-server:7437` |
+| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required for `remote-server`/`desktop` profiles) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
+| `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (required for `offline-first` profile) | `http://your-server:7437` |
 | `ENGRAM_SYNC_ENABLED` | (profile default) | Enable sync. Auto-set by `ENGRAM_PROFILE`. | `true` |
-| `ENGRAM_USER` | — | User identity (required for `server`/`sync` profiles) | `user@example.com` |
+| `ENGRAM_USER` | — | User identity (required for `remote-server`, `offline-first`, `desktop` profiles) | `user@example.com` |
 | `ENGRAM_AUTO_ENROLL` | `true` | Auto-generate `.engram-id` on startup | `false` |
 | `ENGRAM_PROJECT` | — | Project name (auto-detected from git if not set) | `my-project` |
 | `ASPNETCORE_URLS` | `http://+:7437` | ASP.NET Core listening URLs | `http://+:8080` |
@@ -510,7 +511,7 @@ docker run -d --name engram \
 ```bash
 docker run -d --name engram \
   -p 7437:7437 \
-  -e ENGRAM_PROFILE=server \
+  -e ENGRAM_PROFILE=remote-server \
   -e ENGRAM_PG_CONNECTION="Host=db.example.com;Port=5432;Database=engram;Username=engram;Password=secret" \
   -e ENGRAM_USER=admin \
   engram-dotnet:latest

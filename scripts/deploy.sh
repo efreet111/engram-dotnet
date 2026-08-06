@@ -5,7 +5,7 @@
 # The script is a thin wrapper around docker compose — no magic.
 #
 # Usage:
-#   ./scripts/deploy.sh <command> [--profile local|server|sync] [--image]
+#   ./scripts/deploy.sh <command> [--profile local|remote-server|offline-first|desktop] [--image]
 #
 # Commands:
 #   start     Start the container
@@ -20,7 +20,7 @@
 #   update    Pull latest image and recreate
 #
 # Options:
-#   --profile   Deployment profile: local (default), server, sync
+#   --profile   Deployment profile: local (default), remote-server, offline-first, desktop
 #   --image     Use pre-built image from GHCR instead of local build
 
 set -eEuo pipefail
@@ -34,7 +34,7 @@ DEFAULT_IMAGE="ghcr.io/efreet111/engram-dotnet:latest"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <command> [--profile local|server|sync] [--image]
+Usage: $(basename "$0") <command> [--profile local|remote-server|offline-first|desktop] [--image]
 
 Commands:
   start     Start the container (docker compose up -d [--build] or --image)
@@ -49,7 +49,7 @@ Commands:
   update    Pull latest image and recreate
 
 Options:
-  --profile   Deployment profile: local (default), server, sync
+  --profile   Deployment profile: local (default), remote-server, offline-first, desktop
   --image     Use pre-built image from GHCR instead of local build
 
 Examples:
@@ -62,16 +62,17 @@ Examples:
   $(basename "$0") update
 
 Environment (in docker/.env):
-  ENGRAM_PROFILE       Deployment profile: local (default), server, sync
+  ENGRAM_PROFILE       Deployment profile: local (default), remote-server, offline-first, desktop
   ENGRAM_DB_MODE       Database mode: external (default), embedded
-  ENGRAM_PG_CONNECTION Required for server and sync profiles
-  ENGRAM_SERVER_URL    Required for sync profile
-  ENGRAM_USER          Required for server and sync profiles
+  ENGRAM_PG_CONNECTION Required for remote-server and desktop profiles
+  ENGRAM_SERVER_URL    Required for offline-first and desktop profiles
+  ENGRAM_USER          Required for remote-server, offline-first, and desktop profiles
   ENGRAM_IMAGE         Override image (default: ${DEFAULT_IMAGE})
 
 Safety checks:
   - Validates .env is not committed to git (secrets protection)
   - Validates required environment variables per profile
+  - remote-server profile rejects localhost PG connections
 
 EOF
 }
@@ -115,42 +116,66 @@ validate_profile() {
     local)
       echo "  ✓ Profile: local (SQLite, no sync)"
       ;;
-    server)
+    remote-server)
       local errors=0
       if [[ -z "${ENGRAM_PG_CONNECTION:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=server requires ENGRAM_PG_CONNECTION but it is not set." >&2
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_CONNECTION but it is not set." >&2
         ((errors++))
       fi
+      # Safety: reject localhost connections for remote-server profile
+      if [[ -n "${ENGRAM_PG_CONNECTION:-}" ]]; then
+        local lower
+        lower=$(echo "$ENGRAM_PG_CONNECTION" | tr '[:upper:]' '[:lower:]')
+        if echo "$lower" | grep -qE '(host|server|data source)\s*=\s*(localhost|127\.0\.0\.1|::1)'; then
+          echo "  ✗ Error: ENGRAM_PROFILE=remote-server must NOT use localhost for PG connection." >&2
+          ((errors++))
+        fi
+      fi
       if [[ -z "${ENGRAM_USER:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=server requires ENGRAM_USER but it is not set." >&2
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_USER but it is not set." >&2
         ((errors++))
       fi
       if [[ $errors -eq 0 ]]; then
-        echo "  ✓ Profile: server (PostgreSQL, no sync)"
+        echo "  ✓ Profile: remote-server (PostgreSQL, no sync)"
       fi
       return $errors
       ;;
-    sync)
+    offline-first)
       local errors=0
-      if [[ -z "${ENGRAM_PG_CONNECTION:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=sync requires ENGRAM_PG_CONNECTION but it is not set." >&2
-        ((errors++))
-      fi
       if [[ -z "${ENGRAM_SERVER_URL:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=sync requires ENGRAM_SERVER_URL but it is not set." >&2
+        echo "  ✗ Error: ENGRAM_PROFILE=offline-first requires ENGRAM_SERVER_URL but it is not set." >&2
         ((errors++))
       fi
       if [[ -z "${ENGRAM_USER:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=sync requires ENGRAM_USER but it is not set." >&2
+        echo "  ✗ Error: ENGRAM_PROFILE=offline-first requires ENGRAM_USER but it is not set." >&2
         ((errors++))
       fi
       if [[ $errors -eq 0 ]]; then
-        echo "  ✓ Profile: sync (PostgreSQL + SyncManager)"
+        echo "  ✓ Profile: offline-first (SQLite + SyncManager)"
+      fi
+      return $errors
+      ;;
+    desktop)
+      local errors=0
+      if [[ -z "${ENGRAM_PG_CONNECTION:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=desktop requires ENGRAM_PG_CONNECTION but it is not set." >&2
+        ((errors++))
+      fi
+      if [[ -z "${ENGRAM_SERVER_URL:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=desktop requires ENGRAM_SERVER_URL but it is not set." >&2
+        ((errors++))
+      fi
+      if [[ -z "${ENGRAM_USER:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=desktop requires ENGRAM_USER but it is not set." >&2
+        ((errors++))
+      fi
+      if [[ $errors -eq 0 ]]; then
+        echo "  ✓ Profile: desktop (PostgreSQL + SyncManager)"
       fi
       return $errors
       ;;
     *)
-      echo "  ✗ Error: Unknown profile '$profile'. Use local, server, or sync." >&2
+      echo "  ✗ Error: Unknown profile '$profile'. Use local, remote-server, offline-first, or desktop." >&2
       return 1
       ;;
   esac
