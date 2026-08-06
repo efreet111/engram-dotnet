@@ -66,7 +66,37 @@ serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
     }
 
     var backendLabel = cfg.IsPostgres ? "PostgreSQL" : "SQLite";
-    Console.Error.WriteLine($"[engram] starting HTTP server on :{port} ({backendLabel})");
+    if (cfg.IsPostgres)
+    {
+        var profileLabel = cfg.Profile switch
+        {
+            DeployProfile.Local => "local",
+            DeployProfile.RemoteServer => "remote-server",
+            DeployProfile.OfflineFirst => "offline-first",
+            DeployProfile.Desktop => "desktop",
+            _ => cfg.Profile.ToString().ToLowerInvariant()
+        };
+
+        var pgHost = ParseConnStringParam(cfg.PgConnectionString, "Host")
+            ?? ParseConnStringParam(cfg.PgConnectionString, "Server")
+            ?? "unknown";
+        var pgDatabase = ParseConnStringParam(cfg.PgConnectionString, "Database")
+            ?? ParseConnStringParam(cfg.PgConnectionString, "DB")
+            ?? "unknown";
+
+        Console.Error.WriteLine($"[engram] Profile: {profileLabel}");
+        Console.Error.WriteLine($"[engram] PostgreSQL: Host={pgHost};Database={pgDatabase}");
+
+        var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        if (!string.IsNullOrEmpty(serverUrl))
+            Console.Error.WriteLine($"[engram] Server URL: {serverUrl}");
+
+        Console.Error.WriteLine($"[engram] starting HTTP server on :{port} ({backendLabel})");
+    }
+    else
+    {
+        Console.Error.WriteLine($"[engram] starting HTTP server on :{port} ({backendLabel})");
+    }
     var app = EngramServer.Build(store, cfg);
     app.Urls.Clear();
     app.Urls.Add($"http://0.0.0.0:{port}");
@@ -1429,6 +1459,26 @@ static bool IsAutoEnrollDisabledInConfig()
         return false;
     }
     catch { return false; }
+}
+
+/// <summary>
+/// Extrae un valor de un connection string estilo key=value separado por punto y coma.
+/// Busca claves como "Host", "Server", "Database", "DB" sin distinción de mayúsculas/minúsculas.
+/// </summary>
+static string? ParseConnStringParam(string? connString, string key)
+{
+    if (string.IsNullOrEmpty(connString)) return null;
+
+    var lower = connString.ToLowerInvariant();
+    var keyLower = key.ToLowerInvariant() + "=";
+    var idx = lower.IndexOf(keyLower, StringComparison.Ordinal);
+    if (idx < 0) return null;
+
+    var valueStart = idx + keyLower.Length;
+    var valueEnd = lower.IndexOf(';', valueStart);
+    return valueEnd >= 0
+        ? connString[valueStart..valueEnd].Trim()
+        : connString[valueStart..].Trim();
 }
 
 static string Truncate(string s, int max)
