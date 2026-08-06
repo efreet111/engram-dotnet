@@ -85,7 +85,20 @@ serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
             ?? "unknown";
 
         Console.Error.WriteLine($"[engram] Profile: {profileLabel}");
-        Console.Error.WriteLine($"[engram] PostgreSQL: Host={pgHost};Database={pgDatabase}");
+
+        // PostgreSQL connection health check — verify connectivity before starting the server
+        try
+        {
+            using var conn = ((PostgresStore)store).OpenRawConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1";
+            cmd.ExecuteScalar();
+            Console.Error.WriteLine($"[engram] PostgreSQL: Connected successfully to Host={pgHost};Database={pgDatabase}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[engram] PostgreSQL: Connection failed - {ex.Message}");
+        }
 
         var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
         if (!string.IsNullOrEmpty(serverUrl))
