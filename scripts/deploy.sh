@@ -2,7 +2,14 @@
 # scripts/deploy.sh — Deploy wrapper for engram-dotnet Docker containers.
 #
 # Sources docker/.env automatically. All configuration goes in that file.
-# The script is a thin wrapper around docker compose — no magic.
+#
+# USES `docker run` WITH `-e` FLAGS instead of `docker-compose up`.
+# docker-compose v1 has a known interpolation bug where nested ${VAR:-default}
+# in YAML environment blocks silently fails. Passing vars directly via `-e`
+# avoids the problem entirely.
+#
+# docker-compose build is still used for local image builds (the build
+# section has no variable interpolation, so it's safe).
 #
 # Usage:
 #   ./scripts/deploy.sh <command> [--profile local|remote-server|offline-first|desktop] [--image]
@@ -27,8 +34,14 @@ set -eEuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$SCRIPT_DIR/../docker"
+PROJECT_ROOT="$SCRIPT_DIR/.."
 ENV_FILE="$COMPOSE_DIR/.env"
 DEFAULT_IMAGE="ghcr.io/efreet111/engram-dotnet:latest"
+LOCAL_IMAGE="engram-dotnet:latest"
+
+CONTAINER_NAME="engram"
+POSTGRES_CONTAINER="engram-postgres"
+NETWORK_NAME="engram-net"
 
 # ─── Help ────────────────────────────────────────────────────────────────────
 
@@ -37,12 +50,12 @@ usage() {
 Usage: $(basename "$0") <command> [--profile local|remote-server|offline-first|desktop] [--image]
 
 Commands:
-  start     Start the container (docker compose up -d [--build] or --image)
-  stop      Stop the container (docker compose stop)
-  remove    Remove containers and networks (docker compose down)
+  start     Start the container (local build or --image for pre-built)
+  stop      Stop the container
+  remove    Remove containers and networks (docker rm -f, volumes preserved)
   recreate  Recreate from scratch (stop + remove + start)
-  logs      Show logs (add -f for tail)
-  status    Show container status
+  logs      Show logs (add -f for tail, e.g. logs -f)
+  status    Show container status and health
   restart   Restart the container
   validate  Validate environment variables and safety checks before deploy
   backup    Backup data before recreate/update
@@ -81,30 +94,170 @@ EOF
 
 load_env() {
   if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
     set -a; source "$ENV_FILE"; set +a
   fi
 }
 
-get_compose_file() {
-  local db_mode="${ENGRAM_DB_MODE:-external}"
-  local compose_file
-  if [[ "$db_mode" == "embedded" ]]; then
-    compose_file="$COMPOSE_DIR/docker-compose.embedded.yml"
-    if [[ ! -f "$compose_file" ]]; then
-      echo "Error: docker-compose.embedded.yml not found. Did you run Phase 4 setup?" >&2
-      echo "  Falling back to docker-compose.yml with ENGRAM_DB_MODE=external" >&2
-      compose_file="$COMPOSE_DIR/docker-compose.yml"
-    fi
-  else
-    compose_file="$COMPOSE_DIR/docker-compose.yml"
+# ─── Docker run helpers ──────────────────────────────────────────────────────
+
+# Build the array of -e flags for docker run.
+# $1: effective PG host used to build ENGRAM_PG_CONNECTION when not set directly.
+#     "host.docker.internal" for external mode, "postgres" for embedded mode.
+build_env_args() {
+  local effective_pg_host="${1:-host.docker.internal}"
+  local env_args=()
+
+  # ── Core vars (always passed) ──
+  env_args+=("-e" "ENGRAM_DATA_DIR=${ENGRAM_DATA_DIR:-/data/engram}")
+  env_args+=("-e" "ENGRAM_PORT=${ENGRAM_PORT:-7437}")
+  env_args+=("-e" "ENGRAM_PROFILE=${ENGRAM_PROFILE:-local}")
+  env_args+=("-e" "ENGRAM_DB_TYPE=${ENGRAM_DB_TYPE:-postgres}")
+
+  # ── PostgreSQL connection string ──
+  # KEY FIX: build the string in bash instead of relying on docker-compose
+  # YAML interpolation which silently fails with nested ${VAR:-default}.
+  local pg_conn="${ENGRAM_PG_CONNECTION:-}"
+  if [[ -z "$pg_conn" ]]; then
+    pg_conn="Host=${effective_pg_host};Port=${ENGRAM_PG_PORT:-5432};Database=${ENGRAM_PG_DATABASE:-engram};Username=${ENGRAM_PG_USER:-engram};Password=${ENGRAM_PG_PASSWORD}"
   fi
-  echo "$compose_file"
+  env_args+=("-e" "ENGRAM_PG_CONNECTION=${pg_conn}")
+
+  # ── Optional vars (only pass if set in .env) ──
+  [[ -n "${ENGRAM_USER:-}" ]] && env_args+=("-e" "ENGRAM_USER=${ENGRAM_USER}")
+  [[ -n "${ENGRAM_JWT_SECRET:-}" ]] && env_args+=("-e" "ENGRAM_JWT_SECRET=${ENGRAM_JWT_SECRET}")
+  [[ -n "${ENGRAM_CORS_ORIGINS:-}" ]] && env_args+=("-e" "ENGRAM_CORS_ORIGINS=${ENGRAM_CORS_ORIGINS}")
+
+  printf '%s\n' "${env_args[@]}"
 }
 
-compose_cmd() {
-  local compose_file
-  compose_file=$(get_compose_file)
-  docker compose -f "$compose_file" "$@"
+# Build the `docker run` array for the engram container and launch it.
+# $1: image name
+# $2: "embedded" or "external"
+run_engram_container() {
+  local image="$1"
+  local db_mode="${2:-external}"
+  local pg_host
+
+  # Resolve data dir to absolute path
+  local data_dir_host="${ENGRAM_DATA_DIR_HOST:-./data}"
+  if [[ "$data_dir_host" != /* ]]; then
+    data_dir_host="$COMPOSE_DIR/$data_dir_host"
+  fi
+  mkdir -p "$data_dir_host"
+
+  # Build env arg array
+  local env_args=()
+  if [[ "$db_mode" == "embedded" ]]; then
+    pg_host="postgres"
+  else
+    pg_host="${ENGRAM_PG_HOST:-host.docker.internal}"
+  fi
+
+  while IFS= read -r line; do
+    env_args+=("$line")
+  done < <(build_env_args "$pg_host")
+
+  # Remove existing container (stop + rm in one shot)
+  docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+
+  echo "=== Starting engram container ==="
+
+  if [[ "$db_mode" == "embedded" ]]; then
+    # Embedded mode: use shared network so engram can reach postgres by name
+    docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || \
+      docker network create "$NETWORK_NAME"
+
+    docker run -d \
+      --name "$CONTAINER_NAME" \
+      --restart unless-stopped \
+      --network "$NETWORK_NAME" \
+      -p 7437:7437 \
+      -v "${data_dir_host}:/data/engram" \
+      "${env_args[@]}" \
+      "$image"
+  else
+    # External mode: add host-gateway so container can reach host PostgreSQL
+    docker run -d \
+      --name "$CONTAINER_NAME" \
+      --restart unless-stopped \
+      -p 7437:7437 \
+      --add-host "host.docker.internal:host-gateway" \
+      -v "${data_dir_host}:/data/engram" \
+      "${env_args[@]}" \
+      "$image"
+  fi
+
+  echo ""
+  echo "Waiting for container to become healthy..."
+  sleep 5
+
+  # Check health
+  local health
+  health=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "no container")
+
+  if [[ "$health" == "healthy" ]]; then
+    echo "✓ Container is healthy"
+  elif [[ "$health" == "starting" ]]; then
+    echo "⚠ Container is starting (health check in progress)"
+  else
+    echo "Container status: $health"
+  fi
+}
+
+start_embedded_postgres() {
+  # Start embedded PostgreSQL if not already running
+  if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
+    echo "  ℹ Embedded PostgreSQL already running"
+    return 0
+  fi
+
+  echo "=== Starting embedded PostgreSQL ==="
+
+  docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || \
+    docker network create "$NETWORK_NAME"
+
+  docker rm -f "$POSTGRES_CONTAINER" 2>/dev/null || true
+
+  docker run -d \
+    --name "$POSTGRES_CONTAINER" \
+    --restart unless-stopped \
+    --network "$NETWORK_NAME" \
+    -p "${ENGRAM_PG_PORT:-5432}:5432" \
+    -e "POSTGRES_DB=${ENGRAM_PG_DATABASE:-engram}" \
+    -e "POSTGRES_USER=${ENGRAM_PG_USER:-engram}" \
+    -e "POSTGRES_PASSWORD=${ENGRAM_PG_PASSWORD}" \
+    -v pgdata:/var/lib/postgresql/data \
+    postgres:16-alpine
+
+  echo "  ✓ Embedded PostgreSQL started (waiting for readiness...)"
+
+  # Wait for postgres to be ready
+  local retries=30
+  while [[ $retries -gt 0 ]]; do
+    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "${ENGRAM_PG_USER:-engram}" -d "${ENGRAM_PG_DATABASE:-engram}" >/dev/null 2>&1; then
+      echo "  ✓ PostgreSQL is ready"
+      return 0
+    fi
+    sleep 1
+    ((retries--))
+  done
+
+  echo "  ⚠ PostgreSQL did not become ready in time" >&2
+  return 1
+}
+
+stop_embedded_postgres() {
+  if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
+    echo "=== Stopping embedded PostgreSQL ==="
+    docker stop "$POSTGRES_CONTAINER" 2>/dev/null || true
+    echo "  ✓ Stopped"
+  fi
+}
+
+remove_embedded_postgres() {
+  docker rm -f "$POSTGRES_CONTAINER" 2>/dev/null || true
+  docker network rm "$NETWORK_NAME" 2>/dev/null || true
 }
 
 # ─── Validation ──────────────────────────────────────────────────────────────
@@ -118,7 +271,6 @@ validate_profile() {
       ;;
     remote-server)
       local errors=0
-      # Validate PG connection — either ENGRAM_PG_CONNECTION directly OR individual vars
       if [[ -z "${ENGRAM_PG_CONNECTION:-}" && -z "${ENGRAM_PG_HOST:-}" ]]; then
         echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_CONNECTION or ENGRAM_PG_HOST." >&2
         ((errors++))
@@ -143,7 +295,6 @@ validate_profile() {
           ((errors++))
         fi
       fi
-      # ENGRAM_USER is optional for remote-server (server doesn't need identity, clients identify via header)
       if [[ $errors -eq 0 ]]; then
         echo "  ✓ Profile: remote-server (PostgreSQL, no sync)"
       fi
@@ -194,7 +345,7 @@ validate_db_mode() {
   local db_mode="${ENGRAM_DB_MODE:-external}"
   case "$db_mode" in
     external) echo "  ✓ DB mode: external (PostgreSQL on host or network)" ;;
-    embedded) echo "  ✓ DB mode: embedded (PostgreSQL as Docker service)" ;;
+    embedded) echo "  ✓ DB mode: embedded (PostgreSQL as separate container)" ;;
     *)
       echo "  ✗ Error: Unknown ENGRAM_DB_MODE='$db_mode'. Use external or embedded." >&2
       return 1
@@ -203,7 +354,6 @@ validate_db_mode() {
 }
 
 validate_env_safety() {
-  # Check that .env file is NOT tracked by git (would expose secrets)
   if [[ ! -f "$ENV_FILE" ]]; then
     echo "  ⚠ Warning: $ENV_FILE not found. Create it from .env.example:"
     echo "    cp docker/.env.example docker/.env"
@@ -214,7 +364,6 @@ validate_env_safety() {
     echo "  ⚠ WARNING: docker/.env is tracked by git. This may expose secrets." >&2
     echo "    Fix: git rm --cached docker/.env" >&2
     echo "    Or:  git update-index --assume-unchanged docker/.env" >&2
-    # Not exiting — just warning, in case of git worktrees or special setups
   else
     echo "  ✓ .env is not tracked by git (safe)"
   fi
@@ -252,87 +401,127 @@ cmd_validate() {
 # ─── Commands ────────────────────────────────────────────────────────────────
 
 cmd_start() {
-  cd "$COMPOSE_DIR"
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+  local image
 
   if [[ "${USE_IMAGE_FLAG:-}" == "yes" ]]; then
-    # Pull pre-built image and run without local build
-    local image="${ENGRAM_IMAGE:-$DEFAULT_IMAGE}"
-    echo "=== Using pre-built image: $image ==="
-    compose_cmd pull engram
-    compose_cmd up -d engram
+    image="${ENGRAM_IMAGE:-$DEFAULT_IMAGE}"
+    echo "=== Pulling pre-built image: $image ==="
+    docker pull "$image"
   else
-    # Local build
+    # Local build using docker compose build (safe — build section has no ${VAR} interpolation)
+    image="$LOCAL_IMAGE"
     echo "=== Building image locally ==="
-    compose_cmd up -d --build
+    # docker compose build respects the build section from docker-compose.yml
+    # but we only use it for building, not for running
+    cd "$COMPOSE_DIR"
+    docker compose -f docker-compose.yml build
+    cd "$PROJECT_ROOT"
   fi
 
-  echo ""
-  echo "Waiting for container to become healthy..."
-  sleep 5
-
-  # Check health via docker compose ps
-  local health
-  health=$(compose_cmd ps --format json 2>/dev/null | \
-    python3 -c "import sys,json; [print(d.get('Health','')) for d in [json.loads(l) for l in sys.stdin]]" 2>/dev/null || true)
-
-  if [[ "$health" == "healthy" ]]; then
-    echo "✓ Container is healthy"
-  elif [[ "$health" == "starting" ]]; then
-    echo "⚠ Container is starting (health check in progress)"
-  else
-    # Fallback: try curl inside container or just report status
-    echo "Container status:"
-    compose_cmd ps 2>/dev/null || true
+  # If embedded mode, start PostgreSQL first
+  if [[ "$db_mode" == "embedded" ]]; then
+    start_embedded_postgres
   fi
+
+  run_engram_container "$image" "$db_mode"
 }
 
 cmd_stop() {
-  cd "$COMPOSE_DIR"
-  echo "=== Stopping container ==="
-  compose_cmd stop
-  echo "✓ Stopped"
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+
+  echo "=== Stopping engram container ==="
+  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    docker stop "$CONTAINER_NAME"
+    echo "✓ Stopped"
+  else
+    echo "  ℹ Container is not running"
+  fi
+
+  if [[ "$db_mode" == "embedded" ]]; then
+    stop_embedded_postgres
+  fi
 }
 
 cmd_remove() {
-  cd "$COMPOSE_DIR"
-  echo "=== Removing containers and networks (volumes preserved) ==="
-  compose_cmd down
-  echo "✓ Removed"
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+
+  echo "=== Removing containers (volumes preserved) ==="
+  docker rm -f "$CONTAINER_NAME" 2>/dev/null && echo "  ✓ Removed engram" || echo "  ℹ engram container not found"
+
+  if [[ "$db_mode" == "embedded" ]]; then
+    remove_embedded_postgres
+    echo "  ✓ Removed embedded PostgreSQL and network"
+  fi
+
+  echo "✓ Done"
 }
 
 cmd_recreate() {
+  load_env
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+
   cmd_remove
   echo ""
-  cd "$COMPOSE_DIR"
+
+  # Build fresh image (--no-cache equivalent: docker compose build --no-cache)
   echo "=== Building image with clean cache ==="
-  compose_cmd build --no-cache
-  compose_cmd up -d
+  cd "$COMPOSE_DIR"
+  docker compose -f docker-compose.yml build --no-cache
+  cd "$PROJECT_ROOT"
+
+  if [[ "$db_mode" == "embedded" ]]; then
+    start_embedded_postgres
+  fi
+
+  run_engram_container "$LOCAL_IMAGE" "$db_mode"
 }
 
 cmd_logs() {
-  cd "$COMPOSE_DIR"
-  compose_cmd logs "${@:--t --tail=50}"
+  if [[ $# -eq 0 ]]; then
+    docker logs -t --tail=50 "$CONTAINER_NAME" 2>/dev/null || echo "  No container found."
+  else
+    docker logs "$CONTAINER_NAME" "$@" 2>/dev/null || echo "  No container found."
+  fi
 }
 
 cmd_status() {
-  cd "$COMPOSE_DIR"
   echo "=== Container status ==="
-  compose_cmd ps 2>/dev/null || echo "  No containers running."
-  echo ""
+  if docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' --filter "name=engram" 2>/dev/null; then
+    echo ""
+  else
+    echo "  No containers running."
+    echo ""
+  fi
 
-  # Try to get health status via docker inspect
+  # Health status
   local health
-  health=$(docker inspect --format='{{.State.Health.Status}}' engram 2>/dev/null || echo "no container")
+  health=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "no container")
   if [[ "$health" != "no container" ]]; then
     echo "Health: $health"
+  else
+    echo "  ℹ engram container not found"
+  fi
+
+  # Embedded postgres status
+  if [[ "${ENGRAM_DB_MODE:-external}" == "embedded" ]]; then
+    echo ""
+    if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
+      echo "Embedded PostgreSQL: running"
+    else
+      echo "Embedded PostgreSQL: not running"
+    fi
   fi
 }
 
 cmd_restart() {
-  cd "$COMPOSE_DIR"
   echo "=== Restarting container ==="
-  compose_cmd restart
-  echo "✓ Restarted"
+  if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    docker restart "$CONTAINER_NAME"
+    echo "✓ Restarted"
+  else
+    echo "  ℹ Container is not running. Use 'start' instead."
+  fi
 }
 
 cmd_backup() {
@@ -344,8 +533,27 @@ cmd_backup() {
   echo "=== Backing up to $backup_dir ==="
   echo ""
 
-  # Backup PostgreSQL data if using external PG mode and a postgres container is running
-  if [[ "${ENGRAM_DB_MODE:-external}" == "external" ]]; then
+  load_env
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+
+  # Backup PostgreSQL data
+  if [[ "$db_mode" == "embedded" ]]; then
+    # Embedded: dump from the postgres container
+    if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
+      local pg_user="${ENGRAM_PG_USER:-engram}"
+      local pg_db="${ENGRAM_PG_DATABASE:-engram}"
+      local pg_file="$backup_dir/engram_pg_${ts}.sql"
+      echo "PostgreSQL dump (embedded container: $POSTGRES_CONTAINER, db: $pg_db)..."
+      if docker exec "$POSTGRES_CONTAINER" pg_dump -U "$pg_user" "$pg_db" > "$pg_file" 2>/dev/null; then
+        echo "  ✓ PostgreSQL dump: $pg_file"
+      else
+        echo "  ⚠ pg_dump failed" >&2
+      fi
+    else
+      echo "  ⚠ Embedded PostgreSQL is not running — skipping pg_dump" >&2
+    fi
+  else
+    # External: try to find a running postgres container
     local pg_container
     pg_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -i postgres | head -1 || true)
     if [[ -n "$pg_container" ]]; then
@@ -356,20 +564,23 @@ cmd_backup() {
       if docker exec "$pg_container" pg_dump -U "$pg_user" "$pg_db" > "$pg_file" 2>/dev/null; then
         echo "  ✓ PostgreSQL dump: $pg_file"
       else
-        echo "  ⚠ pg_dump failed. Is the postgres container running and accessible?" >&2
+        echo "  ⚠ pg_dump failed" >&2
       fi
     else
-      echo "  ℹ No postgres container found (ENGRAM_DB_MODE=external). Use pg_dump manually:"
+      echo "  ℹ No postgres container found. Use pg_dump manually:"
       echo "    pg_dump -U ${ENGRAM_PG_USER:-engram} -h ${ENGRAM_PG_HOST:-localhost} ${ENGRAM_PG_DATABASE:-engram} > backup.sql"
     fi
   fi
 
   # Backup SQLite data volume if it exists
-  local data_dir="$COMPOSE_DIR/../data"
+  local data_dir="${ENGRAM_DATA_DIR_HOST:-./data}"
+  if [[ "$data_dir" != /* ]]; then
+    data_dir="$COMPOSE_DIR/$data_dir"
+  fi
   if [[ -d "$data_dir" ]]; then
     local sqlite_file="$backup_dir/engram_data_${ts}.tar.gz"
     echo "SQLite data backup..."
-    if tar -czf "$sqlite_file" -C "$COMPOSE_DIR/.." data 2>/dev/null; then
+    if tar -czf "$sqlite_file" -C "$(dirname "$data_dir")" "$(basename "$data_dir")" 2>/dev/null; then
       echo "  ✓ SQLite backup: $sqlite_file"
     else
       echo "  ⚠ Failed to create SQLite backup" >&2
@@ -385,14 +596,23 @@ cmd_backup() {
 cmd_update() {
   local image="${ENGRAM_IMAGE:-$DEFAULT_IMAGE}"
   echo "=== Pulling latest image: $image ==="
-  cd "$COMPOSE_DIR"
-
   docker pull "$image" 2>/dev/null || {
     echo "⚠ Could not pull image '$image'. Falling back to local build." >&2
+    image="$LOCAL_IMAGE"
+    cd "$COMPOSE_DIR"
+    docker compose -f docker-compose.yml build
+    cd "$PROJECT_ROOT"
   }
 
   echo ""
-  cmd_recreate
+  local db_mode="${ENGRAM_DB_MODE:-external}"
+  cmd_remove
+
+  if [[ "$db_mode" == "embedded" ]]; then
+    start_embedded_postgres
+  fi
+
+  run_engram_container "$image" "$db_mode"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -433,7 +653,7 @@ if [[ -z "$COMMAND" ]]; then
   exit 1
 fi
 
-# Export image flag for cmd_start and cmd_recreate
+# Export image flag for cmd_start
 export USE_IMAGE_FLAG="$USE_IMAGE"
 
 case "$COMMAND" in
