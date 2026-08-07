@@ -104,7 +104,7 @@ get_compose_file() {
 compose_cmd() {
   local compose_file
   compose_file=$(get_compose_file)
-  docker-compose -f "$compose_file" "$@"
+  docker compose -f "$compose_file" "$@"
 }
 
 # ─── Validation ──────────────────────────────────────────────────────────────
