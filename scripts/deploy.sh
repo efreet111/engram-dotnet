@@ -118,28 +118,32 @@ validate_profile() {
       ;;
     remote-server)
       local errors=0
-      # Validate individual PG variables (docker-compose.yml constructs ENGRAM_PG_CONNECTION from these)
-      if [[ -z "${ENGRAM_PG_HOST:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_HOST but it is not set." >&2
+      # Validate PG connection — either ENGRAM_PG_CONNECTION directly OR individual vars
+      if [[ -z "${ENGRAM_PG_CONNECTION:-}" && -z "${ENGRAM_PG_HOST:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_CONNECTION or ENGRAM_PG_HOST." >&2
         ((errors++))
       fi
-      if [[ -z "${ENGRAM_PG_PASSWORD:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_PASSWORD but it is not set." >&2
+      if [[ -z "${ENGRAM_PG_CONNECTION:-}" && -z "${ENGRAM_PG_PASSWORD:-}" ]]; then
+        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_PG_PASSWORD." >&2
         ((errors++))
       fi
       # Safety: reject localhost connections for remote-server profile
-      if [[ -n "${ENGRAM_PG_HOST:-}" ]]; then
+      if [[ -n "${ENGRAM_PG_CONNECTION:-}" ]]; then
         local lower
-        lower=$(echo "$ENGRAM_PG_HOST" | tr '[:upper:]' '[:lower:]')
+        lower=$(echo "${ENGRAM_PG_CONNECTION}" | tr '[:upper:]' '[:lower:]')
+        if echo "$lower" | grep -qE '(host|server|data source)\s*=\s*(localhost|127\.0\.0\.1|::1)'; then
+          echo "  ✗ Error: ENGRAM_PROFILE=remote-server must NOT use localhost in ENGRAM_PG_CONNECTION." >&2
+          ((errors++))
+        fi
+      elif [[ -n "${ENGRAM_PG_HOST:-}" ]]; then
+        local lower
+        lower=$(echo "${ENGRAM_PG_HOST}" | tr '[:upper:]' '[:lower:]')
         if [[ "$lower" == "localhost" || "$lower" == "127.0.0.1" || "$lower" == "::1" ]]; then
           echo "  ✗ Error: ENGRAM_PROFILE=remote-server must NOT use localhost for PG host." >&2
           ((errors++))
         fi
       fi
-      if [[ -z "${ENGRAM_USER:-}" ]]; then
-        echo "  ✗ Error: ENGRAM_PROFILE=remote-server requires ENGRAM_USER but it is not set." >&2
-        ((errors++))
-      fi
+      # ENGRAM_USER is optional for remote-server (server doesn't need identity, clients identify via header)
       if [[ $errors -eq 0 ]]; then
         echo "  ✓ Profile: remote-server (PostgreSQL, no sync)"
       fi
