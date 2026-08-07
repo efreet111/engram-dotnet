@@ -104,7 +104,7 @@ get_compose_file() {
 compose_cmd() {
   local compose_file
   compose_file=$(get_compose_file)
-  docker compose -f "$compose_file" "$@"
+  docker-compose -f "$compose_file" "$@"
 }
 
 # ─── Validation ──────────────────────────────────────────────────────────────
@@ -305,7 +305,8 @@ cmd_recreate() {
   echo ""
   cd "$COMPOSE_DIR"
   echo "=== Building image with clean cache ==="
-  compose_cmd up -d --build --no-cache
+  compose_cmd build --no-cache
+  compose_cmd up -d
 }
 
 cmd_logs() {
