@@ -303,7 +303,9 @@ cmd_remove() {
 cmd_recreate() {
   cmd_remove
   echo ""
-  cmd_start
+  cd "$COMPOSE_DIR"
+  echo "=== Building image with clean cache ==="
+  compose_cmd up -d --build --no-cache
 }
 
 cmd_logs() {
