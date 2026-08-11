@@ -7,6 +7,20 @@
 
 ---
 
+## 🎯 Intent
+
+Traceability maintains the complete lineage of a requirement, from its original source (issue, bug report, technical decision) to the code that implements it, through all cycles of rework — so you always know if a requirement is still relevant, how it evolved, and how requirements relate to each other.
+
+## 📋 Scope
+
+- MCP tool `mem_trace_source`: persists the origin of a requirement with `topic_key` and links it to the spec
+- MCP tool `mem_lineage`: returns the full lineage chain (source → spec → reworks → code)
+- `## Traceability` section in spec.md format with fields: Source, Author, Date, Rationale, Relations
+- Requirement relationship support: `depends_on`, `supersedes`, `conflicts_with`, `related_to`
+- Persistence via observations with `topic_key: trace/{project}/{rf-id}`
+
+---
+
 ## As a user...
 
 **As**: Developer / IT Admin

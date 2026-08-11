@@ -7,6 +7,20 @@
 
 ---
 
+## 🎯 Intent
+
+Make observation TTL (time-to-live) configurable and provide visibility into memory retention state — so memory stays useful long-term, old observations auto-expire, and renamed or consolidated projects get redirect hints instead of broken references.
+
+## 📋 Scope
+
+- **Capa 1 (Metrics)**: Retention metrics visible via HTTP endpoint, CLI, and MCP tool
+- **Capa 2 (Configurable TTL)**: TTL configurable per store method, CLI flag, and config file
+- **Capa 3 (Redirect hints)**: Redirect hints surfaced in search results (store + server), with optional auto-follow by the agent
+- Output: CLI and JSON, no visual UI
+- Deferred: Archive/export of expired observations (future phase)
+
+---
+
 ## As a user...
 
 **As**: Developer / IT Admin
