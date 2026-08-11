@@ -255,6 +255,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             }
 
             // ── Enrollment warning: warn if project is not enrolled for sync (HU-013 Phase 5) ──
+            string? enrollmentWarning = null;
             if (!string.IsNullOrEmpty(normalizedProject) && _localSyncStore is not null)
             {
                 try
@@ -262,9 +263,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                     var behavior = await _localSyncStore.GetProjectBehaviorAsync(normalizedProject);
                     if (behavior is null)
                     {
-                        _logger?.LogWarning(
-                            "[engram] Proyecto '{Project}' no está enrolado para sync. Ejecutá 'engram sync enroll --interactive' para activarlo.",
-                            normalizedProject);
+                        enrollmentWarning = $"\n⚠️ Proyecto '{normalizedProject}' no está enrolado para sync. Ejecutá 'engram sync enroll --interactive' para activarlo.";
                     }
                 }
                 catch
@@ -301,6 +300,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 msg += $"\n{normWarning}";
             if (!string.IsNullOrEmpty(similarWarning))
                 msg += $"\n{similarWarning}";
+            if (!string.IsNullOrEmpty(enrollmentWarning))
+                msg += enrollmentWarning;
 
             // ENG-476 FR-003: Snapshot feedback of pending mutations at save time.
             // The count is captured AFTER triggering the fire-and-forget push (FR-001),
