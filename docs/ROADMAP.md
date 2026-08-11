@@ -197,6 +197,23 @@ Dev: mem_save / engram save  →  SQLite local (instantáneo, offline OK)
 
 ## 🟠 Future Ideas
 
+### Rate Limiting por Proyecto
+
+> **HU**: Pendiente de crear  
+> **Related**: HU-013 (multi-project sync)
+
+Agregar throttling/batching por proyecto para evitar enviar miles de mutations de un solo proyecto saturando el sync.
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | Token bucket / sliding window | Rate limiter por proyecto (server-side o client-side) |
+| 2 | Batching adaptativo | Batch size dinámico según volumen de mutations del proyecto |
+| 3 | Configurabilidad | `ENGRAM_SYNC_RATE_LIMIT_PER_PROJECT` o config YAML |
+
+**Estado actual**: SyncManager tiene batch cap de 100 y exponential backoff global. No hay throttle por proyecto.
+
+---
+
 ### Obsidian Export — Phase B (with AI)
 
 Specialized agent that generates synthesized documents from memories.
