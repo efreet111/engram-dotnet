@@ -276,24 +276,67 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
         var pending = await _store.ListPendingSyncMutationsAsync(_cfg.TargetKey, _cfg.PushBatchSize, ct);
         if (pending.Count == 0) { _logger.LogDebug("SyncManager push: no pending mutations"); return true; }
 
+        // ENG-514 (HU-013): Check non-enrolled and fail-loud projects that block sync
         var nonEnrolled = await _store.CountPendingNonEnrolledAsync(_cfg.TargetKey, ct);
         if (nonEnrolled.Count > 0)
         {
-            _logger.LogWarning("SyncManager push blocked: {Count} non-enrolled projects detected", nonEnrolled.Count);
-            await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "non-enrolled-pending", $"{nonEnrolled.Count} projects not enrolled", ct);
+            var projectNames = string.Join(", ", nonEnrolled.Select(p => p.Project));
+            _logger.LogWarning("SyncManager push blocked: {Count} non-enrolled/fail-loud projects detected: {Projects}",
+                nonEnrolled.Count, projectNames);
+            await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "non-enrolled-pending",
+                $"{nonEnrolled.Count} projects blocking sync: {projectNames}", ct);
             await WriteNotificationAsync(
                 "error",
                 _consecutiveFailures,
-                $"non-enrolled-pending: {nonEnrolled.Count} projects not enrolled",
+                $"non-enrolled-pending: {nonEnrolled.Count} projects not enrolled (fail-loud): {projectNames}",
                 "Enroll projects: POST /sync/enroll",
                 null);
             return false;
         }
 
-        var byProject = pending.GroupBy(m => m.Project).ToList();
-        PushBatch(_logger, pending.Count, byProject.Count, null);
+        // ENG-514 (HU-013): Filter out projects with behavior='silent-skip' — these don't push
+        var enrolledProjects = await _store.GetEnrolledProjectsLocalAsync(ct);
+        var silentSkipProjects = enrolledProjects
+            .Where(ep => ep.Behavior == "silent-skip")
+            .Select(ep => ep.Project)
+            .ToHashSet();
 
-        return await PushBatchInternalAsync(pending, ct);
+        if (silentSkipProjects.Count > 0)
+        {
+            var skippedMutations = pending.Where(m => silentSkipProjects.Contains(m.Project)).ToList();
+            if (skippedMutations.Count > 0)
+            {
+                _logger.LogInformation(
+                    "SyncManager push: skipping {Count} mutations from {ProjectCount} silent-skip projects: {Projects}",
+                    skippedMutations.Count,
+                    skippedMutations.Select(m => m.Project).Distinct().Count(),
+                    string.Join(", ", skippedMutations.Select(m => m.Project).Distinct()));
+            }
+        }
+
+        // Only push mutations from non-silent-skip projects
+        var toPush = pending.Where(m => !silentSkipProjects.Contains(m.Project)).ToList();
+
+        if (toPush.Count == 0)
+        {
+            _logger.LogDebug("SyncManager push: all pending mutations belong to silent-skip projects");
+            // Ack silent-skip mutations so they don't accumulate infinitely
+            var silentSeqs = pending
+                .Where(m => silentSkipProjects.Contains(m.Project))
+                .Select(m => m.Seq)
+                .ToList();
+            if (silentSeqs.Count > 0)
+            {
+                await _store.AckSyncMutationSeqsAsync(_cfg.TargetKey, silentSeqs, ct);
+                _logger.LogInformation("SyncManager push: acknowledged {Count} silent-skip mutations", silentSeqs.Count);
+            }
+            return true;
+        }
+
+        var byProject = toPush.GroupBy(m => m.Project).ToList();
+        PushBatch(_logger, toPush.Count, byProject.Count, null);
+
+        return await PushBatchInternalAsync(toPush, ct);
     }
 
     /// <summary>
@@ -496,8 +539,35 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
                 return;
             }
 
-            _logger.LogInformation("On-demand push starting: {Count} pending mutations", pending.Count);
-            await PushBatchInternalAsync(pending, ct);
+            // ENG-514 (HU-013): Filter out silent-skip projects on on-demand push
+            var enrolledProjects = await _store.GetEnrolledProjectsLocalAsync(ct);
+            var silentSkipProjects = enrolledProjects
+                .Where(ep => ep.Behavior == "silent-skip")
+                .Select(ep => ep.Project)
+                .ToHashSet();
+
+            var toPush = pending;
+            if (silentSkipProjects.Count > 0)
+            {
+                var skipped = pending.Where(m => silentSkipProjects.Contains(m.Project)).ToList();
+                if (skipped.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "On-demand push: skipping {Count} mutations from silent-skip projects: {Projects}",
+                        skipped.Count,
+                        string.Join(", ", skipped.Select(m => m.Project).Distinct()));
+                }
+                toPush = pending.Where(m => !silentSkipProjects.Contains(m.Project)).ToList();
+            }
+
+            if (toPush.Count == 0)
+            {
+                _logger.LogDebug("On-demand push: all pending mutations in silent-skip projects");
+                return;
+            }
+
+            _logger.LogInformation("On-demand push starting: {Count} pending mutations", toPush.Count);
+            await PushBatchInternalAsync(toPush, ct);
         }
         catch (Exception ex)
         {

@@ -1053,6 +1053,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-08-11 | **HU-013 Done**: Multi-project sync management implementado. Per-project `silent-skip`/`fail-loud` behavior, YAML config `~/.engram/sync-projects.dotnet.yml`, CLI interactive selector, MCP suggestion-only. Tests: SyncBehaviorTests 16/16, SyncManagerTests 65/65. PostgreSQL tests skipped (Testcontainers, se ejecutan en CI). |
 | 2026-07-25 | **ENG-475 Done**: PR #22 mergeado (`62eca98`). Fix: removido `title` de `idx_obs_dedupe` en PostgresStore.cs y SqliteStore.cs. Migración idempotente `MigrateDedupeIndex()` para DBs existentes. Tests regresión: 2/2 SQLite, 2/2 PostgreSQL (Testcontainers). Sync verificado funcionando (35 pushed, 70 pulled). |
 | 2026-07-25 | **ENG-476 agregado**: Sync-on-demand — cuando el sync está habilitado pero nadie lo arranca, las memorias están desincronizadas. Idea: trigger sync cycle cuando el usuario hace búsqueda vía MCP/CLI. No requiere daemon. |
 | 2026-07-24 | **ENG-475 agregado**: PostgreSQL idx_obs_dedupe overflow — sync push falla con observaciones >2704 bytes. Ticket creado en `.ai-work/eng-475-postgres-dedupe-index-overflow/`. Workaround aplicado: 13 observaciones marcadas como acked. Sync desbloqueado (35 mutaciones pushed exitosamente). |

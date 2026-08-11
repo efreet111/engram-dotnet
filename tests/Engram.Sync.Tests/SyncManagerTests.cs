@@ -536,6 +536,10 @@ public sealed class SyncManagerTests : IDisposable
         // Non-enrolled check (added in Fix 3)
         _storeMock.Setup(s => s.CountPendingNonEnrolledAsync(_config.TargetKey, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<PendingProjectCount>());
+
+        // ENG-514 (HU-013): GetEnrolledProjectsLocalAsync for behavior filter
+        _storeMock.Setup(s => s.GetEnrolledProjectsLocalAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EnrolledProjectLocal>());
         
         var pushResult = new PushResult(new List<long>(), "test-proj", "Sync is paused for this project");
         _transportMock.Setup(t => t.PushMutationsAsync(It.IsAny<IReadOnlyList<Engram.Sync.Transport.MutationEntry>>(), _config.LeaseOwner, It.IsAny<CancellationToken>()))
@@ -581,6 +585,10 @@ public sealed class SyncManagerTests : IDisposable
         // Non-enrolled check (added in Fix 3)
         _storeMock.Setup(s => s.CountPendingNonEnrolledAsync(_config.TargetKey, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<PendingProjectCount>());
+
+        // ENG-514 (HU-013): GetEnrolledProjectsLocalAsync for behavior filter
+        _storeMock.Setup(s => s.GetEnrolledProjectsLocalAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EnrolledProjectLocal>());
         
         var pushResult = new PushResult(new List<long> { 101, 102 }, "test-proj", null);
         _transportMock.Setup(t => t.PushMutationsAsync(It.IsAny<IReadOnlyList<Engram.Sync.Transport.MutationEntry>>(), _config.LeaseOwner, It.IsAny<CancellationToken>()))

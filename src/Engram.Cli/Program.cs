@@ -241,6 +241,29 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
         Console.Error.WriteLine("[engram] warning: ENGRAM_SYNC_ENABLED=true but store does not support offline sync (use local SQLite, not ENGRAM_URL remote mode)");
     }
 
+    // Show enrolled project count on startup (ENG-514)
+    if (store is ILocalSyncStore mcpLocalStore)
+    {
+        try
+        {
+            var enrolledProjects = await mcpLocalStore.GetEnrolledProjectsLocalAsync();
+            if (enrolledProjects.Count > 0)
+            {
+                Console.Error.WriteLine($"[engram] Sync: {enrolledProjects.Count} project(s) enrolled.");
+                foreach (var ep in enrolledProjects)
+                    Console.Error.WriteLine($"  {ep.Project}: behavior={ep.Behavior}");
+            }
+            else
+            {
+                Console.Error.WriteLine($"[engram] No projects enrolled for sync. Run 'engram sync enroll --project <name>' to enroll.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[engram] Warning: Could not check sync enrollments: {ex.Message}");
+        }
+    }
+
     await mcpBuilder.Build().RunAsync();
 }, mcpProjectOpt, mcpAutoEnrollOpt);
 
@@ -420,7 +443,25 @@ syncStatusCmd.SetHandler(async (bool json) =>
         }
 
         var doc = JsonSerializer.Deserialize<JsonElement>(body);
-        SyncStatusFormatter.Write(doc, Console.Out);
+
+        // Enrich with per-project behavior info from local store (ENG-514)
+        var behaviors = new Dictionary<string, string>(StringComparer.Ordinal);
+        try
+        {
+            using var store = OpenStore();
+            if (store is ILocalSyncStore localStore)
+            {
+                var enrolledProjects = await localStore.GetEnrolledProjectsLocalAsync();
+                foreach (var ep in enrolledProjects)
+                    behaviors[ep.Project] = ep.Behavior;
+            }
+        }
+        catch
+        {
+            // Behavior enrichment is optional — status output still works without it
+        }
+
+        SyncStatusFormatter.Write(doc, Console.Out, behaviors);
     }
     catch (HttpRequestException)
     {
@@ -466,28 +507,63 @@ syncImportCmd.SetHandler(async () =>
         : $"Imported {imported} observations from new chunks.");
 });
 
-// sync enroll — enroll a project for local sync push
+// sync enroll — enroll a project for local sync push (ENG-514: HU-013)
 var syncEnrollCmd = new Command("enroll", "Enroll a project for sync push");
 var enrollProjectOpt = new Option<string>("--project", "Project to enroll");
+var enrollBehaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
+var enrollExcludeServerOpt = new Option<string[]>("--exclude-server", "Exclude server from sync (can be repeated)");
+var enrollInteractiveOpt = new Option<bool>("--interactive", "Interactive enrollment with project selection");
 syncEnrollCmd.AddOption(enrollProjectOpt);
-syncEnrollCmd.SetHandler(async (string project) =>
+syncEnrollCmd.AddOption(enrollBehaviorOpt);
+syncEnrollCmd.AddOption(enrollExcludeServerOpt);
+syncEnrollCmd.AddOption(enrollInteractiveOpt);
+syncEnrollCmd.SetHandler(async (InvocationContext context) =>
 {
-    if (string.IsNullOrWhiteSpace(project))
+    var project = context.ParseResult.GetValueForOption(enrollProjectOpt);
+    var behavior = context.ParseResult.GetValueForOption(enrollBehaviorOpt);
+    var excludedServers = context.ParseResult.GetValueForOption(enrollExcludeServerOpt) ?? [];
+    var interactive = context.ParseResult.GetValueForOption(enrollInteractiveOpt);
+
+    // Validate behavior
+    if (behavior != "silent-skip" && behavior != "fail-loud")
     {
-        Console.Error.WriteLine("error: --project is required");
+        Console.Error.WriteLine("error: --behavior must be 'silent-skip' or 'fail-loud'");
         return;
     }
-    using var store = OpenStore();
-    if (store is Engram.Store.SqliteStore ss)
-    {
-        await ss.EnrollProjectLocalAsync(project);
-        Console.WriteLine($"Project '{project}' enrolled for sync push.");
-    }
-    else
-        Console.Error.WriteLine("enroll is only supported for local SQLite stores.");
-}, enrollProjectOpt);
 
-// sync unenroll — unenroll a project from local sync push
+    using var store = OpenStore();
+    if (store is not Engram.Store.SqliteStore ss)
+    {
+        Console.Error.WriteLine("enroll is only supported for local SQLite stores.");
+        return;
+    }
+
+    // Migración de proyectos legacy sin behavior (ENG-514)
+    await MigrateLegacyEnrollmentsIfNeeded(ss);
+
+    if (interactive)
+    {
+        await InteractiveEnrollAsync(ss, excludedServers);
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --project is required (or use --interactive)");
+        return;
+    }
+
+    await ss.EnrollProjectLocalAsync(project, behavior);
+
+    var exclInfo = excludedServers.Length > 0
+        ? $", excluded servers: {string.Join(", ", excludedServers)}"
+        : "";
+    Console.WriteLine($"Project '{project}' enrolled for sync push (behavior: {behavior}{exclInfo}).");
+    if (excludedServers.Length > 0)
+        Console.WriteLine("  (excluded servers will be persisted to YAML config in Phase 4)");
+});
+
+// sync unenroll — unenroll a project from local sync push (ENG-514: HU-013)
 var syncUnenrollCmd = new Command("unenroll", "Unenroll a project from sync push");
 var unenrollProjectOpt = new Option<string>("--project", "Project to unenroll");
 syncUnenrollCmd.AddOption(unenrollProjectOpt);
@@ -499,13 +575,27 @@ syncUnenrollCmd.SetHandler(async (string project) =>
         return;
     }
     using var store = OpenStore();
-    if (store is Engram.Store.SqliteStore ss)
+    if (store is not Engram.Store.SqliteStore ss)
+    {
+        Console.Error.WriteLine("unenroll is only supported for local SQLite stores.");
+        return;
+    }
+
+    Console.Write("¿Qué hago con la configuración guardada? [1] Mantener [2] Eliminar: ");
+    var choice = Console.ReadLine()?.Trim();
+
+    if (choice == "2")
     {
         await ss.UnenrollProjectLocalAsync(project);
-        Console.WriteLine($"Project '{project}' unenrolled from sync push.");
+        Console.WriteLine($"Project '{project}' unenrolled from sync push. Configuration removed.");
+        // Phase 4: YAML config removal from ~/.engram/sync-projects.dotnet.yml
     }
     else
-        Console.Error.WriteLine("unenroll is only supported for local SQLite stores.");
+    {
+        // Just set sync_enabled=false (retain config for future re-enable)
+        Console.WriteLine($"Project '{project}' sync configuration retained. Enrollment kept in DB.");
+        Console.WriteLine("  (Phase 4 YAML: sync_enabled=false will be set in config)");
+    }
 }, unenrollProjectOpt);
 
 syncCmd.AddCommand(syncStatusCmd);
@@ -1418,7 +1508,199 @@ root.AddCommand(lineageCmd);
 
 return await root.InvokeAsync(args);
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Sync Enrollment Helpers (ENG-514: HU-013 Phase 3) ──────────────────────────
+
+/// <summary>
+/// Detects enrolled projects that don't have behavior set (pre-HU-013 enrollments)
+/// and offers migration to set behaviors interactively.
+/// </summary>
+static async Task MigrateLegacyEnrollmentsIfNeeded(SqliteStore ss)
+{
+    var enrolledProjects = await ss.GetEnrolledProjectsLocalAsync();
+    var legacyProjects = enrolledProjects
+        .Where(ep => string.IsNullOrEmpty(ep.Behavior) || ep.Behavior == "fail-loud")
+        .Select(ep => ep.Project)
+        .ToList();
+
+    // If all enrolled projects have their behavior explicitly set, skip migration.
+    // Projects with behavior == null (from legacy schema) DO need migration.
+    // Projects with behavior == "fail-loud" (explicitly set) DON'T need migration.
+    // Wait, actually: if behavior is null/empty, that's a legacy enrollment. fail-loud is the default.
+    // The distinction is: NULL means "was enrolled before the behavior column existed".
+    // Let's just check for null/empty:
+    var trulyLegacy = enrolledProjects
+        .Where(ep => string.IsNullOrEmpty(ep.Behavior))
+        .Select(ep => ep.Project)
+        .ToList();
+
+    if (trulyLegacy.Count == 0)
+        return;
+
+    Console.Error.WriteLine();
+    Console.Error.WriteLine($"Se detectaron {trulyLegacy.Count} proyecto(s) enrolado(s) sin configuración de behavior.");
+    Console.Error.WriteLine("[1] Migrar ahora");
+    Console.Error.WriteLine("[2] Migrar después");
+    Console.Error.WriteLine("[3] Ignorar");
+    Console.Error.Write("Selección: ");
+    var choice = Console.ReadLine()?.Trim();
+
+    if (choice == "1")
+    {
+        foreach (var proj in trulyLegacy)
+        {
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"Proyecto: {proj}");
+            Console.Error.Write("Comportamiento [1] silent-skip [2] fail-loud (enter=fail-loud): ");
+            var behaviorChoice = Console.ReadLine()?.Trim();
+            var behavior = behaviorChoice == "1" ? "silent-skip" : "fail-loud";
+            await ss.EnrollProjectLocalAsync(proj, behavior);
+            Console.Error.WriteLine($"  → Comportamiento actualizado a '{behavior}'.");
+        }
+        Console.Error.WriteLine($"\n{trulyLegacy.Count} proyecto(s) migrado(s).");
+    }
+    else if (choice == "2")
+    {
+        Console.Error.WriteLine("Migración pospuesta. Usá 'engram sync enroll --interactive' más tarde.");
+    }
+    else
+    {
+        Console.Error.WriteLine("Migración ignorada. Los proyectos legacy mantendrán behavior='fail-loud' por defecto.");
+    }
+}
+
+/// <summary>
+/// Interactive enrollment flow: detects projects with pending mutations,
+/// shows enrollment status, and lets user select projects to enroll.
+/// Uses simple numbered console input (no fzf dependency).
+/// </summary>
+static async Task InteractiveEnrollAsync(SqliteStore ss, string[] defaultExcludedServers)
+{
+    // 1. Get projects with pending mutations
+    var pendingProjects = await ss.ListDistinctProjectsWithPendingMutationsAsync("cloud");
+    if (pendingProjects.Count == 0)
+    {
+        Console.WriteLine("No se encontraron proyectos con mutaciones pendientes.");
+        return;
+    }
+
+    // 2. Get currently enrolled projects (for status display)
+    var enrolledProjects = await ss.GetEnrolledProjectsLocalAsync();
+    var enrolledSet = new HashSet<string>(
+        enrolledProjects.Select(ep => ep.Project),
+        StringComparer.Ordinal);
+
+    // 3. Count pending mutations per project
+    var pendingCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+    foreach (var proj in pendingProjects)
+    {
+        if (!pendingCounts.ContainsKey(proj))
+            pendingCounts[proj] = 0;
+        pendingCounts[proj]++;
+    }
+
+    // 4. Show numbered list
+    Console.WriteLine();
+    Console.WriteLine($"Proyectos con mutaciones pendientes ({pendingCounts.Count}):");
+    Console.WriteLine();
+
+    var projectList = pendingCounts.Keys.ToList();
+    for (int i = 0; i < projectList.Count; i++)
+    {
+        var proj = projectList[i];
+        var count = pendingCounts[proj];
+        var enrolled = enrolledSet.Contains(proj)
+            ? " [enrolado]"
+            : " [no enrolado]";
+        Console.WriteLine($"  [{i + 1}] {proj,-40} {count,4} mutaciones pend.{enrolled}");
+    }
+
+    // 5. Selection prompt
+    Console.WriteLine();
+    Console.Write("Seleccionar proyectos (números separados por coma, 'all', o 'none'): ");
+    var answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "";
+
+    if (answer == "none" || answer == "n" || answer == "")
+    {
+        Console.WriteLine("Cancelado.");
+        return;
+    }
+
+    var selected = new List<string>();
+    if (answer == "all" || answer == "a")
+    {
+        selected.AddRange(projectList);
+    }
+    else
+    {
+        foreach (var part in answer.Split(','))
+        {
+            var trimmed = part.Trim();
+            if (!int.TryParse(trimmed, out var idx) || idx < 1 || idx > projectList.Count)
+            {
+                Console.Error.WriteLine($"Selección inválida: \"{trimmed}\" (esperado 1-{projectList.Count})");
+                return;
+            }
+            selected.Add(projectList[idx - 1]);
+        }
+    }
+
+    if (selected.Count == 0)
+    {
+        Console.WriteLine("Nada seleccionado.");
+        return;
+    }
+
+    // 6. Behavior prompt — option to apply same to all
+    Console.WriteLine();
+    Console.WriteLine($"Enrolando {selected.Count} proyecto(s)...");
+    Console.WriteLine();
+
+    string? globalBehavior = null;
+
+    // Check if user wants to apply default to all
+    if (selected.Count > 1)
+    {
+        Console.Write("¿Aplicar mismo comportamiento a todos? (s/n) [n]: ");
+        var applyAll = Console.ReadLine()?.Trim().ToLowerInvariant();
+        if (applyAll == "s" || applyAll == "si" || applyAll == "y" || applyAll == "yes")
+        {
+            Console.Write("Comportamiento [1] silent-skip [2] fail-loud (enter=fail-loud): ");
+            var behChoice = Console.ReadLine()?.Trim();
+            globalBehavior = behChoice == "1" ? "silent-skip" : "fail-loud";
+        }
+    }
+
+    for (int i = 0; i < selected.Count; i++)
+    {
+        var proj = selected[i];
+        string behavior;
+
+        if (globalBehavior != null)
+        {
+            behavior = globalBehavior;
+        }
+        else
+        {
+            Console.Write($"[{i + 1}/{selected.Count}] {proj} — comportamiento [1] silent-skip [2] fail-loud (enter=fail-loud): ");
+            var behChoice = Console.ReadLine()?.Trim();
+            behavior = behChoice == "1" ? "silent-skip" : "fail-loud";
+        }
+
+        await ss.EnrollProjectLocalAsync(proj, behavior);
+
+        var exclInfo = defaultExcludedServers.Length > 0
+            ? $", servidores excluidos: {string.Join(", ", defaultExcludedServers)}"
+            : "";
+        Console.WriteLine($"  → '{proj}' enrolado (behavior: {behavior}{exclInfo}).");
+    }
+
+    if (defaultExcludedServers.Length > 0)
+        Console.WriteLine("  (servidores excluidos se persistirán en YAML config en Phase 4)");
+
+    Console.WriteLine($"\n{selected.Count} proyecto(s) enrolado(s).");
+}
+
+// ─── Core Helpers ────────────────────────────────────────────────────────────
 
 static IStore OpenStore(StoreConfig? cfg = null)
 {
@@ -1499,7 +1781,8 @@ static string Truncate(string s, int max)
 
 public static class SyncStatusFormatter
 {
-    public static void Write(JsonElement doc, TextWriter output)
+    public static void Write(JsonElement doc, TextWriter output,
+        Dictionary<string, string>? behaviors = null)
     {
         var enabled = doc.GetProperty("sync_enabled").GetBoolean();
         var phase = doc.GetProperty("phase").GetString() ?? "";
@@ -1521,6 +1804,36 @@ public static class SyncStatusFormatter
         output.WriteLine($"  Total pulled:         {counts.GetProperty("total_pulled").GetInt64()}");
         output.WriteLine($"  Last pushed seq:      {cursor.GetProperty("last_pushed_seq").GetInt64()}");
         output.WriteLine($"  Last pulled seq:      {cursor.GetProperty("last_pulled_seq").GetInt64()}");
+
+        // Enrolled projects with behavior info (ENG-514: HU-013)
+        if (doc.TryGetProperty("enrolled_projects", out var enrolledArray) && enrolledArray.ValueKind == JsonValueKind.Array)
+        {
+            var projects = new List<string>();
+            foreach (var item in enrolledArray.EnumerateArray())
+            {
+                var name = item.GetString();
+                if (!string.IsNullOrEmpty(name))
+                    projects.Add(name);
+            }
+
+            if (projects.Count > 0)
+            {
+                output.WriteLine();
+                output.WriteLine($"  Enrolled projects ({projects.Count}):");
+                foreach (var p in projects)
+                {
+                    var behavior = behaviors != null && behaviors.TryGetValue(p, out var b) ? b : "?";
+                    var behaviorLabel = behavior switch
+                    {
+                        "silent-skip" => " (silent-skip)",
+                        "fail-loud"   => " (fail-loud)",
+                        _             => $" ({behavior})"
+                    };
+
+                    output.WriteLine($"    - {p}{behaviorLabel}");
+                }
+            }
+        }
 
         if (!health.TryGetProperty("suggested_action", out var suggestedAction)
             || suggestedAction.ValueKind == JsonValueKind.Null)

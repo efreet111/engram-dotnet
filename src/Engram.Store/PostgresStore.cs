@@ -164,6 +164,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             );
         ");
 
+        // ENG-514: Ensure behavior column exists on sync_enrolled_projects (HU-013)
+        EnsureBehaviorColumn();
+
         // ─── Cloud sync tables (offline-first-sync Phase 1) ────────────────────
 
         Exec(@"
@@ -343,6 +346,22 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         catch
         {
             // Constraint may already exist — idempotent migration
+        }
+    }
+
+    /// <summary>
+    /// ENG-514: Ensure sync_enrolled_projects has behavior and excluded_servers columns (HU-013).
+    /// Idempotent — checks information_schema.columns before ALTER TABLE.
+    /// </summary>
+    private void EnsureBehaviorColumn()
+    {
+        if (!ColumnExists("sync_enrolled_projects", "behavior"))
+        {
+            Exec("ALTER TABLE sync_enrolled_projects ADD COLUMN behavior TEXT NOT NULL DEFAULT 'fail-loud'");
+        }
+        if (!ColumnExists("sync_enrolled_projects", "excluded_servers"))
+        {
+            Exec("ALTER TABLE sync_enrolled_projects ADD COLUMN excluded_servers TEXT");
         }
     }
 
@@ -2089,7 +2108,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var projects = new List<EnrolledProject>();
         await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = @"
-            SELECT project, enrolled_at, enrolled_by FROM sync_enrolled_projects
+            SELECT project, enrolled_at, enrolled_by,
+                   COALESCE(behavior, 'fail-loud'), excluded_servers
+            FROM sync_enrolled_projects
             WHERE ""user"" = @user
             ORDER BY enrolled_at DESC";
         cmd.Parameters.AddWithValue("@user", user);
@@ -2100,7 +2121,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             var project = r.GetString(0);
             var enrolledAt = r.IsDBNull(1) ? "" : r.GetString(1);
             var enrolledBy = r.IsDBNull(2) ? "" : r.GetString(2);
-            projects.Add(new EnrolledProject(project, enrolledAt, enrolledBy));
+            var behavior = r.IsDBNull(3) ? "fail-loud" : r.GetString(3);
+            var excludedServers = r.IsDBNull(4) ? null : r.GetString(4);
+            projects.Add(new EnrolledProject(project, enrolledAt, enrolledBy, behavior, excludedServers));
         }
 
         return projects;
@@ -2126,6 +2149,86 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             EnrolledBy: user,
             Status: enrolledAt != null ? "enrolled" : "already_enrolled"
         );
+    }
+
+    public async Task<EnrollmentResult> EnrollProjectAsync(string project, string user, string behavior, string? excludedServers, CancellationToken ct = default)
+    {
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_enrolled_projects (project, ""user"", enrolled_by, enrolled_at, behavior, excluded_servers)
+            VALUES (@project, @user, @user, NOW() AT TIME ZONE 'utc', @behavior, @excludedServers)
+            ON CONFLICT (project, ""user"") DO UPDATE SET behavior = @behavior, excluded_servers = @excludedServers, enrolled_at = NOW() AT TIME ZONE 'utc'
+            RETURNING enrolled_at, behavior";
+        cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@user", user);
+        cmd.Parameters.AddWithValue("@behavior", behavior);
+        cmd.Parameters.AddWithValue("@excludedServers", (object?)excludedServers ?? DBNull.Value);
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (await r.ReadAsync(ct))
+        {
+            var enrolledAt = r.IsDBNull(0) ? null : r.GetString(0);
+            var storedBehavior = r.IsDBNull(1) ? "fail-loud" : r.GetString(1);
+            return new EnrollmentResult(
+                Project: project,
+                EnrolledAt: enrolledAt,
+                EnrolledBy: user,
+                Status: "enrolled",
+                Behavior: storedBehavior
+            );
+        }
+
+        return new EnrollmentResult(
+            Project: project,
+            Status: "already_enrolled"
+        );
+    }
+
+    public async Task<string?> GetProjectBehaviorAsync(string project, CancellationToken ct = default)
+    {
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = "SELECT behavior FROM sync_enrolled_projects WHERE project = @project LIMIT 1";
+        cmd.Parameters.AddWithValue("@project", project);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result?.ToString();
+    }
+
+    public async Task<List<EnrolledProject>> ListEnrolledProjectsWithBehaviorAsync(string? user = null, CancellationToken ct = default)
+    {
+        var projects = new List<EnrolledProject>();
+        await using var cmd = _dataSource.CreateCommand();
+
+        if (string.IsNullOrEmpty(user))
+        {
+            cmd.CommandText = @"
+                SELECT project, enrolled_at, enrolled_by,
+                       COALESCE(behavior, 'fail-loud'), excluded_servers
+                FROM sync_enrolled_projects
+                ORDER BY enrolled_at DESC";
+        }
+        else
+        {
+            cmd.CommandText = @"
+                SELECT project, enrolled_at, enrolled_by,
+                       COALESCE(behavior, 'fail-loud'), excluded_servers
+                FROM sync_enrolled_projects
+                WHERE ""user"" = @user
+                ORDER BY enrolled_at DESC";
+            cmd.Parameters.AddWithValue("@user", user);
+        }
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            var project = r.GetString(0);
+            var enrolledAt = r.IsDBNull(1) ? "" : r.GetString(1);
+            var enrolledBy = r.IsDBNull(2) ? "" : r.GetString(2);
+            var behavior = r.IsDBNull(3) ? "fail-loud" : r.GetString(3);
+            var excludedServers = r.IsDBNull(4) ? null : r.GetString(4);
+            projects.Add(new EnrolledProject(project, enrolledAt, enrolledBy, behavior, excludedServers));
+        }
+
+        return projects;
     }
 
     public async Task<EnrollmentResult> UnenrollProjectAsync(string project, string user, CancellationToken ct = default)

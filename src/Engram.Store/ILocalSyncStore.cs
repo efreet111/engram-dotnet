@@ -96,6 +96,37 @@ public interface ILocalSyncStore
     /// Mark sync as healthy after successful cycle.
     /// </summary>
     Task MarkSyncHealthyAsync(string targetKey, CancellationToken ct = default);
+
+    // ─── Project enrollment (ENG-514: HU-013 multi-project sync management) ─────
+
+    /// <summary>
+    /// Enroll a project for local sync push with optional sync behavior.
+    /// Behavior: 'fail-loud' (default, blocks sync) or 'silent-skip' (skip, continue sync).
+    /// </summary>
+    Task EnrollProjectLocalAsync(string project, string? behavior = "fail-loud", CancellationToken ct = default);
+
+    /// <summary>
+    /// Unenroll a project from local sync push.
+    /// </summary>
+    Task UnenrollProjectLocalAsync(string project, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get all enrolled projects with their behavior and metadata.
+    /// Returns list of (project, behavior, enrolled_at) tuples.
+    /// </summary>
+    Task<List<EnrolledProjectLocal>> GetEnrolledProjectsLocalAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Get the sync behavior for a specific enrolled project.
+    /// Returns 'fail-loud', 'silent-skip', or null if the project is not enrolled.
+    /// </summary>
+    Task<string?> GetProjectBehaviorAsync(string project, CancellationToken ct = default);
+
+    /// <summary>
+    /// List distinct projects that have pending sync mutations (not yet acked).
+    /// Used for interactive enrollment — shows projects that need attention.
+    /// </summary>
+    Task<List<string>> ListDistinctProjectsWithPendingMutationsAsync(string targetKey, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -151,3 +182,11 @@ public sealed record SyncMutationCounts(
 public sealed record ReplayDeferredResult(
     int ReplayCount,
     int DeadCount);
+
+/// <summary>
+/// Enrolled project with behavior metadata — used by local sync store (ENG-514).
+/// </summary>
+public sealed record EnrolledProjectLocal(
+    string Project,
+    string Behavior,
+    string EnrolledAt);

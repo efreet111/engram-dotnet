@@ -1,5 +1,9 @@
 # HU-012 — Renombrar Deployment Profiles
 
+**Status**: ✅ Done
+**Owner**: @owner
+**Completed**: 2026-08-06 (commit dc24cda)
+
 **As**: Developer o IT Admin desplegando engram-dotnet
 **I want**: Perfiles de deployment renombrados y clarificados con semántica precisa
 **To**: Eliminar confusión entre `server` y `sync`, y agregar un perfil `desktop` para uso personal (desktop↔laptop sync)

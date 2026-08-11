@@ -6,6 +6,7 @@ using Engram.MdGeneration;
 using Engram.Verification;
 using Engram.Diagnostics;
 using Engram.Sync;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace Engram.Mcp;
@@ -50,7 +51,7 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null, ISyncOnDemandPusher? syncPusher = null)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null, ISyncOnDemandPusher? syncPusher = null, ILogger<EngramTools>? logger = null, ILocalSyncStore? localSyncStore = null)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
@@ -60,6 +61,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     private readonly Verification.MemoryRelationRepository _memRelRepo = memRelRepo;
     private readonly Verification.MemoryLineageBuilder _memLineageBuilder = memLineageBuilder;
     private readonly ISyncOnDemandPusher? _syncPusher = syncPusher;
+    private readonly ILogger<EngramTools>? _logger = logger;
+    private readonly ILocalSyncStore? _localSyncStore = localSyncStore;
     
     /// <summary>
     /// Field initializer with side-effect: emits sync warning to stderr on construction.
@@ -248,6 +251,25 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 catch
                 {
                     // Similar project checking is best-effort — don't fail the save
+                }
+            }
+
+            // ── Enrollment warning: warn if project is not enrolled for sync (HU-013 Phase 5) ──
+            if (!string.IsNullOrEmpty(normalizedProject) && _localSyncStore is not null)
+            {
+                try
+                {
+                    var behavior = await _localSyncStore.GetProjectBehaviorAsync(normalizedProject);
+                    if (behavior is null)
+                    {
+                        _logger?.LogWarning(
+                            "[engram] Proyecto '{Project}' no está enrolado para sync. Ejecutá 'engram sync enroll --interactive' para activarlo.",
+                            normalizedProject);
+                    }
+                }
+                catch
+                {
+                    // Enrollment check is best-effort — don't fail the save
                 }
             }
 

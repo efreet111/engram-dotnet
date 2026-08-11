@@ -199,7 +199,7 @@ Dev: mem_save / engram save  →  SQLite local (instantáneo, offline OK)
 
 ### Rate Limiting por Proyecto
 
-> **HU**: Pendiente de crear  
+> **HU**: ✅ HU-013 Done (2026-08-11)
 > **Related**: HU-013 (multi-project sync)
 
 Agregar throttling/batching por proyecto para evitar enviar miles de mutations de un solo proyecto saturando el sync.

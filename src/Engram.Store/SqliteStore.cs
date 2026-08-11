@@ -260,6 +260,9 @@ CREATE TABLE IF NOT EXISTS observations (
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_project ON sync_mutations(project);
         ");
 
+        // ENG-514: Add behavior column for multi-project sync management (HU-013)
+        AddColumnIfNotExists("sync_enrolled_projects", "behavior", "TEXT NOT NULL DEFAULT 'fail-loud'");
+
         Exec(@"
             CREATE TABLE IF NOT EXISTS project_migrations (
                 from_project TEXT PRIMARY KEY,
@@ -2087,8 +2090,8 @@ CREATE TABLE IF NOT EXISTS observations (
             SELECT sm.project, COUNT(*) as count
             FROM sync_mutations sm
             LEFT JOIN sync_enrolled_projects ep ON sm.project = ep.project
-            WHERE sm.target_key = @target AND sm.acked_at IS NULL AND ep.project IS NULL
-              AND sm.project != ''
+            WHERE sm.target_key = @target AND sm.acked_at IS NULL AND sm.project != ''
+              AND (ep.project IS NULL OR ep.behavior IS NULL OR ep.behavior = 'fail-loud')
             GROUP BY sm.project";
         cmd.Parameters.AddWithValue("@target", targetKey);
 
@@ -2121,22 +2124,69 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(new SyncMutationCounts(0, 0));
     }
 
-    public Task EnrollProjectLocalAsync(string project)
+    public Task EnrollProjectLocalAsync(string project, string? behavior = "fail-loud", CancellationToken ct = default)
     {
         using var cmd = _db.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO sync_enrolled_projects (project) VALUES (@project)";
+        cmd.CommandText = @"
+            INSERT INTO sync_enrolled_projects (project, behavior)
+            VALUES (@project, @behavior)
+            ON CONFLICT(project) DO UPDATE SET behavior = @behavior";
         cmd.Parameters.AddWithValue("@project", project);
+        cmd.Parameters.AddWithValue("@behavior", (object?)behavior ?? "fail-loud");
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
     }
 
-    public Task UnenrollProjectLocalAsync(string project)
+    public Task UnenrollProjectLocalAsync(string project, CancellationToken ct = default)
     {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = "DELETE FROM sync_enrolled_projects WHERE project = @project";
         cmd.Parameters.AddWithValue("@project", project);
         cmd.ExecuteNonQuery();
         return Task.CompletedTask;
+    }
+
+    public Task<List<EnrolledProjectLocal>> GetEnrolledProjectsLocalAsync(CancellationToken ct = default)
+    {
+        var list = new List<EnrolledProjectLocal>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT project, COALESCE(behavior, 'fail-loud'), enrolled_at
+            FROM sync_enrolled_projects
+            ORDER BY enrolled_at DESC";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new EnrolledProjectLocal(r.GetString(0), r.GetString(1), r.GetString(2)));
+        }
+        return Task.FromResult(list);
+    }
+
+    public Task<string?> GetProjectBehaviorAsync(string project, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT behavior FROM sync_enrolled_projects WHERE project = @project";
+        cmd.Parameters.AddWithValue("@project", project);
+        var result = cmd.ExecuteScalar();
+        return Task.FromResult(result?.ToString());
+    }
+
+    public Task<List<string>> ListDistinctProjectsWithPendingMutationsAsync(string targetKey, CancellationToken ct = default)
+    {
+        var list = new List<string>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT DISTINCT project FROM sync_mutations
+            WHERE target_key = @target AND project != ''
+              AND acked_at IS NULL
+            ORDER BY project";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(r.GetString(0));
+        }
+        return Task.FromResult(list);
     }
 
     public Task AckSyncMutationSeqsAsync(string targetKey, IReadOnlyList<long> seqs, CancellationToken ct = default)

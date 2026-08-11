@@ -1,5 +1,9 @@
 # HU-014 — Smart Sync Triggers
 
+**Status**: 🟡 In Progress
+**Owner**: @owner
+**Created**: 2026-08-11
+
 **As**: Developer working on multiple projects across multiple devices
 **I want**: sync to be project-specific (not global), with automatic pull when I switch devices
 **To**: avoid unnecessary sync of unrelated projects and have updated memory when I switch devices
