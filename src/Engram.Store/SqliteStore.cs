@@ -161,7 +161,9 @@ CREATE TABLE IF NOT EXISTS observations (
 
             CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
             CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
-            CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by);
+            -- HU-016: idx_prompts_created_by is created AFTER the created_by column
+            -- migration below (parity with PostgresStore). Creating it here breaks
+            -- existing DBs whose user_prompts table predates the created_by column.
             CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS prompts_fts USING fts5(
@@ -221,6 +223,8 @@ CREATE TABLE IF NOT EXISTS observations (
         AddColumnIfNotExists("observations", "embedding_model",       "TEXT");
         AddColumnIfNotExists("observations", "embedding_created_at",  "TEXT");
         AddColumnIfNotExists("observations", "md_path",               "TEXT");
+        // HU-016: created_by for schema parity with user_prompts and cloud_mutations.
+        AddColumnIfNotExists("observations", "created_by",            "TEXT");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
         AddColumnIfNotExists("user_prompts", "deleted_at",      "TEXT");
         AddColumnIfNotExists("user_prompts", "created_by",      "TEXT");
@@ -234,6 +238,8 @@ CREATE TABLE IF NOT EXISTS observations (
             -- SQLite tolerates larger index rows but we keep parity for dedup logic.
             CREATE INDEX IF NOT EXISTS idx_obs_dedupe        ON observations(normalized_hash, project, scope, type, created_at DESC);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id);
+            -- HU-016: created AFTER the created_by column migration above.
+            CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON user_prompts(created_by);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_target_seq ON sync_mutations(target_key, seq);
             CREATE INDEX IF NOT EXISTS idx_sync_mutations_pending    ON sync_mutations(target_key, acked_at, seq);
             -- ENG-457: prevent duplicate pulls of the same mutation. Partial index

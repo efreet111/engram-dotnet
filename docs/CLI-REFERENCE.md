@@ -20,8 +20,10 @@
 | `engram sync status` | Show sync status |
 | `engram sync enroll` | Enroll project for sync |
 | `engram sync unenroll` | Unenroll project |
+| `engram sync push` | Push pending mutations |
 | `engram sync export` | Export sync chunk |
 | `engram sync import` | Import sync chunk |
+| `engram sync setup` | Interactive sync setup wizard |
 | `engram project id` | Show/manage project identity |
 | `engram project migrate` | Migrate to new identity |
 | `engram projects list` | List projects with stats |
@@ -405,6 +407,64 @@ engram sync import
 
 ---
 
+### engram sync push
+
+**Description**: Push pending mutations for a specific project or all enrolled projects (HU-014).
+
+**Syntax**: `engram sync push [options]`
+
+**Options**:
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--project` | string | — | Project to push mutations for (mutually exclusive with `--all`) |
+| `--all` | bool | false | Push all enrolled projects with active behavior |
+| `--target` | string | `cloud` | Target key for sync state |
+
+**Behavior**:
+- `--project` and `--all` are mutually exclusive
+- Requires `ENGRAM_SERVER_URL` to be set
+- Projects with `silent-skip` behavior are skipped
+- Only pushes projects with pending mutations
+
+**Examples**:
+
+```bash
+# Push mutations for a specific project
+engram sync push --project my-app
+
+# Push all enrolled projects
+engram sync push --all
+
+# Push to specific target
+engram sync push --project my-app --target cloud
+```
+
+---
+
+### engram sync setup
+
+**Description**: Interactive initial sync configuration wizard (HU-014 R6).
+
+**Syntax**: `engram sync setup`
+
+**Behavior**:
+- Shows current auto-sync status
+- Prompts: "Enable auto-sync every 30s for projects with pending mutations? (Y/n)"
+- Saves preference to `~/.engram/config.json`
+- Requires restart of engram server/mcp for changes to take effect
+
+**Examples**:
+
+```bash
+# Run interactive setup wizard
+engram sync setup
+```
+
+> **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync setup guide.
+
+---
+
 ## Project Commands
 
 ### engram project id
@@ -427,7 +487,7 @@ engram sync import
 | Field | Type | Description |
 |-------|------|-------------|
 | `project_id` | string | Current project GUID |
-| `source` | string | Origin: `file`, `computed`, or `none` |
+| `source` | string | Origin: `file`, `computed`, `manual`, or `none` |
 | `computed` | string | Deterministic GUID computed from git remote |
 
 **Examples**:
@@ -482,23 +542,15 @@ engram project migrate --from old-guid --to new-guid
 
 **Description**: List all projects with statistics.
 
-**Syntax**: `engram projects list [options]`
-
-**Options**:
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | Output as JSON (machine-readable) |
+**Syntax**: `engram projects list`
 
 **Examples**:
 
 ```bash
-# Human-readable list
 engram projects list
-
-# JSON output
-engram projects list --json
 ```
+
+**Output**: Table with project name, observation count, session count, and prompt count.
 
 ---
 
@@ -607,22 +659,25 @@ engram promote --id 42 --md-dir docs/architecture/decisions
 
 **Description**: Show retention statistics by type and age bucket.
 
-**Syntax**: `engram retention check [options]`
+**Syntax**: `engram retention check`
 
-**Options**:
+**TTL Policy**: Observations are pruned based on type and age. Only observations **without** a `topic_key` are eligible for pruning.
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | Output as JSON (machine-readable) |
+| Type | TTL | Env Override |
+|------|-----|--------------|
+| `tool_use`, `file_change`, `command` | 30 days | `ENGRAM_TTL_tool_use`, `ENGRAM_TTL_file_change`, `ENGRAM_TTL_command` |
+| `bugfix`, `pattern` | 90 days | `ENGRAM_TTL_bugfix`, `ENGRAM_TTL_pattern` |
+| `learning`, `discovery` | 60 days | `ENGRAM_TTL_learning`, `ENGRAM_TTL_discovery` |
+| `decision`, `architecture`, `session_summary` | Never | — |
+
+**Notes**:
+- Observations with a `topic_key` are **never pruned** (they are considered pinned)
+- Override defaults via env vars: `ENGRAM_TTL_{TYPE}=30d`, `ENGRAM_TTL_{TYPE}=180d`, etc.
 
 **Examples**:
 
 ```bash
-# Human-readable output with age buckets and bar charts
 engram retention check
-
-# JSON output
-engram retention check --json
 ```
 
 ---
@@ -633,13 +688,14 @@ engram retention check --json
 
 **Syntax**: `engram retention prune [options]`
 
+**TTL Policy**: Only observations **without** a `topic_key` are pruned. See `retention check` for full TTL table by type.
+
 **Options**:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--type` | string | — | Filter by observation type |
 | `--dry-run` | bool | false | Preview without modifying |
-| `--yes` | bool | false | Skip confirmation prompt |
 
 **Examples**:
 
@@ -652,9 +708,6 @@ engram retention prune --dry-run
 
 # Prune specific type only
 engram retention prune --type manual
-
-# Skip confirmation
-engram retention prune --yes
 ```
 
 ---
@@ -817,6 +870,10 @@ engram version
 |------|------|---------|-------------|
 | `--server` | string | `ENGRAM_SERVER_URL` env | Engram server URL |
 
+**Output**: Component-by-component health report with latency metrics and suggested actions.
+
+**Exit codes**: `0` = all healthy, `1` = some components unhealthy.
+
 **Examples**:
 
 ```bash
@@ -844,6 +901,7 @@ engram doctor --server http://localhost:7437
 | `ENGRAM_USER` | `mcp` | User identity for team mode |
 | `ENGRAM_SYNC_ENABLED` | `sync` | Enable offline-first sync |
 | `ENGRAM_SYNC_REPO` | `sync export/import` | Git sync repository path |
+| `ENGRAM_SYNC_AUTO_SYNC` | `sync push`, `sync setup` | Override auto-sync preference (set by `sync setup`) |
 
 ---
 
@@ -854,3 +912,17 @@ engram doctor --server http://localhost:7437
 | 0 | Success |
 | 1 | Error (connection failed, invalid input, etc.) |
 | 2 | Not implemented (store type doesn't support operation) |
+
+---
+
+## Related Documentation
+
+| Document | Description |
+|----------|-------------|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Backend selection, environment variables, profiles |
+| [OFFLINE-FIRST-SYNC.md](OFFLINE-FIRST-SYNC.md) | Sync architecture, enrollment, multi-server |
+| [SYNC-SETUP.md](SYNC-SETUP.md) | Step-by-step sync setup guide |
+| [API-REFERENCE.md](API-REFERENCE.md) | REST API endpoints |
+| [MCP-CONFIG.md](MCP-CONFIG.md) | MCP server configuration |
+| [01-QUICK-START.md](01-QUICK-START.md) | Getting started guide |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Local dev setup, testing workflow |

@@ -1,6 +1,6 @@
 # HU-015 — CLI Reference Manual
 
-**Status**: 🟡 In Progress
+**Status**: 🟢 Done
 **Owner**: @owner
 **Created**: 2026-08-11
 
@@ -36,33 +36,33 @@ This HU creates `docs/CLI-REFERENCE.md` — a complete reference manual for all 
 
 ## Acceptance Criteria
 
-- [ ] All 17+ commands documented with syntax, flags, and examples
-- [ ] `engram sync enroll` covers all HU-013 flags: `--interactive`, `--behavior`, `--exclude-server`
-- [ ] `engram sync unenroll` covers retention prompt behavior
-- [ ] `engram project id`, `engram migrate` documented with examples
-- [ ] `engram obsidian-export` documented with all options
-- [ ] `engram retention check/prune` documented with TTL behavior
-- [ ] Document links to relevant guides (DEPLOYMENT.md, OFFLINE-FIRST-SYNC.md, etc.)
-- [ ] Created in `docs/CLI-REFERENCE.md`
+- [x] All 17+ commands documented with syntax, flags, and examples
+- [x] `engram sync enroll` covers all HU-013 flags: `--interactive`, `--behavior`, `--exclude-server`
+- [x] `engram sync unenroll` covers retention prompt behavior
+- [x] `engram project id`, `engram migrate` documented with examples
+- [x] `engram obsidian-export` documented with all options
+- [x] `engram retention check/prune` documented with TTL behavior
+- [x] Document links to relevant guides (DEPLOYMENT.md, OFFLINE-FIRST-SYNC.md, etc.)
+- [x] Created in `docs/CLI-REFERENCE.md`
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] Audit `src/Engram.Cli/Program.cs` for all commands and subcommands
-- [ ] Document global flags (`--help`, `--version`, `--json`)
-- [ ] Document `engram serve` command
-- [ ] Document `engram mcp` command
-- [ ] Document `engram search`, `engram save`, `engram context`, `engram stats`
-- [ ] Document `engram export`, `engram import`
-- [ ] Document `engram sync` subcommands: `status`, `enroll`, `unenroll`, `export`, `import`
-- [ ] Document `engram project id`, `engram migrate`
-- [ ] Document `engram promote`
-- [ ] Document `engram projects list/consolidate/prune`
-- [ ] Document `engram retention check/prune`
-- [ ] Document `engram obsidian-export`
-- [ ] Document `engram version`, `engram doctor`
-- [ ] Add to AGENTS.md or docs index if needed
+- [x] Audit `src/Engram.Cli/Program.cs` for all commands and subcommands
+- [x] Document global flags (`--help`, `--version`, `--json`)
+- [x] Document `engram serve` command
+- [x] Document `engram mcp` command
+- [x] Document `engram search`, `engram save`, `engram context`, `engram stats`
+- [x] Document `engram export`, `engram import`
+- [x] Document `engram sync` subcommands: `status`, `enroll`, `unenroll`, `export`, `import`
+- [x] Document `engram project id`, `engram migrate`
+- [x] Document `engram promote`
+- [x] Document `engram projects list/consolidate/prune`
+- [x] Document `engram retention check/prune`
+- [x] Document `engram obsidian-export`
+- [x] Document `engram version`, `engram doctor`
+- [x] Add to AGENTS.md or docs index if needed
 
 ---
 
