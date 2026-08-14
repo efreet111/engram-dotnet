@@ -96,6 +96,7 @@ public sealed record SyncProjectsConfig
 
         var serializer = new SerializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitEmptyCollections)
             .Build();
         var yaml = serializer.Serialize(this);
 
@@ -129,7 +130,7 @@ public sealed record SyncProjectsConfig
             mergedList.Add(new SyncProjectEntry
             {
                 Name = ep.Project,
-                Behavior = yamlEntry?.Behavior ?? ep.Behavior,
+                Behavior = string.IsNullOrWhiteSpace(yamlEntry?.Behavior) ? ep.Behavior : yamlEntry.Behavior,
                 ExcludedServers = yamlEntry?.ExcludedServers ?? [],
             });
 
@@ -165,7 +166,7 @@ public sealed record SyncProjectsConfig
     public string GetBehavior(string project)
     {
         var entry = FindEntry(project);
-        return entry?.Behavior ?? DefaultBehavior;
+        return string.IsNullOrWhiteSpace(entry?.Behavior) ? DefaultBehavior : entry!.Behavior;
     }
 
     /// <summary>

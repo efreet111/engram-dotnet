@@ -108,8 +108,8 @@ public sealed class DockerRuntimePermissionsTests
     {
         var guide = ReadRepositoryFile("docs/DOCKER-VANILLA.md");
 
-        Assert.Contains("## 8. Volume permissions", guide, StringComparison.Ordinal);
-        Assert.Contains("## 9. Environment variables reference", guide, StringComparison.Ordinal);
+        Assert.Contains("## 9. Volume permissions", guide, StringComparison.Ordinal);
+        Assert.Contains("## 10. Environment variables reference", guide, StringComparison.Ordinal);
         Assert.Contains("chown -R engram:engram /data/engram", guide, StringComparison.Ordinal);
         Assert.Contains("exec gosu engram \"$@\"", guide, StringComparison.Ordinal);
         Assert.Contains("docker run -d --name engram", guide, StringComparison.Ordinal);
@@ -118,7 +118,7 @@ public sealed class DockerRuntimePermissionsTests
         Assert.Contains("ENGRAM_SYNC_ENABLED", guide, StringComparison.Ordinal);
         Assert.Contains("ENGRAM_AUTO_ENROLL", guide, StringComparison.Ordinal);
         Assert.Contains("ENGRAM_PROJECT", guide, StringComparison.Ordinal);
-        Assert.Contains("**Team mode (PostgreSQL, sync enabled)**", guide, StringComparison.Ordinal);
+        Assert.Contains("Large team, offline-first", guide, StringComparison.Ordinal);
         Assert.Contains("**Custom port**", guide, StringComparison.Ordinal);
     }
 
