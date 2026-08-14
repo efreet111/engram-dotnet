@@ -1,7 +1,7 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-07-21  
-> **Current version**: `main` (post ENG-473 relations FK fix)
+> **Last updated**: 2026-08-12  
+> **Current version**: `main` (post deployment profile system)
 
 **Orden de trabajo (qué hacer ahora):** [BACKLOG.md](BACKLOG.md) — cola única con IDs `ENG-xxx`.  
 **Al cerrar un ítem:** checklist en [`.cursor/skills/engram-docs-on-done/SKILL.md`](../.cursor/skills/engram-docs-on-done/SKILL.md).  
@@ -37,6 +37,10 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | ENG-435 rework cycle 2 | `4be21df` `62c1194` | Migration dry-run + mid-migration rollback integration tests. Closes rework cycle 2/3. |
 | ENG-456 | `5764ce1` | NoOpVerifier factory pattern — MCP server starts without `ANTHROPIC_API_KEY`. All 28 tools work; `mem_verify_artifact` returns structured `api_key_missing` error. 8 tests added. |
 | ENG-473 | `c88d31e` | Fix `relations add` FK constraint violation — `rel-cli-{date}` session was generated but never created, breaking `mem_relations` and `mem_lineage_obs`. Fix: `CreateSessionAsync()` before `SaveRelationAsync()`. |
+| ENG-476 | `0258675` | Sync-on-demand push — trigger push after each `mem_save`, `mem_update`, `mem_delete`. Immediate push on MCP startup. Status feedback via `/sync/status`. |
+| ENG-478 | `0aa35ed` | Docker vanilla build — fix NuGet version error (`dev` not valid SemVer) + `Dockerfile.debian` alternative for servers without `mcr.microsoft.com` access. |
+| ENG-479 | `159e26e` | Docker runtime permissions — `entrypoint.sh` + `gosu` for SQLite volume permissions. Full env var documentation. |
+| Deploy Profiles | `20b5e53` | Deployment profile system (Crhistian Mendoza) — 4 profiles: `local`, `remote-server`, `offline-first`, `desktop`. `DeployProfile.cs`, `deploy.sh` script, `DEPLOYMENT.md` guide. HU-010/011/012, ADR-011/012. |
 
 ---
 
@@ -145,6 +149,27 @@ Config file `~/.engram/config.json` to switch between backends:
 {"backend": "sqlite", "sqlite_path": "~/.engram/engram.db"}
 ```
 
+#### Developer Experience (ENG-480 to ENG-487)
+
+> **Status**: Documented (HU-050 to HU-057)  
+> **Priority**: P1 (quick wins) + P2 (future)
+
+Quick wins (P1):
+- **ENG-480**: Quick-capture CLI (`engram "<memo>"`) — S effort
+- **ENG-481**: Git hooks integration (`engram init`) — S-M effort
+- **ENG-482**: Dev-facing observability (`engram stats` improved) — M effort
+
+Future features (P2):
+- **ENG-483**: Code-aware memory capture (`engram watch`) — L effort
+- **ENG-484**: Code-context query tools (`mem_recall_for_*`) — L effort (requires ENG-416 schema evolution)
+- **ENG-485**: Onboarding flow for teams (`engram onboard`) — L effort
+
+Visionary (Deferred):
+- **ENG-486**: MCP registry (npm-like for memories) — XL effort
+- **ENG-487**: Cross-functional team memory (namespaces) — L-XL effort
+
+See [HU-050 to HU-057](tasks/HU-001-HU-099/) for full specs.
+
 ---
 
 ---
@@ -252,11 +277,16 @@ Add user/password authentication to protect the server from unauthorized access.
 
 **Reemplazado por la cola única:** [BACKLOG.md — Cola de ejecución](BACKLOG.md#cola-de-ejecución).
 
-Resumen P0/P1 (mayo–junio 2026):
+Resumen P0/P1 (agosto 2026):
 
 1. ✅  ~~Cerrar commit pendiente MCP/setup (ENG-201)~~
 2. ✅  ~~OSS + templates GitHub (ENG-202–203)~~
 3. ✅  ~~Pinear MCP SDK + auditoría docs (ENG-204–205)~~
 4. ✅  ~~PostgreSQL tests (ENG-206)~~  
 5. 🔲 Logging infrastructure (ENG-207)
-6. ✅ Instalador (ENG-301 — done in FlowForge v0.1.0-alpha.2); 🔲 wizard/unified-guide (ENG-302, ENG-303 pending)
+6. ✅  ~~Instalador (ENG-301 — done in FlowForge v0.1.0-alpha.2)~~
+7. ✅  ~~Sync failure feedback (ENG-459)~~
+8. ✅  ~~Sync-on-demand push (ENG-476)~~
+9. ✅  ~~Docker vanilla + runtime permissions (ENG-478, ENG-479)~~
+10. ✅  ~~Deployment profile system (Crhistian Mendoza)~~
+11. 🔲 Developer experience quick wins (ENG-480, ENG-481, ENG-482)

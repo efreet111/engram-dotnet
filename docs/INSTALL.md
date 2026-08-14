@@ -123,8 +123,27 @@ For teams, use the provided `docker-compose.yml`:
 cd docker/
 cp .env.example .env
 # Edit .env with your PostgreSQL credentials
+# Set ENGRAM_PROFILE to one of: local, remote-server, offline-first, desktop
 docker compose up -d
 ```
+
+**Deployment Profiles** (NEW): Simplify setup with `ENGRAM_PROFILE`:
+
+```bash
+# Solo developer (SQLite, no sync)
+ENGRAM_PROFILE=local docker compose up -d
+
+# Small team (PostgreSQL, shared DB)
+ENGRAM_PROFILE=remote-server ENGRAM_PG_CONNECTION="..." docker compose up -d
+
+# Large team (offline-first sync)
+ENGRAM_PROFILE=offline-first ENGRAM_SERVER_URL="..." docker compose up -d
+
+# Desktop app (PostgreSQL + sync)
+ENGRAM_PROFILE=desktop ENGRAM_PG_CONNECTION="..." ENGRAM_SERVER_URL="..." docker compose up -d
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full guide.
 
 **See also**: [Docker README](../docker/README.md) for advanced configuration.
 

@@ -31,12 +31,17 @@ src/
 └── Engram.Cli/          ← CLI entry point (System.CommandLine)
 
 tests/
-├── Engram.Store.Tests/       ← 170 store tests
-├── Engram.Server.Tests/      ← 63 HTTP API tests
-├── Engram.Sync.Tests/        ← 32 sync tests
-├── Engram.Mcp.Tests/         ← 61 MCP tool tests
+├── Engram.Store.Tests/       ← 277 store tests (272 passed, 5 skipped)
+├── Engram.Server.Tests/      ← 124 HTTP API tests (123 passed, 1 skipped)
+├── Engram.Sync.Tests/        ← 60 sync tests
+├── Engram.Mcp.Tests/         ← 117 MCP tool tests
+├── Engram.Cli.Tests/         ← 51 CLI tests
+├── Engram.Verification.Tests/ ← 51 verification tests
+├── Engram.Obsidian.Tests/    ← 77 Obsidian export tests
+├── Engram.HttpStore.Tests/   ← 32 HTTP store tests
+├── Engram.MdGeneration.Tests/ ← 17 markdown generation tests
 ├── Engram.Postgres.Tests/    ← PostgreSQL-specific tests
-└── Engram.Diagnostics.Tests/ ← Diagnostics tests
+└── Engram.Diagnostics.Tests/ ← 31 diagnostics tests (23 passed, 8 skipped)
 ```
 
 ---
