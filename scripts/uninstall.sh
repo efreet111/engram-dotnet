@@ -84,7 +84,7 @@ fi
 
 # Docker containers
 if command -v docker >/dev/null 2>&1; then
-    CONTAINERS=(engram engram-server engram-postgres-test engram-opencode)
+    CONTAINERS=(engram engram-server engram-postgres engram-postgres-test engram-opencode)
     for c in "${CONTAINERS[@]}"; do
         if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
             echo -n "  Removing Docker container $c... "
