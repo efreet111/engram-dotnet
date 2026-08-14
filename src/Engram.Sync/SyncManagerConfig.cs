@@ -47,6 +47,12 @@ public sealed record SyncManagerConfig
     public bool Enabled { get; init; } = true;
 
     /// <summary>
+    /// Whether the background auto-poll loop is active. When false, only on-demand
+    /// pushes (CLI or MCP trigger) execute. Default: true. Controlled by env ENGRAM_SYNC_AUTO_SYNC.
+    /// </summary>
+    public bool AutoSyncEnabled { get; init; } = true;
+
+    /// <summary>
     /// Creates a <see cref="SyncManagerConfig"/> from environment variables using the profile-based
     /// merge pattern: <c>explicit env var > profile default > hardcoded default</c>.
     /// Profile-aware properties: <see cref="TargetKey"/>, <see cref="PollInterval"/>, <see cref="Enabled"/>.
@@ -78,6 +84,7 @@ public sealed record SyncManagerConfig
             TargetKey = Resolve("ENGRAM_SYNC_TARGET", "cloud")!,
             PollInterval = ParseTimeSpanSeconds(Resolve("ENGRAM_SYNC_POLL_SECONDS"), 30),
             Enabled = ResolveBool("ENGRAM_SYNC_ENABLED", false),
+            AutoSyncEnabled = ResolveBool("ENGRAM_SYNC_AUTO_SYNC", true),
 
             // Non-profile properties (direct env vars only)
             LeaseOwner = Environment.GetEnvironmentVariable("ENGRAM_SYNC_LEASE_OWNER") 

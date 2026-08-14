@@ -1,6 +1,6 @@
 # HU-014 — Smart Sync Triggers
 
-**Status**: 🟡 In Progress
+**Status**: ✅ Complete
 **Owner**: @owner
 **Created**: 2026-08-11
 
@@ -12,28 +12,26 @@
 
 ## Acceptance Criteria
 
-- [ ] **R1 — Smart sync por proyecto**: el poll de 30s ya verifica si hay mutations pendientes por proyecto antes de hacer push. Si no hay pending para un proyecto, no se pushpea ese proyecto.
-- [ ] **R2 — CLI manual sync**: comando `engram sync push --project <nombre>` para hacer push manual de un proyecto específico. MCP también puede disparar sync manual (fire-and-forget) pero por proyecto, no global.
-- [ ] **R3 — Pull en device wake**: el poll de 30s ya cubre este escenario. Cuando el equipo despierta y el MCP/servicio arranca, el próximo ciclo de 30s hace pull de todos los servidores. Si hay múltiples servidores, aplica dedup via [RFC-006](docs/architecture/rfc/RFC-006-multi-server-pull-deduplication.md).
-- [ ] **R4 — Validación de trigger MCP**: el comportamiento actual de MCP (fire-and-forget después de `mem_save()`) necesita validarse — podría necesitar cambios para soportar sync por proyecto.
-- [ ] **R5 — Denylist por servidor**: desde HU-013, si un proyecto A está en denylist en Server 1 pero permitido en Server 2, los trigger pushes solo van a Server 2. Este comportamiento es ortogonal.
-- [ ] **R6 — Configuración inicial**: el usuario elige entre (a) auto-sync cada 30s solo para proyectos modificados, o (b) sync manual únicamente.
+- [x] **R1 — Smart sync por proyecto**: el poll de 30s ya verifica si hay mutations pendientes por proyecto antes de hacer push. Si no hay pending para un proyecto, no se pushpea ese proyecto.
+- [x] **R2 — CLI manual sync**: comando `engram sync push --project <nombre>` para hacer push manual de un proyecto específico. Incluye `--all` flag. MCP también puede disparar sync manual (fire-and-forget) pero por proyecto, no global.
+- [x] **R3 — Pull en device wake**: el poll de 30s ya cubre este escenario. Cuando el equipo despierta y el MCP/servicio arranca, el próximo ciclo de 30s hace pull de todos los servidores. Si hay múltiples servidores, aplica dedup via [RFC-006](docs/architecture/rfc/RFC-006-multi-server-pull-deduplication.md).
+- [x] **R4 — Validación de trigger MCP**: `mem_save()` acepta parámetro `sync_project` (bool, default false = global). Mantiene backward compatibility.
+- [x] **R5 — Denylist por servidor**: desde HU-013, si un proyecto A está en denylist en Server 1 pero permitido en Server 2, los trigger pushes solo van a Server 2. Este comportamiento es ortogonal.
+- [x] **R6 — Configuración inicial**: el usuario elige entre (a) auto-sync cada 30s solo para proyectos modificados, o (b) sync manual únicamente. Comando `engram sync setup` interactivo.
 
 ---
 
 ## Tasks (Implementation)
 
-> Las siguientes tareas son placeholders. Se completarán durante la fase de desarrollo cuando se tenga el contexto de implementación.
-
-- [ ] **T1**: ~~Diseñar e implementar tracking de `pending mutations` por proyecto~~ (cubierto por poll de 30s)
-- [ ] **T2**: Modificar `TriggerPushAsync()` en MCP para filtrar por proyecto con mutations pendientes
-- [ ] **T3**: Agregar comando CLI `engram sync push --project <nombre>`
-- [ ] **T4**: Implementar trigger de sync en `mem_save()` con parámetro `sync_project=true`
-- [ ] **T5**: ~~Implementar pull automático en device wake~~ (cubierto por poll de 30s)
-- [ ] **T6**: Implementar dedup/merge de múltiples servidores en pull on wake (ver RFC-006)
-- [ ] **T7**: Implementar opción de configuración inicial (auto-sync 30s vs manual-only)
-- [ ] **T8**: Validar integración con denylist por servidor (HU-013)
-- [ ] **T9**: Escribir tests de integración para T2-T8
+- [x] **T1**: ~~Diseñar e implementar tracking de `pending mutations` por proyecto~~ (cubierto por poll de 30s)
+- [x] **T2**: Modificar `TriggerPushAsync()` en MCP para filtrar por proyecto con mutations pendientes
+- [x] **T3**: Agregar comando CLI `engram sync push --project <nombre>` (+ `--all` flag)
+- [x] **T4**: Implementar trigger de sync en `mem_save()` con parámetro `sync_project=true`
+- [x] **T5**: ~~Implementar pull automático en device wake~~ (cubierto por poll de 30s)
+- [x] **T6**: Implementar dedup/merge de múltiples servidores en pull on wake (ver RFC-006)
+- [x] **T7**: Implementar opción de configuración inicial (auto-sync 30s vs manual-only)
+- [x] **T8**: Validar integración con denylist por servidor (HU-013)
+- [x] **T9**: Escribir tests de integración para T2-T8 (31 tests nuevos)
 
 ---
 
@@ -74,5 +72,6 @@ El usuario elige en el setup inicial:
 |-------|-------|
 | **HU** | HU-014 |
 | **Título** | Smart Sync Triggers |
-| **Fase** | Pre-development |
+| **Fase** | ✅ Complete |
 | **Creado** | 2026-08-11 |
+| **Implementado** | 2026-08-11 |

@@ -127,6 +127,43 @@ public interface ILocalSyncStore
     /// Used for interactive enrollment — shows projects that need attention.
     /// </summary>
     Task<List<string>> ListDistinctProjectsWithPendingMutationsAsync(string targetKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Count pending local mutations grouped by project (source='local', acked_at IS NULL).
+    /// Returns all projects with pending counts, regardless of enrollment status.
+    /// Used by HU-014 for per-project smart sync triggers.
+    /// </summary>
+    Task<List<PendingProjectCount>> CountPendingMutationsByProjectAsync(string targetKey, CancellationToken ct = default);
+
+    // ─── RFC-006: Multi-server pull deduplication ────────────────────────────
+
+    /// <summary>
+    /// Get the last pulled sequence number for a specific server.
+    /// Used for per-server cursor tracking in multi-server pull (RFC-006).
+    /// </summary>
+    /// <param name="targetKey">Target key (e.g., "cloud")</param>
+    /// <param name="serverId">Server identifier (e.g., "server-A")</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Last pulled seq, or null if no cursor exists for this server</returns>
+    Task<long?> GetLastPulledSeqForServerAsync(string targetKey, string serverId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Set the last pulled sequence number for a specific server.
+    /// Persists the cursor so the next pull starts after this seq (RFC-006).
+    /// </summary>
+    /// <param name="targetKey">Target key (e.g., "cloud")</param>
+    /// <param name="serverId">Server identifier</param>
+    /// <param name="lastPulledSeq">New cursor value</param>
+    /// <param name="ct">Cancellation token</param>
+    Task SetLastPulledSeqForServerAsync(string targetKey, string serverId, long lastPulledSeq, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get all known server identifiers for multi-server pull.
+    /// Returns distinct server_id values from the pull cursor store (RFC-006).
+    /// </summary>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>List of server identifiers</returns>
+    Task<List<string>> GetKnownServerIdsAsync(CancellationToken ct = default);
 }
 
 /// <summary>
@@ -144,7 +181,8 @@ public sealed record SyncState(
     string? LeaseOwner,
     string? LeaseUntil,
     string? LastError,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    string ServerId = "cloud");
 
 /// <summary>
 /// Pending sync mutation from local store.

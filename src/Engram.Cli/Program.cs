@@ -47,6 +47,9 @@ serveCmd.AddOption(portOpt);
 serveCmd.AddOption(serveNoAutoEnrollOpt);
 serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
 {
+    // HU-014 R6: Apply sync config from ~/.engram/config.json before server construction.
+    // Only sets env var if not already explicitly set in the current process environment.
+    ApplySyncConfigFromFile();
     var envPort = Environment.GetEnvironmentVariable("ENGRAM_PORT");
     if (!string.IsNullOrEmpty(envPort) && int.TryParse(envPort, out var p)) port = p;
 
@@ -207,6 +210,10 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
         var syncProvider = sp.GetService<ISyncStatusProvider>();
         return new DiagnosticService(store, serverUrl: serverUrl, syncStatusProvider: syncProvider);
     });
+
+    // HU-014 R6: Apply sync config from ~/.engram/config.json before constructing SyncManagerConfig.
+    // Only sets env var if not already explicitly set in the current process environment.
+    ApplySyncConfigFromFile();
 
     // Register offline-first-sync services (Phase 2.4) — only when local store supports sync journal
     var syncConfig = SyncManagerConfig.FromEnvironment();
@@ -598,11 +605,177 @@ syncUnenrollCmd.SetHandler(async (string project) =>
     }
 }, unenrollProjectOpt);
 
+// sync push — manual push of pending mutations for a project or all projects (HU-014)
+var syncPushCmd = new Command("push", "Push pending mutations for a specific project or all enrolled projects");
+var syncPushProjectOpt = new Option<string>("--project", "Project to push mutations for");
+var syncPushTargetOpt = new Option<string>("--target", () => "cloud", "Target key for sync state");
+var syncPushAllOpt = new Option<bool>("--all", "Push all enrolled projects");
+syncPushCmd.AddOption(syncPushProjectOpt);
+syncPushCmd.AddOption(syncPushTargetOpt);
+syncPushCmd.AddOption(syncPushAllOpt);
+syncPushCmd.SetHandler(async (string project, string targetKey, bool all) =>
+{
+    // --all and --project are mutually exclusive
+    if (all && !string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --all and --project are mutually exclusive.");
+        return;
+    }
+
+    // Require at least one of --all or --project
+    if (!all && string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --project is required, or use --all to push all enrolled projects.");
+        return;
+    }
+
+    using var store = OpenStore();
+    if (store is not ILocalSyncStore localStore)
+    {
+        Console.Error.WriteLine("error: push is only supported for local SQLite/Postgres stores.");
+        return;
+    }
+
+    // Resolve server URL (once, before pushing one or many projects)
+    var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+    if (string.IsNullOrEmpty(serverUrl))
+    {
+        Console.Error.WriteLine("error: ENGRAM_SERVER_URL is not set. Cannot push without a sync server.");
+        return;
+    }
+
+    if (all)
+    {
+        // Push all enrolled projects
+        var enrolledProjects = await localStore.GetEnrolledProjectsLocalAsync();
+        var activeProjects = enrolledProjects
+            .Where(ep => ep.Behavior != "silent-skip")
+            .ToList();
+
+        if (activeProjects.Count == 0)
+        {
+            Console.WriteLine("No enrolled projects with active push behavior.");
+            return;
+        }
+
+        var totalPushed = 0;
+        foreach (var ep in activeProjects)
+        {
+            totalPushed += await PushProjectAsync(localStore, serverUrl, targetKey, ep.Project);
+        }
+
+        Console.WriteLine($"Done. Pushed mutations across {activeProjects.Count} project(s).");
+        return;
+    }
+
+    // ── Single project path ──
+
+    var behavior = await localStore.GetProjectBehaviorAsync(project);
+    if (behavior is null)
+    {
+        Console.Error.WriteLine($"error: project '{project}' is not enrolled for sync.");
+        Console.Error.WriteLine("  Run 'engram sync enroll --project {0}' to enroll.", project);
+        return;
+    }
+
+    if (behavior == "silent-skip")
+    {
+        Console.WriteLine($"Project '{project}' has silent-skip behavior — push skipped.");
+        return;
+    }
+
+    _ = await PushProjectAsync(localStore, serverUrl, targetKey, project);
+
+    // ── Shared push logic ──
+    // Returns number of accepted (acked) mutations.
+    async Task<int> PushProjectAsync(
+        ILocalSyncStore ls, string serverUrl, string targetKey, string projectName)
+    {
+        var pending = await ls.ListPendingSyncMutationsAsync(targetKey, 100);
+        var projectMutations = pending.Where(m =>
+            string.Equals(m.Project, projectName, StringComparison.Ordinal)).ToList();
+
+        if (projectMutations.Count == 0)
+        {
+            Console.WriteLine($"No pending mutations for project '{projectName}'.");
+            return 0;
+        }
+
+        Console.WriteLine($"Pushing {projectMutations.Count} mutation(s) for project '{projectName}' to {serverUrl}...");
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var user = Environment.GetEnvironmentVariable("ENGRAM_USER");
+            var transport = new Engram.Sync.Transport.MutationTransport(client, serverUrl, user);
+
+            var entries = projectMutations.Select(m =>
+                new Engram.Sync.Transport.MutationEntry(m.Project, m.Entity, m.EntityKey, m.Op, m.Payload)).ToList();
+
+            var leaseOwner = $"{Environment.MachineName}-{Environment.ProcessId}-cli-push";
+            var result = await transport.PushMutationsAsync(entries, leaseOwner);
+
+            if (!string.IsNullOrEmpty(result.PauseError))
+            {
+                Console.Error.WriteLine($"error: push paused for project '{projectName}' — {result.PauseError}");
+                return 0;
+            }
+
+            // Ack the pushed mutations
+            await ls.AckSyncMutationSeqsAsync(targetKey, result.AcceptedSeqs);
+
+            Console.WriteLine($"✓ Pushed {result.AcceptedSeqs.Count} mutation(s) for project '{projectName}'.");
+            return result.AcceptedSeqs.Count;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"error: push failed for project '{projectName}' — {ex.Message}");
+            return 0;
+        }
+    }
+}, syncPushProjectOpt, syncPushTargetOpt, syncPushAllOpt);
+
 syncCmd.AddCommand(syncStatusCmd);
 syncCmd.AddCommand(syncExportCmd);
 syncCmd.AddCommand(syncImportCmd);
 syncCmd.AddCommand(syncEnrollCmd);
 syncCmd.AddCommand(syncUnenrollCmd);
+syncCmd.AddCommand(syncPushCmd);
+
+// sync setup — initial sync configuration wizard (HU-014 R6)
+var syncSetupCmd = new Command("setup", "Interactive initial sync setup (auto-sync on/off)");
+syncSetupCmd.SetHandler(() =>
+{
+    Console.WriteLine("Engram Sync — Initial Setup");
+    Console.WriteLine("============================");
+    Console.WriteLine();
+
+    var currentAutoSync = LoadSyncConfigFromFile();
+    var currentLabel = currentAutoSync ? "enabled" : "disabled";
+
+    Console.Write($"Enable auto-sync every 30s for projects with pending mutations? (Y/n) [Y]: ");
+    var answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "";
+
+    var enableAutoSync = answer != "n" && answer != "no";
+
+    if (currentAutoSync == enableAutoSync)
+    {
+        Console.WriteLine($"Auto-sync is already {currentLabel}. No changes needed.");
+        return;
+    }
+
+    SaveSyncConfigToFile(enableAutoSync);
+    var newLabel = enableAutoSync ? "enabled" : "disabled";
+    Console.WriteLine($"Auto-sync {newLabel}.");
+    Console.WriteLine();
+
+    if (enableAutoSync)
+        Console.WriteLine("✓ SyncManager will poll every 30s, pushing only projects with pending mutations.");
+    else
+        Console.WriteLine("✓ Auto-sync disabled. Use 'engram sync push --project <name>' for manual sync.");
+    Console.WriteLine("  Restart engram server/mcp for changes to take effect.");
+});
+syncCmd.AddCommand(syncSetupCmd);
 
 // ─── project id (ENG-432) ─────────────────────────────────────────────────────
 
@@ -1754,6 +1927,98 @@ static bool IsAutoEnrollDisabledInConfig()
         return false;
     }
     catch { return false; }
+}
+
+/// <summary>
+/// HU-014 R6: Lee auto_sync desde ~/.engram/config.json.
+/// Devuelve true si auto_sync está habilitado (default), false si deshabilitado.
+/// </summary>
+static bool LoadSyncConfigFromFile()
+{
+    try
+    {
+        var configPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".engram", "config.json");
+        if (!File.Exists(configPath)) return true; // default: enabled
+
+        var json = File.ReadAllText(configPath);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("auto_sync", out var autoSyncProp))
+        {
+            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.False)
+                return false;
+            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.Number
+                && autoSyncProp.GetInt32() == 0)
+                return false;
+        }
+        return true;
+    }
+    catch { return true; }
+}
+
+/// <summary>
+/// HU-014 R6: Guarda la preferencia auto_sync en ~/.engram/config.json.
+/// Preserva las propiedades existentes (ej: auto_enroll).
+/// </summary>
+static void SaveSyncConfigToFile(bool enabled)
+{
+    var configDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".engram");
+    Directory.CreateDirectory(configDir);
+
+    var configPath = Path.Combine(configDir, "config.json");
+
+    // Read existing config or create new
+    var config = new Dictionary<string, object>();
+    if (File.Exists(configPath))
+    {
+        try
+        {
+            var json = File.ReadAllText(configPath);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.NameEquals("auto_sync")) continue; // will be overwritten
+                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.True)
+                    config[prop.Name] = true;
+                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.False)
+                    config[prop.Name] = false;
+                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    config[prop.Name] = prop.Value.GetInt32();
+                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    config[prop.Name] = prop.Value.GetString() ?? "";
+            }
+        }
+        catch
+        {
+            // If parse fails, overwrite cleanly
+        }
+    }
+
+    config["auto_sync"] = enabled;
+
+    var output = System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions
+    {
+        WriteIndented = true,
+    });
+    File.WriteAllText(configPath, output);
+}
+
+/// <summary>
+/// HU-014 R6: Aplica la configuración de sync desde ~/.engram/config.json
+/// al entorno del proceso actual. Solo sobrescribe ENGRAM_SYNC_AUTO_SYNC
+/// si no fue explícitamente seteada en el entorno (la env var explícita siempre gana).
+/// </summary>
+static void ApplySyncConfigFromFile()
+{
+    // Explicit env var always wins — don't override user intent
+    if (Environment.GetEnvironmentVariable("ENGRAM_SYNC_AUTO_SYNC") is not null)
+        return;
+
+    var autoSync = LoadSyncConfigFromFile();
+    Environment.SetEnvironmentVariable("ENGRAM_SYNC_AUTO_SYNC", autoSync ? "true" : "false");
 }
 
 /// <summary>

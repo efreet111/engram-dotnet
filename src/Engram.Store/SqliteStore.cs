@@ -263,6 +263,22 @@ CREATE TABLE IF NOT EXISTS observations (
         // ENG-514: Add behavior column for multi-project sync management (HU-013)
         AddColumnIfNotExists("sync_enrolled_projects", "behavior", "TEXT NOT NULL DEFAULT 'fail-loud'");
 
+        // RFC-006: Add server_id to sync_state for multi-server pull deduplication
+        AddColumnIfNotExists("sync_state", "server_id", "TEXT");
+
+        // RFC-006: Per-server pull cursor store for multi-server pull
+        // Separate from sync_state to avoid PK conflicts — sync_state PK is (target_key).
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS sync_pull_cursors (
+                target_key      TEXT NOT NULL,
+                server_id       TEXT NOT NULL,
+                last_pulled_seq INTEGER NOT NULL DEFAULT 0,
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (target_key, server_id)
+            );
+        ");
+        Exec("CREATE INDEX IF NOT EXISTS idx_sync_pull_cursors_server ON sync_pull_cursors(server_id);");
+
         Exec(@"
             CREATE TABLE IF NOT EXISTS project_migrations (
                 from_project TEXT PRIMARY KEY,
@@ -312,7 +328,7 @@ CREATE TABLE IF NOT EXISTS observations (
         Exec("UPDATE observations SET sync_id = 'obs-' || lower(hex(randomblob(16))) WHERE sync_id IS NULL OR sync_id = ''");
         Exec("UPDATE user_prompts SET project = '' WHERE project IS NULL");
         Exec("UPDATE user_prompts SET sync_id = 'prompt-' || lower(hex(randomblob(16))) WHERE sync_id IS NULL OR sync_id = ''");
-        Exec("INSERT OR IGNORE INTO sync_state (target_key, lifecycle, updated_at) VALUES ('cloud', 'idle', datetime('now'))");
+        Exec("INSERT OR IGNORE INTO sync_state (target_key, lifecycle, server_id, updated_at) VALUES ('cloud', 'idle', 'cloud', datetime('now'))");
 
         // FTS triggers (idempotent check)
         if (!TriggerExists("obs_fts_insert"))
@@ -2030,7 +2046,8 @@ CREATE TABLE IF NOT EXISTS observations (
         using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
             SELECT target_key, lifecycle, last_enqueued_seq, last_acked_seq, last_pulled_seq,
-                   consecutive_failures, backoff_until, lease_owner, lease_until, last_error, updated_at
+                   consecutive_failures, backoff_until, lease_owner, lease_until, last_error, updated_at,
+                   COALESCE(server_id, 'cloud')
             FROM sync_state WHERE target_key = @target";
         cmd.Parameters.AddWithValue("@target", targetKey);
 
@@ -2043,7 +2060,8 @@ CREATE TABLE IF NOT EXISTS observations (
             r.IsDBNull(7) ? null : r.GetString(7),
             r.IsDBNull(8) ? null : r.GetString(8),
             r.IsDBNull(9) ? null : r.GetString(9),
-            DateTime.Parse(r.GetString(10))
+            DateTime.Parse(r.GetString(10)),
+            r.IsDBNull(11) ? "cloud" : r.GetString(11)
         ));
     }
 
@@ -2186,6 +2204,97 @@ CREATE TABLE IF NOT EXISTS observations (
         {
             list.Add(r.GetString(0));
         }
+        return Task.FromResult(list);
+    }
+
+    public Task<List<PendingProjectCount>> CountPendingMutationsByProjectAsync(string targetKey, CancellationToken ct = default)
+    {
+        var list = new List<PendingProjectCount>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT project, COUNT(*) FROM sync_mutations
+            WHERE target_key = @target AND source = 'local' AND acked_at IS NULL AND project != ''
+            GROUP BY project";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new PendingProjectCount(r.GetString(0), r.GetInt64(1)));
+        }
+        return Task.FromResult(list);
+    }
+
+    // ─── RFC-006: Multi-server pull cursor store ─────────────────────────────
+
+    /// <summary>
+    /// Get the last pulled sequence number for a specific server.
+    /// Uses the dedicated sync_pull_cursors table (RFC-006 §2.1).
+    /// Falls back to sync_state.last_pulled_seq for backward compatibility.
+    /// </summary>
+    public Task<long?> GetLastPulledSeqForServerAsync(string targetKey, string serverId, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT last_pulled_seq FROM sync_pull_cursors
+            WHERE target_key = @target AND server_id = @server";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@server", serverId);
+        var result = cmd.ExecuteScalar();
+        if (result is not null && result != DBNull.Value)
+            return Task.FromResult<long?>((long)result);
+
+        // Fallback: use sync_state.last_pulled_seq for backward compat
+        using var fallbackCmd = _db.CreateCommand();
+        fallbackCmd.CommandText = @"
+            SELECT last_pulled_seq FROM sync_state WHERE target_key = @target";
+        fallbackCmd.Parameters.AddWithValue("@target", targetKey);
+        var fallbackResult = fallbackCmd.ExecuteScalar();
+        return Task.FromResult<long?>(fallbackResult is not null && fallbackResult != DBNull.Value ? (long)fallbackResult : 0);
+    }
+
+    /// <summary>
+    /// Set the last pulled sequence number for a specific server (RFC-006 §2.1).
+    /// Uses INSERT OR REPLACE for idempotent upsert into sync_pull_cursors.
+    /// </summary>
+    public Task SetLastPulledSeqForServerAsync(string targetKey, string serverId, long lastPulledSeq, CancellationToken ct = default)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO sync_pull_cursors (target_key, server_id, last_pulled_seq, updated_at)
+            VALUES (@target, @server, @seq, datetime('now'))
+            ON CONFLICT(target_key, server_id) DO UPDATE SET
+                last_pulled_seq = MAX(last_pulled_seq, @seq),
+                updated_at = datetime('now')";
+        cmd.Parameters.AddWithValue("@target", targetKey);
+        cmd.Parameters.AddWithValue("@server", serverId);
+        cmd.Parameters.AddWithValue("@seq", lastPulledSeq);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Get all known server identifiers for multi-server pull (RFC-006 §2.2).
+    /// Returns distinct server_id values from sync_pull_cursors plus the default
+    /// server_id from sync_state if no per-server cursors exist yet.
+    /// </summary>
+    public Task<List<string>> GetKnownServerIdsAsync(CancellationToken ct = default)
+    {
+        var list = new List<string>();
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT DISTINCT server_id FROM sync_pull_cursors
+            UNION
+            SELECT COALESCE(server_id, 'cloud') FROM sync_state
+            WHERE target_key = 'cloud'
+              AND COALESCE(server_id, 'cloud') NOT IN (SELECT server_id FROM sync_pull_cursors)";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(r.GetString(0));
+        }
+        // Always ensure 'cloud' is available as fallback
+        if (list.Count == 0)
+            list.Add("cloud");
         return Task.FromResult(list);
     }
 
@@ -3001,7 +3110,7 @@ CREATE TABLE IF NOT EXISTS observations (
         }
 
         Exec(tx,
-            "INSERT OR IGNORE INTO sync_state (target_key, lifecycle, updated_at) VALUES ('cloud', 'idle', datetime('now'))");
+            "INSERT OR IGNORE INTO sync_state (target_key, lifecycle, server_id, updated_at) VALUES ('cloud', 'idle', 'cloud', datetime('now'))");
 
         Exec(tx,
             "INSERT INTO sync_mutations (target_key, entity, entity_key, op, payload, source, project) VALUES ('cloud', @ent, @key, @op, @payload, 'local', @proj)",
