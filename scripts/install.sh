@@ -167,14 +167,17 @@ elif [[ "$METHOD" == "2" ]]; then
     info "  Compilando (puede tardar varios minutos)..."
     REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
     if [[ ! -f "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" ]]; then
-        error "No se encontró el repo. Clonalo o specify la ruta."
+        error "No se encontró el repo. Clonalo o especificá la ruta."
         exit 1
     fi
     RID="linux-x64"
     [[ "$(uname -s)" == "Darwin" ]] && RID="macos-x64"
+    TMPDIR="${HOME}/.local/tmp-engram"
     dotnet publish "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" \
         -c Release -r "$RID" --self-contained false \
-        -o "${HOME}/.local/tmp-engram && mv "${HOME}/.local/tmp-engram/engram" "$ENGRAM_CMD" && rm -rf "${HOME}/.local/tmp-engram"
+        -o "$TMPDIR"
+    mv "${TMPDIR}/engram" "$ENGRAM_CMD"
+    rm -rf "$TMPDIR"
     chmod +x "$ENGRAM_CMD"
 
 elif [[ "$METHOD" == "3" ]]; then
@@ -229,66 +232,51 @@ fi
 echo ""
 info "7. Configurando MCP..."
 
-# Armar env vars para el bloque MCP
-declare -A MCP_ENV
-MCP_ENV[ENGRAM_DATA_DIR]="$DATA_DIR"
-MCP_ENV[ENGRAM_USER]="$ENGRAM_USER"
-MCP_ENV[ENGRAM_PROFILE]="$PROFILE"
-MCP_ENV[ENGRAM_SYNC_ENABLED]="$SYNC_ENABLED"
-
-[[ -n "$SERVER_URL" ]] && MCP_ENV[ENGRAM_SERVER_URL]="$SERVER_URL"
-[[ -n "$PG_CONNECTION" ]] && MCP_ENV[ENGRAM_PG_CONNECTION]="$PG_CONNECTION"
-
-# JSON env block
-ENV_JSON=$(printf '        "%s": "%s",\n' \
-    "${!MCP_ENV[@]}" \
-    "${MCP_ENV[@]}" | sort | sed 's/^/    /' | sed '$ s/,$//')
-
-# Si es método Docker, el command cambia
-if [[ "$METHOD" == "3" ]]; then
-    MCP_COMMAND='["docker", "run", "--rm", "-i", "ghcr.io/efreet111/engram-dotnet:latest", "engram", "mcp"]'
-else
-    MCP_COMMAND='["'"$ENGRAM_CMD"'", "mcp"]'
-fi
-
-MCP_BLOCK=$(cat << JSON
-{
-  "command": ["engram", "mcp"],
-  "env": {
-    "ENGRAM_DATA_DIR": "$DATA_DIR",
-    "ENGRAM_USER": "$ENGRAM_USER",
-    "ENGRAM_PROFILE": "$PROFILE",
-    "ENGRAM_SYNC_ENABLED": "$SYNC_ENABLED"
-    $([[ -n "$SERVER_URL" ]] && echo "," && echo "    \"ENGRAM_SERVER_URL\": \"$SERVER_URL\"")
-    $([[ -n "$PG_CONNECTION" ]] && echo "," && echo "    \"ENGRAM_PG_CONNECTION\": \"$PG_CONNECTION\"")
-  }
-}
-JSON
-)
-
+# Función para escribir config
 write_mcp_config() {
     local target="$1"
     local root_key="$2"
     mkdir -p "$(dirname "$target")"
 
-    if [[ -f "$target" ]]; then
-        # Merge con config existente
-        local tmp=$(mktemp)
-        python3 - "$target" "$MCP_BLOCK" "$root_key" << 'PY'
+    # Build del JSON manualmente para evitar issues con heredocs
+    local json
+    json=$(python3 - "$target" "$root_key" "$DATA_DIR" "$ENGRAM_USER" "$PROFILE" "$SYNC_ENABLED" "$SERVER_URL" "$PG_CONNECTION" << 'PYTHON_SCRIPT'
 import json, sys
-path, block, key = sys.argv[1:]
-with open(path) as f: cfg = json.load(f)
-cfg.setdefault(key if key else "mcpServers", {})["engram"] = block
-with open(path, "w") as f: json.dump(cfg, f, indent=2)
-PY
-    else
-        python3 - "$target" "$MCP_BLOCK" "$root_key" << 'PY'
-import json, sys
-path, block, key = sys.argv[1:]
-root = {key if key else "mcpServers": {"engram": block}}
-with open(path, "w") as f: json.dump(root, f, indent=2)
-PY
-    fi
+path = sys.argv[1]
+key = sys.argv[2]
+data_dir = sys.argv[3]
+user = sys.argv[4]
+profile = sys.argv[5]
+sync_enabled = sys.argv[6]
+server_url = sys.argv[7] if len(sys.argv) > 7 else ""
+pg_connection = sys.argv[8] if len(sys.argv) > 8 else ""
+
+env = {
+    "ENGRAM_DATA_DIR": data_dir,
+    "ENGRAM_USER": user,
+    "ENGRAM_PROFILE": profile,
+    "ENGRAM_SYNC_ENABLED": sync_enabled,
+}
+if server_url:
+    env["ENGRAM_SERVER_URL"] = server_url
+if pg_connection:
+    env["ENGRAM_PG_CONNECTION"] = pg_connection
+
+block = {
+    "command": ["engram", "mcp"],
+    "env": env
+}
+
+if key == "mcp":
+    # Formato OpenCode
+    root = {"mcp": {"engram": block}}
+else:
+    root = {key: {"engram": block}}
+
+with open(path, "w") as f:
+    json.dump(root, f, indent=2)
+PYTHON_SCRIPT
+    )
     info "  Escrito: $target"
 }
 
