@@ -70,6 +70,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV ENGRAM_DATA_DIR=/data/engram
 ENV ENGRAM_PORT=7437
+ENV ENGRAM_PROFILE=local
 ENV ASPNETCORE_URLS=http://+:7437
 
 EXPOSE 7437

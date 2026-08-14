@@ -44,13 +44,48 @@ Original artifacts:
 
 ---
 
-## 📝 Notes
+---
 
-This HU was created during FlowDoc adoption (2026-06-01) to consolidate documentation into the FlowDoc structure.
+## As a user...
+
+**As**: Developer or IT admin
+**I want**: run `engram serve` with PostgreSQL as the persistence backend
+**To**: handle 10+ concurrent writers, enable enterprise-grade backup, HA, and observability
 
 ---
 
-## 🔄 Migration Reference
+## Acceptance Criteria
+
+- [ ] `PostgresStore.cs` implements all 22 `IStore` methods
+- [ ] `StoreConfig` extended with `DbType` and `PgConnectionString`
+- [ ] `Program.cs` switches backend via `ENGRAM_DB_TYPE` / `ENGRAM_PG_CONNECTION` env vars
+- [ ] PostgreSQL schema created via idempotent in-code migrations
+- [ ] Full-text search implemented via `tsvector` stored generated column + GIN index
+- [ ] Parity test suite runs the same tests against `SqliteStore` and `PostgresStore`
+- [ ] Docker Compose includes PostgreSQL companion service
+- [ ] `docs/POSTGRES-SETUP.md` documentation created/updated
+- [ ] `docs/ARCHITECTURE.md` updated to reflect the new backend option
+
+---
+
+## Tasks (Implementation)
+
+- [ ] Implement `PostgresStore.cs` — all 22 `IStore` methods
+- [ ] Extend `StoreConfig` with `DbType` and `PgConnectionString`
+- [ ] Update `Program.cs` with backend selection via env vars
+- [ ] Implement PostgreSQL schema migrations (idempotent, in-code)
+- [ ] Implement FTS via `tsvector` stored generated column + GIN index
+- [ ] Write parity test suite (same tests for SqliteStore and PostgresStore)
+- [ ] Create Docker Compose with PostgreSQL companion
+- [ ] Write `docs/POSTGRES-SETUP.md`
+- [ ] Update `docs/ARCHITECTURE.md`
+- [ ] Run T3 (Docker + Postgres integration tests)
+
+---
+
+## 📝 Notes
+
+This HU was created during FlowDoc adoption (2026-06-01) to consolidate documentation into the FlowDoc structure.
 
 Original location: `sdd/postgres-backend/`
 Current status: Migrated to FlowDoc

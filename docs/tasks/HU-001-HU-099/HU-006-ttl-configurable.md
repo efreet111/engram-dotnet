@@ -1,4 +1,4 @@
-# HU-006: ttl-configurable
+# HU-006: TTL Configurable
 
 **Status**: 🟡 In Progress
 **Owner**: @owner
@@ -7,48 +7,46 @@
 
 ---
 
-## 🎯 Intent
+## As a user...
 
-Implementar un sistema de 3 capas para mantener la memoria de Engram útil a largo plazo:
-1. **Métricas de retención** — visibilidad del estado de la memoria
-2. **TTL configurable** — expiración automática de observaciones viejas
-3. **Interconexión de proyectos** — redirect hints para proyectos renombrados/consolidados
-
----
-
-## 📋 Scope
-
-### In Scope (100% engram-dotnet)
-- Capa 1: Métricas de retención (endpoint, CLI, MCP tool)
-- Capa 2: TTL configurable (store method, CLI, config)
-- Capa 3: Redirect hints en search results (store + server)
-
-### Out Scope (depende del agente)
-- El agente siguiendo redirects automáticamente (el agente decide si usa el campo `redirect`)
-- UI visual para métricas (solo CLI + JSON por ahora)
-- Archive/export automático de observaciones expiradas (fase posterior)
+**As**: Developer / IT Admin
+**I want**: que las observaciones de Engram tengan TTL configurable y que haya visibilidad del estado de la memoria
+**To**: mantener la memoria útil a largo plazo, expirar automáticamente observaciones viejas, y manejar proyectos renombrados/consolidados con redirect hints
 
 ---
 
-## 🔗 Origin
+## Acceptance Criteria
 
-Migrated from `sdd/ttl-configurable/`
-
-Original artifacts:
-- Proposal: `sdd/ttl-configurable/propose/proposal.md`
-- Spec: `sdd/ttl-configurable/specs/memory-retention/spec.md`
-
----
-
-## 📝 Notes
-
-This HU was created during FlowDoc adoption (2026-06-01) to consolidate documentation into the FlowDoc structure.
+- [ ] Capa 1: Métricas de retención visibles via endpoint, CLI y MCP tool
+- [ ] Capa 2: TTL configurable por store method, CLI y config
+- [ ] Capa 3: Redirect hints en search results (store + server)
+- [ ] Agente puede seguir redirects automáticamente (opcional, decide el agente)
+- [ ] CLI y JSON output para métricas (sin UI visual)
+- [ ] Archive/export de observaciones expiradas (opcional, fase posterior)
 
 ---
 
-## 🔄 Migration Reference
+## Tasks (Implementation)
 
-Original location: `sdd/ttl-configurable/`
-Current status: Migrated to FlowDoc
+- [ ] Implementar capa 1: endpoint/CLI/MCP tool de métricas de retención
+- [ ] Implementar capa 2: TTL configurable en store method
+- [ ] Implementar capa 3: redirect hints en search results
+- [ ] Agregar config de TTL al archivo de configuración
+- [ ] Documentar schema de redirect hints
 
-See `sdd/README.md` for full migration mapping.
+---
+
+## Notes
+
+### Implementation Notes
+
+ HU migrada de `sdd/ttl-configurable/`. Fue creada durante adopción FlowDoc (2026-06-01) para consolidar documentación en la estructura FlowDoc. No se implementó código — la HU refleja el diseño planificado de las 3 capas de retención.
+
+### 🔄 Migration Reference
+
+- Original location: `sdd/ttl-configurable/`
+- Original artifacts:
+  - Proposal: `sdd/ttl-configurable/propose/proposal.md`
+  - Spec: `sdd/ttl-configurable/specs/memory-retention/spec.md`
+- Current status: Migrated to FlowDoc
+- See `sdd/README.md` for full migration mapping.

@@ -5,32 +5,18 @@
 **Created**: 2026-06-01
 **Priority**: High (bloquea debugging en producción)
 **Effort**: 2-3h
-**Origin**: Migrated from `sdd/logging-infrastructure/`
 
 ---
 
-## 🎯 Intent
+## As a user...
 
-Implementar infraestructura de logging estructurado para todos los requests HTTP y responses, permitiendo debugging en producción.
-
----
-
-## 📋 Scope
-
-### In Scope
-- Request/Response logging middleware
-- Structured JSON logs (machine-parseable)
-- POST body error debugging (body preview on deserialization errors)
-- Global exception handler (todas las rutas)
-
-### Out of Scope
-- Logging a archivo (solo stdout/console)
-- Log rotation
-- Log aggregation infrastructure
+**As**: Developer
+**I want**: que todos los requests HTTP y responses tengan logging estructurado
+**To**: poder hacer debugging en producción cuando algo falla
 
 ---
 
-## ✅ Requirements
+## Acceptance Criteria
 
 ### MUST
 
@@ -47,54 +33,25 @@ Implementar infraestructura de logging estructurado para todos los requests HTTP
 
 ---
 
-## 🧪 Scenarios
+## Tasks (Implementation)
 
-### Scenario: Request logged
-- GIVEN any request to any endpoint
-- WHEN the request is received
-- THEN log method, path, status code, duration, and client IP
-
-### Scenario: Error response logged
-- GIVEN a request that causes a 5xx error
-- WHEN the response is sent
-- THEN log the full error details (message, stack trace, exception type)
-
-### Scenario: Invalid JSON logged
-- GIVEN a POST request with malformed JSON body
-- WHEN deserialization fails
-- THEN log the first 1KB of the raw body and the JSON error
-
-### Scenario: All routes covered
-- GIVEN any route throws an exception
-- WHEN the exception is caught
-- THEN the response includes `{ error, type }` JSON
+- [ ] Implementar request/response logging middleware en EngramServer
+- [ ] Agregar body debug logging en CloudSyncEndpoints
+- [ ] Implementar global exception handler con coverage total
+- [ ] Verificar que logs salen a stdout en formato JSON estructurado
+- [ ] Testear POST body preview en deserialization errors
 
 ---
 
-## 📦 Affected Areas
+## Notes
 
-- `src/Engram.Server/EngramServer.cs` — add logging middleware
-- `src/Engram.Server/CloudSyncEndpoints.cs` — add body debug logging
+### Implementation Notes
 
----
+ HU migrada de `sdd/logging-infrastructure/`. Original spec: `sdd/logging-infrastructure/specs/logging-infrastructure.md`. Relacionada con global exception handler (commit da5c431) — actualmente parcialmente implementada pero no funciona para todos los casos.
 
-## 🔗 Origin
+### 🔄 Migration Reference
 
-Migrated from `sdd/logging-infrastructure/` (spec ready)
-
-Original spec: `sdd/logging-infrastructure/specs/logging-infrastructure.md`
-
----
-
-## 📝 Notes
-
-Related to global exception handler (commit da5c431) — currently partially implemented but not working for all cases.
-
----
-
-## 🔄 Migration Reference
-
-Original location: `sdd/logging-infrastructure/`
-Current status: Migrated to FlowDoc
-
-See `sdd/README.md` for full migration mapping.
+- Original location: `sdd/logging-infrastructure/`
+- Original spec: `sdd/logging-infrastructure/specs/logging-infrastructure.md`
+- Current status: Migrated to FlowDoc
+- See `sdd/README.md` for full migration mapping.
