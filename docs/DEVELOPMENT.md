@@ -71,6 +71,38 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Engram.Cli -- serve
 
 ---
 
+## Environment Variables
+
+Referencia de las variables de entorno por perfil. El wizard `scripts/install.sh`
+genera estas variables automáticamente según el perfil elegido.
+
+| Variable | Perfiles | Descripción |
+|----------|----------|-------------|
+| `ENGRAM_PROFILE` | todos | `local` · `offline-first` · `remote-server` · `desktop` |
+| `ENGRAM_DB_TYPE` | todos | `sqlite` (default) o `postgres` |
+| `ENGRAM_DATA_DIR` | todos | Directorio de datos locales (default `~/.engram`) |
+| `ENGRAM_USER` | offline-first, desktop | Identidad del usuario para sync en equipos |
+| `ENGRAM_SERVER_URL` | offline-first, desktop | URL del servidor de sync (`desktop` → `http://localhost:7437`) |
+| `ENGRAM_SYNC_ENABLED` | todos | `true` para offline-first/desktop, `false` para local/remote-server |
+| `ENGRAM_SYNC_AUTO_SYNC` | offline-first, desktop | Auto-sync en background (default `true`) |
+| `ENGRAM_PG_CONNECTION` | remote-server, desktop | Connection string PostgreSQL (formato `Host=…;Port=…;Database=…;Username=…;Password=…`) |
+| `ENGRAM_PG_HOST` / `ENGRAM_PG_PORT` | desktop (modo existente) | Host y puerto de un PostgreSQL ya existente |
+| `ENGRAM_PG_DATABASE` / `ENGRAM_PG_USER` / `ENGRAM_PG_PASSWORD` | desktop (modo existente) | Credenciales del PostgreSQL existente |
+
+**Notas:**
+
+- `local`: SQLite sin sync. No requiere variables de sync.
+- `offline-first`: SQLite local + sync a un servidor remoto (`ENGRAM_SERVER_URL` obligatorio).
+- `remote-server`: PostgreSQL compartido (`ENGRAM_PG_CONNECTION` obligatorio, sin localhost).
+- `desktop`: PostgreSQL + sync local vía Docker. El wizard ofrece 3 modos de
+  PostgreSQL (all-in-one / contenedor separado / existente) y genera
+  `docker-compose.yml` en `${ENGRAM_DATA_DIR}/desktop/`.
+
+Para más detalle ver [`docker/.env.example`](../docker/.env.example) y
+[`docs/tasks/HU-001-HU-099/HU-017-install-profile-refactor.md`](tasks/HU-001-HU-099/HU-017-install-profile-refactor.md).
+
+---
+
 ## Adding a New Endpoint
 
 1. Add the route handler in `EngramServer.cs`

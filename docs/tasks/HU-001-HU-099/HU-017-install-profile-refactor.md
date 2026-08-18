@@ -1,6 +1,6 @@
 # HU-017 — Refactor Install Profile System
 
-**Status**: Pre-development
+**Status**: Post-development (AC1–AC6 implementados — ver `scripts/install.sh`)
 **Owner**: @owner
 **Created**: 2026-08-18
 
@@ -37,52 +37,52 @@ The current `install.sh` has two fundamental problems:
 
 ### AC1 — Correct profile→method mapping
 
-- [ ] When user selects `local` → only methods **Release** and **Build from source** are offered
-- [ ] When user selects `offline-first` → only methods **Release** and **Build from source** are offered (no Docker)
-- [ ] When user selects `remote-server` → methods **Release**, **Build from source**, and **Docker** are offered
-- [ ] When user selects `desktop` → only method **Docker** is offered (postgresql in Docker, client local SQLite)
+- [x] When user selects `local` → only methods **Release** and **Build from source** are offered
+- [x] When user selects `offline-first` → only methods **Release** and **Build from source** are offered (no Docker)
+- [x] When user selects `remote-server` → methods **Release**, **Build from source**, and **Docker** are offered
+- [x] When user selects `desktop` → only method **Docker** is offered (postgresql in Docker, client local SQLite)
 
 ### AC2 — Profile-first wizard flow
 
-- [ ] Step 1 is always **Profile selection** (not method)
-- [ ] Step 2 shows only valid **Methods** for the selected profile
-- [ ] Remaining steps (config, MCP, install) proceed in logical order
+- [x] Step 1 is always **Profile selection** (not method)
+- [x] Step 2 shows only valid **Methods** for the selected profile
+- [x] Remaining steps (config, MCP, install) proceed in logical order
 
 ### AC3 — offline-first data collection
 
-- [ ] When `offline-first` is selected, wizard prompts for:
+- [x] When `offline-first` is selected, wizard prompts for:
   - `ENGRAM_SERVER_URL` (required) — URL of the remote sync server
   - `ENGRAM_USER` (required) — user identifier for sync
   - `ENGRAM_SYNC_AUTO_SYNC` (optional, default `true`) — auto-sync on wake vs manual-only
-- [ ] If `ENGRAM_SERVER_URL` is empty → display message: "Without a remote server URL, please use the 'local' profile instead" and return to profile selection
-- [ ] If offline-first data is incomplete → same message and return to profile selection
+- [x] If `ENGRAM_SERVER_URL` is empty → display message: "Without a remote server URL, please use the 'local' profile instead" and return to profile selection
+- [x] If offline-first data is incomplete → same message and return to profile selection
 
 ### AC4 — desktop profile (100% functional)
 
-- [ ] desktop profile is **visible** in profile selection (not hidden)
-- [ ] When desktop is selected, wizard displays warning: "We recommend setting a fixed IP address on your local network to avoid connection issues"
-- [ ] Wizard asks PostgreSQL deployment mode:
+- [x] desktop profile is **visible** in profile selection (not hidden)
+- [x] When desktop is selected, wizard displays warning: "We recommend setting a fixed IP address on your local network to avoid connection issues"
+- [x] Wizard asks PostgreSQL deployment mode:
   - `[1]` All-in-one container (PostgreSQL embedded inside engram container)
   - `[2]` Separate container (PostgreSQL as separate Docker container)
   - `[3]` Existing PostgreSQL server on my Docker network
-- [ ] If option `[3]` is selected → asks for: `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE`
-- [ ] Wizard asks for `ENGRAM_USER`
-- [ ] Wizard asks for `ENGRAM_SYNC_AUTO_SYNC` (default `true`, optional)
-- [ ] Wizard starts Docker services according to the selected configuration
-- [ ] Wizard displays `ENGRAM_SERVER_URL = http://localhost:7437` prominently and asks the user to save it
-- [ ] Wizard displays warning: "On your other devices, select the 'offline-first' profile and use this URL as the remote server"
+- [x] If option `[3]` is selected → asks for: `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE`
+- [x] Wizard asks for `ENGRAM_USER`
+- [x] Wizard asks for `ENGRAM_SYNC_AUTO_SYNC` (default `true`, optional)
+- [x] Wizard starts Docker services according to the selected configuration
+- [x] Wizard displays `ENGRAM_SERVER_URL = http://localhost:7437` prominently and asks the user to save it
+- [x] Wizard displays warning: "On your other devices, select the 'offline-first' profile and use this URL as the remote server"
 
 ### AC5 — Navigation (back)
 
-- [ ] Every step after profile selection has a `(b) back` option that returns to the previous step
-- [ ] Step 1 (profile selection) has `(b) quit` option to exit the wizard
-- [ ] `(q) quit` is also available at all steps to exit
+- [x] Every step after profile selection has a `(b) back` option that returns to the previous step
+- [x] Step 1 (profile selection) has `(b) quit` option to exit the wizard
+- [x] `(q) quit` is also available at all steps to exit
 
 ### AC6 — MCP configuration
 
-- [ ] MCP config is generated correctly for each profile combination
-- [ ] For `offline-first`: `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` are set
-- [ ] For `desktop`: `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SERVER_URL=http://localhost:7437`, `ENGRAM_USER` are set
+- [x] MCP config is generated correctly for each profile combination
+- [x] For `offline-first`: `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` are set
+- [x] For `desktop`: `ENGRAM_SYNC_ENABLED=true`, `ENGRAM_SERVER_URL=http://localhost:7437`, `ENGRAM_USER` are set
 
 ---
 
@@ -90,43 +90,43 @@ The current `install.sh` has two fundamental problems:
 
 ### T1 — Profile→Method mapping table
 
-- [ ] Create a mapping structure in `install.sh` that defines valid methods per profile
-- [ ] Implement profile-first selection flow (Step 1 = profile, Step 2 = method filtered by profile)
+- [x] Create a mapping structure in `install.sh` that defines valid methods per profile
+- [x] Implement profile-first selection flow (Step 1 = profile, Step 2 = method filtered by profile)
 
 ### T2 — offline-first data collection
 
-- [ ] Add data collection for `ENGRAM_SERVER_URL`, `ENGRAM_USER`, `ENGRAM_SYNC_AUTO_SYNC`
-- [ ] Add validation: if `ENGRAM_SERVER_URL` is empty → message + return to profile selection
+- [x] Add data collection for `ENGRAM_SERVER_URL`, `ENGRAM_USER`, `ENGRAM_SYNC_AUTO_SYNC`
+- [x] Add validation: if `ENGRAM_SERVER_URL` is empty → message + return to profile selection
 
 ### T3 — desktop profile implementation
 
-- [ ] Implement PostgreSQL mode selection (all-in-one / separate / existing)
-- [ ] Implement Docker Compose generation for each PostgreSQL mode
-- [ ] Implement `ENGRAM_SERVER_URL = http://localhost:7437` configuration
-- [ ] Display prominent warning with the server URL for other devices
-- [ ] Implement `ENGRAM_USER` and `ENGRAM_SYNC_AUTO_SYNC` collection
+- [x] Implement PostgreSQL mode selection (all-in-one / separate / existing)
+- [x] Implement Docker Compose generation for each PostgreSQL mode
+- [x] Implement `ENGRAM_SERVER_URL = http://localhost:7437` configuration
+- [x] Display prominent warning with the server URL for other devices
+- [x] Implement `ENGRAM_USER` and `ENGRAM_SYNC_AUTO_SYNC` collection
 
 ### T4 — Navigation system
 
-- [ ] Implement step function with `back` and `quit` options
-- [ ] Each step returns to previous step when `(b)` is selected
-- [ ] Step 1 returns to profile re-selection or exits
+- [x] Implement step function with `back` and `quit` options
+- [x] Each step returns to previous step when `(b)` is selected
+- [x] Step 1 returns to profile re-selection or exits
 
 ### T5 — MCP config for all profiles
 
-- [ ] Ensure MCP config generation works for local, offline-first, remote-server, and desktop profiles
-- [ ] Verify env vars are correctly set for each combination
+- [x] Ensure MCP config generation works for local, offline-first, remote-server, and desktop profiles
+- [x] Verify env vars are correctly set for each combination
 
 ### T6 — Cleanup legacy code
 
-- [ ] Remove invalid combinations that were previously selectable (e.g., Docker + offline-first)
-- [ ] Remove or update the "⚠️ pending" label for desktop profile
+- [x] Remove invalid combinations that were previously selectable (e.g., Docker + offline-first)
+- [x] Remove or update the "⚠️ pending" label for desktop profile
 
 ### T7 — Tests
 
-- [ ] Add unit tests for profile→method validation
-- [ ] Add integration tests for offline-first data collection flow
-- [ ] Add integration tests for desktop Docker configuration generation
+- [x] Add unit tests for profile→method validation
+- [x] Add integration tests for offline-first data collection flow
+- [x] Add integration tests for desktop Docker configuration generation
 
 ---
 

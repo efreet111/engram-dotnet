@@ -207,7 +207,7 @@ Instead of setting 10+ variables manually, use `ENGRAM_PROFILE` to pick your dep
 | `local` (default) | Solo developer | SQLite | ❌ |
 | `remote-server` | Small team, shared DB | PostgreSQL | ❌ |
 | `offline-first` | Large team, offline-first | SQLite (local) + PostgreSQL (server) | ✅ |
-| `desktop` | Personal/shared workstation | PostgreSQL | ❌ |
+| `desktop` | ⚠️ Pendiente de diseño | PostgreSQL | ⚠️ Pendiente |
 
 ```json
 // OpenCode example — just set ENGRAM_PROFILE:
@@ -345,7 +345,9 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 
 ### Profile: `desktop`
 
-For personal use or shared workstation with PostgreSQL:
+> ⚠️ **Pendiente de revisión** — El perfil `desktop` necesita redefinirse.
+> Propuesta: debería levantar PostgreSQL + servidor + permitir clientes sync (tipo "server personal").
+> Tracking: ENG-XXX (pendiente de crear).
 
 ```bash
 ENGRAM_PROFILE=desktop \
@@ -354,7 +356,7 @@ ENGRAM_USER=your-username \
 ./engram serve
 ```
 
-The `desktop` profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. Allows both local and external connections.
+Por ahora usar `remote-server` + levantar PostgreSQL en Docker si se necesita servidor con sync.
 
 > **Backward compatible**: All existing env vars still work. If you don't set `ENGRAM_PROFILE`, the system behaves exactly as before — no migration needed.
 

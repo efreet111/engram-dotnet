@@ -1,0 +1,49 @@
+# engram-dotnet — Imagen "all-in-one" para el perfil desktop (modo 1).
+#
+# PostgreSQL 16 + supervisor + binario engram en UN solo contenedor.
+# Base: mcr.microsoft.com/dotnet/aspnet:10 (decisión confirmada — Path A).
+#
+# NOTA: postgresql-16 está disponible en los repos Debian de la base
+# (Debian 13 trixie). Si la base cambia a una versión sin postgresql-16,
+# agregar el repo PGDG antes del `apt-get install`.
+
+FROM mcr.microsoft.com/dotnet/aspnet:10
+
+ARG ENGRAM_VERSION=v1.3.0
+
+# PostgreSQL 16 + supervisor + utilidades mínimas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16 \
+    supervisor \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Binario engram self-contained (mismo release que el Dockerfile estándar)
+RUN mkdir -p /app \
+    && curl -L \
+    "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
+    -o /app/engram \
+    && chmod +x /app/engram
+
+# Supervisor + script de arranque de PostgreSQL (initdb + createdb + run)
+COPY docker/supervisord.conf /etc/supervisord.conf
+COPY docker/allinone-postgres.sh /usr/local/bin/allinone-postgres.sh
+RUN chmod +x /usr/local/bin/allinone-postgres.sh
+
+# Volumen único con subdirectorios (decisión confirmada):
+#   /data/engram    → datos del servidor engram
+#   /data/postgres  → $PGDATA de PostgreSQL
+RUN mkdir -p /data/engram /data/postgres \
+    && chown -R postgres:postgres /data
+
+VOLUME ["/data"]
+
+EXPOSE 7437
+
+ENV ENGRAM_DATA_DIR=/data/engram
+ENV ENGRAM_PORT=7437
+ENV ASPNETCORE_URLS=http://+:7437
+ENV PGDATA=/data/postgres
+
+ENTRYPOINT ["supervisord", "-c", "/etc/supervisord.conf"]
