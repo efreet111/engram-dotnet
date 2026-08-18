@@ -94,6 +94,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | ✅ Done | S | → ENG-301 | `docs/INSTALL.md` creado, enlazado desde README, SETUP-WIZARD, QUICK-START |
 | 8 | HU-017 | P1 | Feature | Refactor install.sh: profile-first wizard + offline-first data collection + desktop profile 100% funcional | ✅ Done | L | sesión 2026-08-18 | `docs/tasks/HU-001-HU-099/HU-017-install-profile-refactor.md` — wizard por pasos en `scripts/install.sh`, perfil desktop con 3 modos PostgreSQL (`docker/Dockerfile.allinone`), tests `scripts/test-install-wizard.sh` |
+| 9 | HU-018 | P1 | Feature | Sync batch enroll (--all), sync status --local, projects list con Enrolled, TUI interactive mode | Ready | L | esta sesión | `docs/tasks/HU-001-HU-099/HU-018-sync-interactive-batch.md` |
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
