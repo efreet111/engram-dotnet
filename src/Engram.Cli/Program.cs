@@ -156,12 +156,12 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
     // User identity: provided by IT via ENGRAM_USER (empty in local mode)
     var user = storeCfg.User ?? "";
 
-    // Store selection: HttpStore (team mode) > PostgresStore > SqliteStore (local mode)
-    IStore store = storeCfg.IsRemote
+    // Store selection: HttpStore (thin client) > PostgresStore > SqliteStore (local mode)
+    IStore store = storeCfg.IsThinClient
         ? new HttpStore(storeCfg)
         : OpenStore(storeCfg);
 
-    if (storeCfg.IsRemote)
+    if (storeCfg.IsThinClient)
         Console.Error.WriteLine($"[engram] mcp → remote {storeCfg.RemoteUrl} (user={user}, project={defaultProject})");
     else if (storeCfg.IsPostgres)
         Console.Error.WriteLine($"[engram] mcp → PostgreSQL (project={defaultProject})");
@@ -230,7 +230,7 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
             var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
             var syncUrl = !string.IsNullOrEmpty(serverUrl)
                 ? serverUrl.TrimEnd('/')
-                : storeCfg.IsRemote
+                : storeCfg.IsThinClient
                     ? storeCfg.RemoteUrl!.TrimEnd('/')
                     : $"http://localhost:{storeCfg.Port}";
             return new MutationTransport(httpClient, syncUrl, storeCfg.User);
@@ -371,7 +371,7 @@ statsCmd.SetHandler(async () =>
     var projects = s.Projects.Count > 0 ? string.Join(", ", s.Projects) : "none yet";
     var dbLabel = cfg.IsPostgres
         ? $"PostgreSQL ({cfg.PgConnectionString?.Split(';').FirstOrDefault(p => p.StartsWith("Host=", StringComparison.OrdinalIgnoreCase))?.Split('=').LastOrDefault() ?? "unknown"})"
-        : cfg.IsRemote
+        : cfg.IsThinClient
             ? $"HTTP Remote ({cfg.RemoteUrl})"
             : $"{cfg.DataDir}/engram.db";
     Console.WriteLine($"""
@@ -1616,6 +1616,120 @@ doctorCmd.SetHandler(async (string? serverUrl) =>
     }
 }, doctorServerOpt);
 
+// ─── profile (HU-023) ─────────────────────────────────────────────────────────
+
+var profileCmd = new Command("profile", "Show or set the deployment profile");
+
+// profile show
+var profileShowCmd     = new Command("show", "Show the active deployment profile and effective variables");
+var profileShowJsonOpt = new Option<bool>("--json", "Output as JSON");
+profileShowCmd.AddOption(profileShowJsonOpt);
+profileShowCmd.SetHandler((bool json) =>
+{
+    var raw = Environment.GetEnvironmentVariable(ProfileConfig.ProfileEnvVar);
+    var isDefault = string.IsNullOrWhiteSpace(raw);
+    var profile = DeployProfileExtensions.FromEnvironment();
+    var label = profile.ToLabel();
+
+    var envPath = ProfileConfig.ResolveEnvPath();
+    var configExists = File.Exists(envPath);
+    var fileProfile = configExists ? ProfileConfig.ReadProfileFromFile(envPath) : null;
+
+    if (json)
+    {
+        var variables = ProfileConfig.GetEffectiveVariables(profile)
+            .ToDictionary(v => v.Key, v => new { value = v.Value, source = v.Source });
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            profile = label,
+            is_default = isDefault,
+            config_file = envPath,
+            config_file_exists = configExists,
+            config_file_profile = fileProfile,
+            variables,
+        }));
+        return;
+    }
+
+    Console.WriteLine(isDefault ? $"Profile: {label} (default)" : $"Profile: {label}");
+    Console.WriteLine(configExists
+        ? $"Config file: {envPath} (declares: {fileProfile ?? "unset"})"
+        : $"Config file: {envPath} (not found — using environment variables)");
+    Console.WriteLine("Effective variables:");
+    foreach (var (key, value, source) in ProfileConfig.GetEffectiveVariables(profile))
+        Console.WriteLine($"  {key,-28} {value}  [{source}]");
+}, profileShowJsonOpt);
+
+// profile set
+var profileSetCmd       = new Command("set", "Set the deployment profile (writes ~/.engram/.env)");
+var profileSetNameArg   = new Argument<string>("profile", "Profile name: local, remote-server, offline-first, desktop");
+var profileSetDryRunOpt = new Option<bool>("--dry-run", "Preview changes without writing files");
+var profileSetJsonOpt   = new Option<bool>("--json", "Output as JSON");
+profileSetCmd.AddArgument(profileSetNameArg);
+profileSetCmd.AddOption(profileSetDryRunOpt);
+profileSetCmd.AddOption(profileSetJsonOpt);
+profileSetCmd.SetHandler((string name, bool dryRun, bool json) =>
+{
+    DeployProfile target;
+    try
+    {
+        target = ProfileConfig.ParseProfileName(name);
+    }
+    catch (InvalidOperationException ex)
+    {
+        if (json) Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+        else Console.Error.WriteLine($"error: {ex.Message}");
+        return;
+    }
+
+    var label = target.ToLabel();
+    var envPath = ProfileConfig.ResolveEnvPath();
+    var backupPath = ProfileConfig.BackupPath(envPath);
+    var alreadySet = ProfileConfig.IsProfileAlreadySet(target, envPath);
+    var missing = ProfileValidator.GetMissingVariables(ProfileConfig.StoreConfigForProfile(target));
+
+    if (json)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            profile = label,
+            changed = !alreadySet && !dryRun,
+            dry_run = dryRun,
+            already_set = alreadySet,
+            env_file = envPath,
+            backup_file = backupPath,
+            missing_variables = missing.ToArray(),
+        }));
+        return;
+    }
+
+    if (alreadySet)
+    {
+        Console.WriteLine($"Profile already set to '{label}'. No changes made.");
+        return;
+    }
+
+    if (dryRun)
+    {
+        Console.WriteLine($"[DRY RUN] Would set profile to '{label}'");
+        Console.WriteLine($"  Write:   {envPath}");
+        Console.WriteLine($"  Backup:  {backupPath}{(File.Exists(envPath) ? " (existing .env)" : " (no existing .env)")}");
+        if (missing.Count > 0)
+            Console.WriteLine($"  Missing required vars: {string.Join(", ", missing)}");
+        return;
+    }
+
+    ProfileConfig.WriteProfile(target, envPath);
+    Console.WriteLine($"Profile set to '{label}'.");
+    Console.WriteLine($"  Wrote:   {envPath}");
+    Console.WriteLine($"  Backup:  {backupPath}");
+    if (missing.Count > 0)
+        Console.WriteLine($"  Note: profile requires: {string.Join(", ", missing)} — set them before starting the server.");
+}, profileSetNameArg, profileSetDryRunOpt, profileSetJsonOpt);
+
+profileCmd.AddCommand(profileShowCmd);
+profileCmd.AddCommand(profileSetCmd);
+
 // ─── relations (ENG-404) ──────────────────────────────────────────────────
 
 var relationsCmd = new Command("relations", "Manage memory observation relations");
@@ -1755,6 +1869,7 @@ root.AddCommand(retentionCmd);
 root.AddCommand(obsidianCmd);
 root.AddCommand(versionCmd);
 root.AddCommand(doctorCmd);
+root.AddCommand(profileCmd);
 root.AddCommand(relationsCmd);
 root.AddCommand(lineageCmd);
 root.AddCommand(interactiveCmd);
@@ -2035,8 +2150,8 @@ static IStore OpenStore(StoreConfig? cfg = null, bool validate = true)
     if (validate)
         ProfileValidator.Validate(cfg);
 
-    // Remote mode: connect to server via HTTP
-    if (cfg.IsRemote)
+    // Thin client mode: delegate all reads/writes to the remote server via HTTP
+    if (cfg.IsThinClient)
         return new HttpStore(cfg);
 
     // Validation: PostgreSQL requires connection string
