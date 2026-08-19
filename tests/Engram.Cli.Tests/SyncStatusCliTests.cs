@@ -41,6 +41,48 @@ public sealed class SyncStatusCliTests
     }
 
     [Fact]
+    public void SyncStatus_WithLocalFlag_ParsesOption()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local", "Show local enrollment status (no server required)");
+        var jsonOpt = new Option<bool>("--json", () => false, "Output as JSON (machine-readable)");
+        syncStatusCmd.AddOption(localOpt);
+        syncStatusCmd.AddOption(jsonOpt);
+
+        var result = syncStatusCmd.Parse("--local");
+
+        Assert.True(result.GetValueForOption(localOpt));
+        Assert.False(result.GetValueForOption(jsonOpt));
+    }
+
+    [Fact]
+    public void SyncStatus_WithLocalAndJson_ParsesBoth()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local", "Show local enrollment status (no server required)");
+        var jsonOpt = new Option<bool>("--json", () => false, "Output as JSON (machine-readable)");
+        syncStatusCmd.AddOption(localOpt);
+        syncStatusCmd.AddOption(jsonOpt);
+
+        var result = syncStatusCmd.Parse("--local --json");
+
+        Assert.True(result.GetValueForOption(localOpt));
+        Assert.True(result.GetValueForOption(jsonOpt));
+    }
+
+    [Fact]
+    public void SyncStatus_WithoutLocalFlag_DefaultsToFalse()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local", "Show local enrollment status (no server required)");
+        syncStatusCmd.AddOption(localOpt);
+
+        var result = syncStatusCmd.Parse("");
+
+        Assert.False(result.GetValueForOption(localOpt));
+    }
+
+    [Fact]
     public async Task SyncStatus_WithServerOffline_ShowsErrorMessage()
     {
         var syncStatusCmd = new Command("status", "Show mutation-based sync status");

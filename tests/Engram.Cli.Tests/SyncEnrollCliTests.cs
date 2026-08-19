@@ -160,6 +160,48 @@ public sealed class SyncEnrollCliTests
         Assert.Null(result.GetValueForOption(projectOpt));
     }
 
+    // ─── --all flag (HU-018) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// --all flag parses as a boolean (true when present, false by default).
+    /// </summary>
+    [Fact]
+    public void SyncEnroll_WithAllFlag_ParsesBool()
+    {
+        var enrollCmd = new Command("enroll", "Enroll a project for sync push");
+        var allOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
+        enrollCmd.AddOption(allOpt);
+
+        // Present → true
+        var resultWith = enrollCmd.Parse("--all");
+        Assert.True(resultWith.GetValueForOption(allOpt));
+
+        // Absent → false (default)
+        var resultWithout = enrollCmd.Parse("");
+        Assert.False(resultWithout.GetValueForOption(allOpt));
+    }
+
+    /// <summary>
+    /// --all combines with existing options (e.g. --behavior) without conflict.
+    /// </summary>
+    [Fact]
+    public void SyncEnroll_AllFlag_CombinesWithExistingOptions()
+    {
+        var enrollCmd = new Command("enroll", "Enroll a project for sync push");
+        var projectOpt = new Option<string>("--project", "Project to enroll");
+        var behaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
+        var allOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
+        enrollCmd.AddOption(projectOpt);
+        enrollCmd.AddOption(behaviorOpt);
+        enrollCmd.AddOption(allOpt);
+
+        var result = enrollCmd.Parse("--all --behavior silent-skip");
+
+        Assert.True(result.GetValueForOption(allOpt));
+        Assert.Equal("silent-skip", result.GetValueForOption(behaviorOpt));
+        Assert.Null(result.GetValueForOption(projectOpt));
+    }
+
     // ─── Unenroll tests ──────────────────────────────────────────────────────
 
     /// <summary>

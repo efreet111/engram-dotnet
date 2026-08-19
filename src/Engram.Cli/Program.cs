@@ -13,6 +13,7 @@
 //   engram sync import       Import gzip chunks
 //   engram projects         Manage projects
 //   engram obsidian-export   Export memories to Obsidian vault
+//   engram interactive       Start interactive TUI navigator
 //   engram version          Print version
 
 using System;
@@ -432,9 +433,18 @@ var syncCmd = new Command("sync", "Sync operations");
 // sync status — mutation-based sync health via HTTP
 var syncStatusCmd = new Command("status", "Show mutation-based sync status");
 var syncStatusJsonOpt = new Option<bool>("--json", "Output as JSON (machine-readable)");
+var syncStatusLocalOpt = new Option<bool>("--local", "Show local enrollment status (no server required)");
 syncStatusCmd.AddOption(syncStatusJsonOpt);
-syncStatusCmd.SetHandler(async (bool json) =>
+syncStatusCmd.AddOption(syncStatusLocalOpt);
+syncStatusCmd.SetHandler(async (bool json, bool local) =>
 {
+    // HU-018: --local dispatch — local enrollment view (no server required)
+    if (local)
+    {
+        await ShowLocalSyncStatusAsync(json);
+        return;
+    }
+
     var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL") ?? "http://localhost:7437";
     try
     {
@@ -480,7 +490,7 @@ syncStatusCmd.SetHandler(async (bool json) =>
         Console.Error.WriteLine("error: No se pudo conectar al servidor — ¿está engram server corriendo? (timeout)");
         Environment.Exit(1);
     }
-}, syncStatusJsonOpt);
+}, syncStatusJsonOpt, syncStatusLocalOpt);
 
 // sync export — export git-friendly chunks
 var syncExportCmd = new Command("export", "Export a new chunk to sync dir");
@@ -520,16 +530,26 @@ var enrollProjectOpt = new Option<string>("--project", "Project to enroll");
 var enrollBehaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
 var enrollExcludeServerOpt = new Option<string[]>("--exclude-server", "Exclude server from sync (can be repeated)");
 var enrollInteractiveOpt = new Option<bool>("--interactive", "Interactive enrollment with project selection");
+var enrollAllOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
 syncEnrollCmd.AddOption(enrollProjectOpt);
 syncEnrollCmd.AddOption(enrollBehaviorOpt);
 syncEnrollCmd.AddOption(enrollExcludeServerOpt);
 syncEnrollCmd.AddOption(enrollInteractiveOpt);
+syncEnrollCmd.AddOption(enrollAllOpt);
 syncEnrollCmd.SetHandler(async (InvocationContext context) =>
 {
     var project = context.ParseResult.GetValueForOption(enrollProjectOpt);
     var behavior = context.ParseResult.GetValueForOption(enrollBehaviorOpt);
     var excludedServers = context.ParseResult.GetValueForOption(enrollExcludeServerOpt) ?? [];
     var interactive = context.ParseResult.GetValueForOption(enrollInteractiveOpt);
+    var all = context.ParseResult.GetValueForOption(enrollAllOpt);
+
+    // --all and --project are mutually exclusive (mirrors syncPushCmd)
+    if (all && !string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("error: --all and --project are mutually exclusive.");
+        return;
+    }
 
     // Validate behavior
     if (behavior != "silent-skip" && behavior != "fail-loud")
@@ -539,6 +559,54 @@ syncEnrollCmd.SetHandler(async (InvocationContext context) =>
     }
 
     using var store = OpenStore();
+
+    // HU-018 (task 2.1): batch enroll + push of all projects with pending mutations.
+    // Gated to ILocalSyncStore — remote HTTP stores don't expose local enrollments/pending mutations.
+    if (all)
+    {
+        if (store is not ILocalSyncStore localStore)
+        {
+            Console.Error.WriteLine("error: 'sync enroll --all' is only supported for local SQLite stores.");
+            return;
+        }
+
+        var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        if (string.IsNullOrEmpty(serverUrl))
+        {
+            Console.Error.WriteLine("error: ENGRAM_SERVER_URL is not set. Cannot push without a sync server.");
+            return;
+        }
+
+        var pendingProjects = await localStore.ListDistinctProjectsWithPendingMutationsAsync("cloud");
+        if (pendingProjects.Count == 0)
+        {
+            Console.WriteLine("No projects with pending mutations to enroll.");
+            return;
+        }
+
+        var enrolledProjects = await localStore.GetEnrolledProjectsLocalAsync();
+        var enrolledSet = new HashSet<string>(
+            enrolledProjects.Select(ep => ep.Project),
+            StringComparer.Ordinal);
+
+        // Enroll projects that have pending mutations but aren't enrolled yet.
+        var missing = pendingProjects.Where(p => !enrolledSet.Contains(p)).ToList();
+        foreach (var p in missing)
+        {
+            await localStore.EnrollProjectLocalAsync(p, "fail-loud");
+            Console.WriteLine($"Project '{p}' enrolled for sync push (behavior: fail-loud).");
+        }
+
+        // Push pending mutations for every project with pending mutations.
+        foreach (var p in pendingProjects)
+        {
+            var pushed = await PushProjectAsync(localStore, serverUrl, "cloud", p);
+            Console.WriteLine($"{p}: {pushed} mutations pushed");
+        }
+
+        return;
+    }
+
     if (store is not Engram.Store.SqliteStore ss)
     {
         Console.Error.WriteLine("enroll is only supported for local SQLite stores.");
@@ -556,7 +624,7 @@ syncEnrollCmd.SetHandler(async (InvocationContext context) =>
 
     if (string.IsNullOrWhiteSpace(project))
     {
-        Console.Error.WriteLine("error: --project is required (or use --interactive)");
+        Console.Error.WriteLine("error: --project is required (or use --interactive or --all)");
         return;
     }
 
@@ -685,54 +753,6 @@ syncPushCmd.SetHandler(async (string project, string targetKey, bool all) =>
     }
 
     _ = await PushProjectAsync(localStore, serverUrl, targetKey, project);
-
-    // ── Shared push logic ──
-    // Returns number of accepted (acked) mutations.
-    async Task<int> PushProjectAsync(
-        ILocalSyncStore ls, string serverUrl, string targetKey, string projectName)
-    {
-        var pending = await ls.ListPendingSyncMutationsAsync(targetKey, 100);
-        var projectMutations = pending.Where(m =>
-            string.Equals(m.Project, projectName, StringComparison.Ordinal)).ToList();
-
-        if (projectMutations.Count == 0)
-        {
-            Console.WriteLine($"No pending mutations for project '{projectName}'.");
-            return 0;
-        }
-
-        Console.WriteLine($"Pushing {projectMutations.Count} mutation(s) for project '{projectName}' to {serverUrl}...");
-
-        try
-        {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            var user = Environment.GetEnvironmentVariable("ENGRAM_USER");
-            var transport = new Engram.Sync.Transport.MutationTransport(client, serverUrl, user);
-
-            var entries = projectMutations.Select(m =>
-                new Engram.Sync.Transport.MutationEntry(m.Project, m.Entity, m.EntityKey, m.Op, m.Payload)).ToList();
-
-            var leaseOwner = $"{Environment.MachineName}-{Environment.ProcessId}-cli-push";
-            var result = await transport.PushMutationsAsync(entries, leaseOwner);
-
-            if (!string.IsNullOrEmpty(result.PauseError))
-            {
-                Console.Error.WriteLine($"error: push paused for project '{projectName}' — {result.PauseError}");
-                return 0;
-            }
-
-            // Ack the pushed mutations
-            await ls.AckSyncMutationSeqsAsync(targetKey, result.AcceptedSeqs);
-
-            Console.WriteLine($"✓ Pushed {result.AcceptedSeqs.Count} mutation(s) for project '{projectName}'.");
-            return result.AcceptedSeqs.Count;
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"error: push failed for project '{projectName}' — {ex.Message}");
-            return 0;
-        }
-    }
 }, syncPushProjectOpt, syncPushTargetOpt, syncPushAllOpt);
 
 syncCmd.AddCommand(syncStatusCmd);
@@ -1050,12 +1070,27 @@ projectsListCmd.SetHandler(async () =>
     var stats = await store.ListProjectsWithStatsAsync();
     if (stats.Count == 0) { Console.WriteLine("No projects found."); return; }
 
+    // Build enrollment lookup: projectName → behavior (HU-018: task 2.4).
+    // Gated to ILocalSyncStore — remote HTTP stores don't expose local enrollments,
+    // so those projects render as unenrolled ("—", empty behavior).
+    var behaviors = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (store is ILocalSyncStore localStore)
+    {
+        var enrolledProjects = await localStore.GetEnrolledProjectsLocalAsync();
+        foreach (var ep in enrolledProjects)
+            behaviors[ep.Project] = ep.Behavior;
+    }
+
     Console.WriteLine($"Projects ({stats.Count}):");
+    Console.WriteLine();
+    Console.WriteLine($"  {"Name",-30}  {"Obs",4}  {"Sessions",8}  {"Prompts",7}  {"Enrolled",-8}  {"Behavior",-15}");
+    Console.WriteLine($"  {new string('─', 30)}  {new string('─', 3)}  {new string('─', 8)}  {new string('─', 7)}  {new string('─', 8)}  {new string('─', 15)}");
     foreach (var p in stats)
     {
-        var sessionWord = p.SessionCount == 1 ? "session" : "sessions";
-        var promptWord  = p.PromptCount == 1  ? "prompt"  : "prompts";
-        Console.WriteLine($"  {p.Name,-30} {p.ObservationCount,4} obs   {p.SessionCount,3} {sessionWord,-9}  {p.PromptCount,3} {promptWord}");
+        var enrolled = behaviors.TryGetValue(p.Name, out var behavior);
+        var enrolledMark = enrolled ? "✓" : "—";
+        var behaviorLabel = enrolled ? $"({behavior})" : "";
+        Console.WriteLine($"  {p.Name,-30}  {p.ObservationCount,4}  {p.SessionCount,8}  {p.PromptCount,7}  {enrolledMark,-8}  {behaviorLabel,-15}");
     }
 });
 
@@ -1658,6 +1693,15 @@ lineageCmd.SetHandler(async (long obsId, int maxHops, string? proj) =>
     if (result.CycleDetected) Console.WriteLine("⚠️ Cycle detected!");
 }, linObsIdOpt, linMaxHopsOpt, linProjOpt);
 
+// ─── interactive (HU-018) ─────────────────────────────────────────────────────
+
+var interactiveCmd = new Command("interactive", "Start interactive TUI navigator");
+interactiveCmd.SetHandler((InvocationContext context) =>
+{
+    using var store = OpenStore();
+    context.ExitCode = InteractiveMenu.Run(store, Console.In, Console.Out);
+});
+
 // ─── Assemble ────────────────────────────────────────────────────────────────
 
 root.AddCommand(serveCmd);
@@ -1678,6 +1722,7 @@ root.AddCommand(versionCmd);
 root.AddCommand(doctorCmd);
 root.AddCommand(relationsCmd);
 root.AddCommand(lineageCmd);
+root.AddCommand(interactiveCmd);
 
 return await root.InvokeAsync(args);
 
@@ -1873,6 +1918,76 @@ static async Task InteractiveEnrollAsync(SqliteStore ss, string[] defaultExclude
     Console.WriteLine($"\n{selected.Count} proyecto(s) enrolado(s).");
 }
 
+/// <summary>
+/// HU-018: Muestra el estado de enrollamiento local de todos los proyectos
+/// sin requerir conectividad con el servidor de sync.
+/// Une tres fuentes: proyectos (stats), behavior (enrollment) y mutaciones pendientes (journal).
+/// </summary>
+static async Task ShowLocalSyncStatusAsync(bool json)
+{
+    using var store = OpenStore();
+    if (store is not ILocalSyncStore localStore)
+    {
+        Console.Error.WriteLine("error: 'sync status --local' is only supported for local SQLite stores.");
+        return;
+    }
+
+    var enrolled = await localStore.GetEnrolledProjectsLocalAsync();
+    var pendingCounts = await localStore.CountPendingMutationsByProjectAsync("cloud");
+    var allStats = await store.ListProjectsWithStatsAsync();
+
+    var behaviorByProject = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var ep in enrolled)
+        behaviorByProject[ep.Project] = ep.Behavior;
+
+    var pendingByProject = new Dictionary<string, long>(StringComparer.Ordinal);
+    foreach (var pc in pendingCounts)
+        pendingByProject[pc.Project] = pc.Count;
+
+    // Unión de nombres de proyecto desde las tres fuentes (orden estable)
+    var projectNames = new SortedSet<string>(StringComparer.Ordinal);
+    foreach (var s in allStats) projectNames.Add(s.Name);
+    foreach (var ep in enrolled) projectNames.Add(ep.Project);
+    foreach (var pc in pendingCounts) projectNames.Add(pc.Project);
+
+    if (json)
+    {
+        var projects = new List<object>();
+        foreach (var name in projectNames)
+        {
+            var isEnrolled = behaviorByProject.TryGetValue(name, out var behavior);
+            var pending = pendingByProject.TryGetValue(name, out var count) ? count : 0L;
+            projects.Add(new
+            {
+                name,
+                enrolled = isEnrolled,
+                behavior = isEnrolled ? behavior : "",
+                pending_mutations = pending,
+            });
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(new { projects },
+            new JsonSerializerOptions { WriteIndented = true }));
+        return;
+    }
+
+    if (projectNames.Count == 0)
+    {
+        Console.WriteLine("No projects found.");
+        return;
+    }
+
+    Console.WriteLine($"Local sync status ({projectNames.Count} projects):");
+    foreach (var name in projectNames)
+    {
+        var isEnrolled = behaviorByProject.TryGetValue(name, out var behavior);
+        var pending = pendingByProject.TryGetValue(name, out var count) ? count : 0L;
+        var enrolledMark = isEnrolled ? "✓" : "—";
+        var behaviorLabel = isEnrolled ? behavior : "";
+        Console.WriteLine($"  {name,-30} {enrolledMark}  {behaviorLabel,-12} {pending,4} pending");
+    }
+}
+
 // ─── Core Helpers ────────────────────────────────────────────────────────────
 
 static IStore OpenStore(StoreConfig? cfg = null)
@@ -1900,6 +2015,57 @@ static IStore OpenStore(StoreConfig? cfg = null)
         StoreDbType.Postgres => new PostgresStore(cfg),
         _ => new SqliteStore(cfg),
     };
+}
+
+/// <summary>
+/// HU-018: Pushes pending mutations for a single project and acks accepted sequences.
+/// Shared single source of truth for `sync push` (single + --all) and `sync enroll --all`.
+/// Returns the number of accepted (acked) mutations.
+/// </summary>
+static async Task<int> PushProjectAsync(
+    ILocalSyncStore store, string serverUrl, string targetKey, string projectName)
+{
+    var pending = await store.ListPendingSyncMutationsAsync(targetKey, 100);
+    var projectMutations = pending.Where(m =>
+        string.Equals(m.Project, projectName, StringComparison.Ordinal)).ToList();
+
+    if (projectMutations.Count == 0)
+    {
+        Console.WriteLine($"No pending mutations for project '{projectName}'.");
+        return 0;
+    }
+
+    Console.WriteLine($"Pushing {projectMutations.Count} mutation(s) for project '{projectName}' to {serverUrl}...");
+
+    try
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        var user = Environment.GetEnvironmentVariable("ENGRAM_USER");
+        var transport = new Engram.Sync.Transport.MutationTransport(client, serverUrl, user);
+
+        var entries = projectMutations.Select(m =>
+            new Engram.Sync.Transport.MutationEntry(m.Project, m.Entity, m.EntityKey, m.Op, m.Payload)).ToList();
+
+        var leaseOwner = $"{Environment.MachineName}-{Environment.ProcessId}-cli-push";
+        var result = await transport.PushMutationsAsync(entries, leaseOwner);
+
+        if (!string.IsNullOrEmpty(result.PauseError))
+        {
+            Console.Error.WriteLine($"error: push paused for project '{projectName}' — {result.PauseError}");
+            return 0;
+        }
+
+        // Ack the pushed mutations
+        await store.AckSyncMutationSeqsAsync(targetKey, result.AcceptedSeqs);
+
+        Console.WriteLine($"✓ Pushed {result.AcceptedSeqs.Count} mutation(s) for project '{projectName}'.");
+        return result.AcceptedSeqs.Count;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"error: push failed for project '{projectName}' — {ex.Message}");
+        return 0;
+    }
 }
 
 /// <summary>

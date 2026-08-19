@@ -224,6 +224,71 @@ public class SyncBehaviorTests : IDisposable
         Assert.DoesNotContain("proj-acked", projects);
     }
 
+    // ─── HU-018: batch enroll + local status join ────────────────────────────
+
+    /// <summary>
+    /// Batch enrollment filters out projects that are already locally enrolled,
+    /// enrolling only the missing ones (no duplicate enrollment rows).
+    /// </summary>
+    [Fact]
+    public async Task BatchEnroll_EnrollsOnlyMissingProjects()
+    {
+        // proj-a already enrolled; proj-b and proj-c have pending mutations but are not.
+        await _store.EnrollProjectLocalAsync("proj-a", "fail-loud");
+        SeedMutation("proj-a");
+        SeedMutation("proj-b");
+        SeedMutation("proj-c");
+
+        var pending = await _store.ListDistinctProjectsWithPendingMutationsAsync(TargetKey);
+        var enrolledSet = (await _store.GetEnrolledProjectsLocalAsync())
+            .Select(e => e.Project)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Batch enroll diff: only pending projects NOT already enrolled.
+        foreach (var p in pending.Where(p => !enrolledSet.Contains(p)))
+            await _store.EnrollProjectLocalAsync(p, "fail-loud");
+
+        var after = await _store.GetEnrolledProjectsLocalAsync();
+        var projectsAfter = after.Select(e => e.Project).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(3, after.Count); // no duplicate enrollment for proj-a
+        Assert.Contains("proj-a", projectsAfter);
+        Assert.Contains("proj-b", projectsAfter);
+        Assert.Contains("proj-c", projectsAfter);
+    }
+
+    /// <summary>
+    /// The local status union joins enrollment (behavior) with pending mutation
+    /// counts, including unenrolled projects that still have pending mutations.
+    /// </summary>
+    [Fact]
+    public async Task LocalStatus_JoinsPendingCountsCorrectly()
+    {
+        await _store.EnrollProjectLocalAsync("proj-a", "fail-loud");
+        await _store.EnrollProjectLocalAsync("proj-skip", "silent-skip");
+        SeedMutation("proj-a");
+        SeedMutation("proj-a", entityKey: "test-2"); // 2 pending for proj-a
+        SeedMutation("proj-skip");
+        SeedMutation("proj-unenrolled");
+
+        var enrolled = await _store.GetEnrolledProjectsLocalAsync();
+        var pendingCounts = await _store.CountPendingMutationsByProjectAsync(TargetKey);
+
+        var behaviorByProject = enrolled.ToDictionary(e => e.Project, e => e.Behavior, StringComparer.Ordinal);
+        var pendingByProject = pendingCounts.ToDictionary(p => p.Project, p => p.Count, StringComparer.Ordinal);
+
+        // enrolled + pending
+        Assert.Equal("fail-loud", behaviorByProject["proj-a"]);
+        Assert.Equal(2L, pendingByProject["proj-a"]);
+
+        Assert.Equal("silent-skip", behaviorByProject["proj-skip"]);
+        Assert.Equal(1L, pendingByProject["proj-skip"]);
+
+        // unenrolled project still has its pending count; not in the enrollment map
+        Assert.False(behaviorByProject.ContainsKey("proj-unenrolled"));
+        Assert.Equal(1L, pendingByProject["proj-unenrolled"]);
+    }
+
     // ─── Raw SQL helpers ─────────────────────────────────────────────────────
 
     private void SeedMutation(string project, string entity = "observation", string entityKey = "test-1")
