@@ -244,6 +244,17 @@ export PATH="$STUB_DIR:$PATH"
 TMP_HOME="$(mktemp -d)"
 export HOME="$TMP_HOME"
 
+# HU-022: curl stub también debe crear libe_sqlite3.so cuando se lo piden
+# (para verificar que install_release crea el symlink e_sqlite3.so)
+cat >> "$STUB_DIR/curl" <<'EOF'
+# Si el target incluye libe_sqlite3.so, crear un archivo stub
+if [[ "$target" == *"libe_sqlite3.so"* ]]; then
+  mkdir -p "$(dirname "$target")"
+  printf '#!/bin/bash\necho "stub libe_sqlite3"\n' > "$target"
+  chmod +x "$target"
+fi
+EOF
+
 FORCE=true; FORCE_PROFILE="local"; FORCE_METHOD=""; FORCE_PG_MODE=""
 STEP="profile"; SELECTED_PROFILE=""; SELECTED_METHOD=""; EDITOR_CHOICE=""; DATA_DIR=""; WIZARD_QUIT=0; WIZARD_ERROR=0
 run_wizard >/dev/null 2>&1
@@ -251,6 +262,20 @@ assert_eq "$WIZARD_ERROR" "0" "-y local+release completa sin error"
 assert_eq "$SELECTED_PROFILE" "local" "-y perfil local"
 assert_eq "$SELECTED_METHOD" "release" "-y método release"
 assert_eq "$EDITOR_CHOICE" "5" "-y editor opencode"
+
+# HU-022: verificar que install_release creó los symlinks de SQLite native lib
+ENGRAM_BIN="${TMP_HOME}/.local/bin/engram"
+LIB_DIR="${TMP_HOME}/.local/bin"
+if [[ -L "${LIB_DIR}/e_sqlite3.so" ]]; then
+  ok "e_sqlite3.so symlink creado"
+else
+  fail "e_sqlite3.so symlink NO creado"
+fi
+if [[ -f "${LIB_DIR}/libe_sqlite3.so" ]]; then
+  ok "libe_sqlite3.so descargado"
+else
+  fail "libe_sqlite3.so NO descargado"
+fi
 
 FORCE=true; FORCE_PROFILE="offline-first"; FORCE_METHOD=""; FORCE_PG_MODE=""
 STEP="profile"; SELECTED_PROFILE=""; SELECTED_METHOD=""; EDITOR_CHOICE=""; DATA_DIR=""; SERVER_URL=""; WIZARD_QUIT=0; WIZARD_ERROR=0

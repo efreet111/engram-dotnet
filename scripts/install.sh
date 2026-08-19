@@ -537,13 +537,34 @@ install_release() {
   local os_name="linux-x64"
   [[ "$(uname -s)" == "Darwin" ]] && os_name="macos-x64"
   local latest="v1.3.0"
-  local url="https://github.com/efreet111/engram-dotnet/releases/download/${latest}/engram-${os_name}"
-  info "  Descargando $latest..."
-  curl -L --fail -o "$ENGRAM_CMD" "$url" || {
+  local base_url="https://github.com/efreet111/engram-dotnet/releases/download/${latest}"
+  info "  Descargando engram $latest..."
+  curl -L --fail -o "$ENGRAM_CMD" "${base_url}/engram-${os_name}" || {
     error "Descarga falló. Probá método 2 (build from source)."
     return 1
   }
   chmod +x "$ENGRAM_CMD"
+
+  # HU-022: SQLitePCLRaw busca libe_sqlite3.so y e_sqlite3.so en Linux.
+  # Descargar la native library y crear symlinks si estamos en Linux.
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    local lib_dir
+    lib_dir="$(dirname "$ENGRAM_CMD")"
+
+    info "  Descargando libe_sqlite3.so..."
+    curl -L --fail -o "${lib_dir}/libe_sqlite3.so" "${base_url}/libe_sqlite3.so" || {
+      error "Descarga de libe_sqlite3.so falló."
+      return 1
+    }
+
+    # SQLitePCLRaw busca e_sqlite3.so (alias del provider).
+    # Crear symlink si no existe ya.
+    if [[ ! -e "${lib_dir}/e_sqlite3.so" ]]; then
+      ln -sf "libe_sqlite3.so" "${lib_dir}/e_sqlite3.so"
+    fi
+    info "  SQLite native library configurada."
+  fi
+
   return 0
 }
 
