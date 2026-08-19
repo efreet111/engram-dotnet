@@ -264,6 +264,35 @@ public class DeployProfileTests
         }
     }
 
+    [Theory]
+    [InlineData("Host=localhost;Database=test")]
+    [InlineData("Host=127.0.0.1;Database=test")]
+    public void GetMissingVariables_RemoteServerLocalhostPg_ReturnsLocalhostError(string connectionString)
+    {
+        // Arrange — remote-server con localhost PG: security gate reportado como missing var
+        var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
+        var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
+        try
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
+            Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", connectionString);
+
+            var cfg = StoreConfig.FromEnvironment();
+            var missing = ProfileValidator.GetMissingVariables(cfg);
+
+            // Assert — el security gate de localhost se reporta como missing
+            Assert.Single(missing);
+            Assert.Contains("localhost", missing[0]);
+            Assert.Contains("remote-server", missing[0]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", originalPg);
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+        }
+    }
+
     [Fact]
     public void Validate_OfflineFirstMissingServerUrl_Throws()
     {

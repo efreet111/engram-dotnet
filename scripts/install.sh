@@ -550,17 +550,31 @@ install_release() {
   if [[ "$(uname -s)" == "Linux" ]]; then
     local lib_dir
     lib_dir="$(dirname "$ENGRAM_CMD")"
+    local lib_target="${lib_dir}/libe_sqlite3.so"
+    local use_sudo=""
+
+    # Si el directorio o archivo no es escribible por el usuario actual,
+    # intentamos con sudo (有用 si se instaló antes con root).
+    if [[ ! -w "$lib_dir" ]] || { [[ -f "$lib_target" ]] && [[ ! -w "$lib_target" ]]; }; then
+      if command -v sudo >/dev/null 2>&1; then
+        use_sudo="sudo"
+        info "  libe_sqlite3.so requiere permisos de root..."
+      else
+        error "No se puede escribir en $lib_dir. Ejecutá con permisos de root o cambiá el dueño: sudo chown -R \$(id -u):\$(id -g) ~/.local/bin"
+        return 1
+      fi
+    fi
 
     info "  Descargando libe_sqlite3.so..."
-    curl -L --fail -o "${lib_dir}/libe_sqlite3.so" "${base_url}/libe_sqlite3.so" || {
+    if ! ${use_sudo} curl -L --fail -o "${lib_target}" "${base_url}/libe_sqlite3.so"; then
       error "Descarga de libe_sqlite3.so falló."
       return 1
-    }
+    fi
 
     # SQLitePCLRaw busca e_sqlite3.so (alias del provider).
     # Crear symlink si no existe ya.
     if [[ ! -e "${lib_dir}/e_sqlite3.so" ]]; then
-      ln -sf "libe_sqlite3.so" "${lib_dir}/e_sqlite3.so"
+      ${use_sudo} ln -sf "libe_sqlite3.so" "${lib_dir}/e_sqlite3.so"
     fi
     info "  SQLite native library configurada."
   fi
