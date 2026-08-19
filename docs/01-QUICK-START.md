@@ -292,7 +292,7 @@ curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
 | Aspect | `local` | `remote-server` | `offline-first` | `desktop` |
 |--------|---------|----------------|-----------------|-----------|
 | **Backend** | SQLite | PostgreSQL | SQLite (local) + PostgreSQL (server) | PostgreSQL |
-| **Sync** | ❌ No | ❌ No | ✅ Offline-First | ❌ No |
+| **Sync** | ❌ No | ❌ No | ✅ Offline-First | ✅ Desktop↔Laptop |
 | **Multi-User** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Enrollment** | ❌ No | ❌ No | ✅ Required | ❌ No |
 | **Pause/Resume** | ❌ No | ❌ No | ✅ Admin | ❌ No |

@@ -65,6 +65,21 @@ public static class DeployProfileExtensions
                 $"Unknown profile '{raw}'. Use local, remote-server, offline-first, or desktop."),
         };
     }
+
+    /// <summary>
+    /// Returns the canonical lower-case label for the profile, used in user-facing
+    /// output and diagnostic messages (e.g. <c>"local"</c>, <c>"remote-server"</c>).
+    /// </summary>
+    /// <param name="profile">The deployment profile to label.</param>
+    /// <returns>The canonical label (matches the <c>ENGRAM_PROFILE</c> value).</returns>
+    public static string ToLabel(this DeployProfile profile) => profile switch
+    {
+        DeployProfile.Local        => "local",
+        DeployProfile.RemoteServer => "remote-server",
+        DeployProfile.OfflineFirst => "offline-first",
+        DeployProfile.Desktop      => "desktop",
+        _ => profile.ToString().ToLowerInvariant(),
+    };
 }
 
 /// <summary>
@@ -90,7 +105,7 @@ public static class ProfileDefaults
         DeployProfile.OfflineFirst => new() { ["ENGRAM_DB_TYPE"] = "sqlite",   ["ENGRAM_SYNC_ENABLED"] = "true",
                                               ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
         DeployProfile.Desktop     => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "true",
-                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
+                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "desktop" },
     };
 }
 
@@ -122,7 +137,13 @@ public static class ProfileValidator
     /// the RemoteServer profile uses a localhost connection string.
     /// Message includes all missing variable names.
     /// </exception>
-    public static void Validate(StoreConfig cfg)
+    /// <summary>
+    /// Returns the names of required environment variables that are missing or invalid
+    /// for the effective configuration. Does not throw; returns an empty list when valid.
+    /// </summary>
+    /// <param name="cfg">The store configuration to validate (uses effective DbType, sync settings, and profile).</param>
+    /// <returns>Human-readable names of missing or invalid variables.</returns>
+    public static IReadOnlyList<string> GetMissingVariables(StoreConfig cfg)
     {
         var missing = new List<string>();
 
@@ -140,6 +161,23 @@ public static class ProfileValidator
             if (IsLocalhostConnection(cfg.PgConnectionString))
                 missing.Add("ENGRAM_PG_CONNECTION (localhost not allowed for remote-server profile)");
         }
+
+        return missing;
+    }
+
+    /// <summary>
+    /// Checks that all required environment variables for the effective config are set
+    /// and are non-empty. Throws immediately, naming every missing or invalid variable.
+    /// </summary>
+    /// <param name="cfg">The store configuration to validate (uses effective DbType, sync settings, and profile).</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when one or more required variables are missing or empty, or when
+    /// the RemoteServer profile uses a localhost connection string.
+    /// Message includes all missing variable names.
+    /// </exception>
+    public static void Validate(StoreConfig cfg)
+    {
+        var missing = GetMissingVariables(cfg);
 
         if (missing.Count > 0)
             throw new InvalidOperationException(

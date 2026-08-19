@@ -123,7 +123,7 @@ public class DeployProfileTests
         Assert.Equal("postgres", defaults["ENGRAM_DB_TYPE"]);
         Assert.Equal("true", defaults["ENGRAM_SYNC_ENABLED"]);
         Assert.Equal("30", defaults["ENGRAM_SYNC_POLL_SECONDS"]);
-        Assert.Equal("cloud", defaults["ENGRAM_SYNC_TARGET"]);
+        Assert.Equal("desktop", defaults["ENGRAM_SYNC_TARGET"]);
     }
 
     // ─── ProfileValidator.Validate() ───────────────────────────────────────

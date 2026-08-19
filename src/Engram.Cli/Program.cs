@@ -209,7 +209,8 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
         var store = sp.GetRequiredService<IStore>();
         var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
         var syncProvider = sp.GetService<ISyncStatusProvider>();
-        return new DiagnosticService(store, serverUrl: serverUrl, syncStatusProvider: syncProvider);
+        return new DiagnosticService(store, serverUrl: serverUrl, syncStatusProvider: syncProvider,
+            profile: DeployProfileExtensions.FromEnvironment());
     });
 
     // HU-014 R6: Apply sync config from ~/.engram/config.json before constructing SyncManagerConfig.
@@ -1546,38 +1547,72 @@ doctorCmd.SetHandler(async (string? serverUrl) =>
 {
     // Use provided URL or fall back to environment variable
     var url = serverUrl ?? Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
-    
+
+    var profile = DeployProfileExtensions.FromEnvironment();
+    var profileLabel = profile.ToLabel();
     var storeCfg = StoreConfig.FromEnvironment();
-    using var store = OpenStore(storeCfg);
-    
-    // Create diagnostic service
-    var diagnosticService = new DiagnosticService(store, serverUrl: url);
-    
-    // Run diagnostics
-    var result = await diagnosticService.RunDiagnosticsAsync();
-    
-    // Output results
+
+    // HU-020: non-fatal profile validation — report missing vars as warnings
+    // instead of cutting execution (OpenStore would otherwise throw).
+    var missingVars = ProfileValidator.GetMissingVariables(storeCfg);
+
+    // Print the report header first so Profile and Missing warnings are always
+    // shown, even when the store cannot be opened.
     Console.WriteLine("Engram Diagnostic Report");
     Console.WriteLine("========================");
+    Console.WriteLine($"Profile: {profileLabel}");
+    if (missingVars.Count > 0)
+        Console.WriteLine($"Missing: [{string.Join(", ", missingVars)}]");
     Console.WriteLine();
-    
-    foreach (var (name, health) in result.Components.OrderBy(kvp => kvp.Key))
+
+    // Open the store without hard validation so a misconfigured profile surfaces
+    // as an unhealthy database check rather than an unhandled crash.
+    IStore store;
+    try
     {
-        var status = health.IsHealthy ? "✓" : "✗";
-        var latency = health.LatencyMs > 0 ? $" ({health.LatencyMs}ms)" : "";
-        Console.WriteLine($"{status} {name,-15} {health.Message}{latency}");
+        store = OpenStore(storeCfg, validate: false);
     }
-    
-    Console.WriteLine();
-    if (result.IsHealthy)
+    catch (Exception ex)
     {
-        Console.WriteLine("Status: All systems operational");
-        Environment.Exit(0);
-    }
-    else
-    {
+        Console.WriteLine($"✗ database        failed to open store: {ex.Message}");
+        Console.WriteLine();
         Console.WriteLine("Status: Some components are unhealthy");
         Environment.Exit(1);
+        return;
+    }
+
+    using (store)
+    {
+        // Create diagnostic service
+        var diagnosticService = new DiagnosticService(store, serverUrl: url, profile: profile);
+
+        // Run diagnostics
+        var result = await diagnosticService.RunDiagnosticsAsync();
+
+        foreach (var (name, health) in result.Components.OrderBy(kvp => kvp.Key))
+        {
+            if (health.IsSkipped)
+            {
+                Console.WriteLine($"[SKIPPED - {health.Message}] {name}");
+                continue;
+            }
+
+            var status = health.IsHealthy ? "✓" : "✗";
+            var latency = health.LatencyMs > 0 ? $" ({health.LatencyMs}ms)" : "";
+            Console.WriteLine($"{status} {name,-15} {health.Message}{latency}");
+        }
+
+        Console.WriteLine();
+        if (result.IsHealthy)
+        {
+            Console.WriteLine("Status: All systems operational");
+            Environment.Exit(0);
+        }
+        else
+        {
+            Console.WriteLine("Status: Some components are unhealthy");
+            Environment.Exit(1);
+        }
     }
 }, doctorServerOpt);
 
@@ -1990,21 +2025,22 @@ static async Task ShowLocalSyncStatusAsync(bool json)
 
 // ─── Core Helpers ────────────────────────────────────────────────────────────
 
-static IStore OpenStore(StoreConfig? cfg = null)
+static IStore OpenStore(StoreConfig? cfg = null, bool validate = true)
 {
     cfg ??= StoreConfig.FromEnvironment();
 
     // Validate deployment profile requirements before any store is created.
     // Throws InvalidOperationException with missing var names if the effective
     // configuration requires variables that are not set.
-    ProfileValidator.Validate(cfg);
+    if (validate)
+        ProfileValidator.Validate(cfg);
 
     // Remote mode: connect to server via HTTP
     if (cfg.IsRemote)
         return new HttpStore(cfg);
 
     // Validation: PostgreSQL requires connection string
-    if (cfg.IsPostgres && string.IsNullOrWhiteSpace(cfg.PgConnectionString))
+    if (validate && cfg.IsPostgres && string.IsNullOrWhiteSpace(cfg.PgConnectionString))
     {
         Console.Error.WriteLine("error: ENGRAM_PG_CONNECTION is required when ENGRAM_DB_TYPE=postgres");
         Environment.Exit(1);

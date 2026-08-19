@@ -499,14 +499,20 @@ if pg_connection:
 if sync_auto_sync:
     env["ENGRAM_SYNC_AUTO_SYNC"] = sync_auto_sync
 
-block = {
-    "command": ["engram", "mcp"],
-    "env": env,
-}
-
 if key == "mcp":
+    # OpenCode: requiere transport local + flag enabled + environment (no "env").
+    block = {
+        "type": "local",
+        "enabled": True,
+        "command": ["engram", "mcp"],
+        "environment": env,
+    }
     root = {"mcp": {"engram": block}}
 else:
+    block = {
+        "command": ["engram", "mcp"],
+        "env": env,
+    }
     root = {key: {"engram": block}}
 
 with open(path, "w") as f:

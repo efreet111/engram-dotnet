@@ -11,6 +11,13 @@ public class ComponentHealth
     public bool IsHealthy { get; set; }
 
     /// <summary>
+    /// Gets or sets whether the check was skipped because it does not apply to the
+    /// active deployment profile (e.g. <c>http_server</c> for <c>local</c>).
+    /// Skipped checks do not affect the overall <see cref="DiagnosticResult.IsHealthy"/>.
+    /// </summary>
+    public bool IsSkipped { get; set; }
+
+    /// <summary>
     /// Gets or sets a message describing the component status.
     /// </summary>
     public string Message { get; set; } = string.Empty;

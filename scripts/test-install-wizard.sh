@@ -201,6 +201,13 @@ if command -v python3 >/dev/null 2>&1; then
     ok "local MCP sin SERVER_URL"
   fi
 
+  # HU-021: OpenCode exige type:local + enabled:true dentro de mcp.engram
+  write_mcp_config "$TMP_MCP/opencode.json" "mcp" >/dev/null 2>&1
+  ocj="$(cat "$TMP_MCP/opencode.json" 2>/dev/null)"
+  assert_contains "$ocj" '"enabled": true' "opencode MCP: enabled true en mcp.engram"
+  assert_contains "$ocj" '"type": "local"' "opencode MCP: type local en mcp.engram"
+  assert_contains "$ocj" '"environment"' "opencode MCP: usa environment (no env)"
+
   rm -rf "$TMP_MCP"
 else
   echo "  (python3 no disponible — saltando tests de config MCP)"
