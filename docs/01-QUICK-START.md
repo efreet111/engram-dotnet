@@ -13,7 +13,7 @@ Pick a profile and set the vars it asks for:
 | `local` | Solo dev | SQLite | *(none)* | `./engram serve` |
 | `remote-server` | Small team (2-5) | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=remote-server ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
 | `offline-first` | Large team (5-20) | SQLite + Sync | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | `ENGRAM_PROFILE=offline-first ENGRAM_SERVER_URL=... ENGRAM_USER=... ./engram serve` |
-| `desktop` | Personal/shared workstation | PostgreSQL | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | `ENGRAM_PROFILE=desktop ENGRAM_PG_CONNECTION=... ENGRAM_USER=... ./engram serve` |
+| `desktop` | Personal/shared workstation | SQLite + PostgreSQL sync server | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | `ENGRAM_PROFILE=desktop ENGRAM_SERVER_URL=... ENGRAM_USER=... ./engram serve` |
 
 > **Backward compatible**: Don't want to use profiles? All existing env vars (`ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc.) continue working identically. No migration needed.
 
@@ -291,12 +291,12 @@ curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
 
 | Aspect | `local` | `remote-server` | `offline-first` | `desktop` |
 |--------|---------|----------------|-----------------|-----------|
-| **Backend** | SQLite | PostgreSQL | SQLite (local) + PostgreSQL (server) | PostgreSQL |
-| **Sync** | ❌ No | ❌ No | ✅ Offline-First | ✅ Desktop↔Laptop |
+| **Backend** | SQLite | PostgreSQL | SQLite (local) + PostgreSQL (server) | SQLite (local) + PostgreSQL (sync server) |
+| **Sync** | ❌ No | ❌ No | ✅ Offline-First | ✅ Local + sync server |
 | **Multi-User** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Enrollment** | ❌ No | ❌ No | ✅ Required | ❌ No |
 | **Pause/Resume** | ❌ No | ❌ No | ✅ Admin | ❌ No |
-| **Offline tolerance** | N/A | ❌ (needs connection) | ✅ Unlimited | ❌ (needs connection) |
+| **Offline tolerance** | N/A | ❌ (needs connection) | ✅ Unlimited | ✅ (SQLite local) |
 | **Complexity** | Low | Medium | High | Medium |
 | **Use case** | Solo dev | Shared server | Distributed team | Personal/shared workstation |
 

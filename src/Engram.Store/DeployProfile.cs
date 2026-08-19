@@ -32,8 +32,9 @@ public enum DeployProfile
     OfflineFirst,
 
     /// <summary>
-    /// Desktop app with full stack — PostgreSQL backend + SyncManager enabled.
-    /// Requires <c>ENGRAM_PG_CONNECTION</c>, <c>ENGRAM_SERVER_URL</c>, and <c>ENGRAM_USER</c>.
+    /// Desktop hybrid — SQLite local backend (source of truth) + SyncManager enabled,
+    /// with PostgreSQL Docker demoted to a sync server (not the primary backend).
+    /// Requires <c>ENGRAM_SERVER_URL</c> and <c>ENGRAM_USER</c>.
     /// </summary>
     Desktop,
 }
@@ -104,8 +105,9 @@ public static class ProfileDefaults
         DeployProfile.RemoteServer => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "false" },
         DeployProfile.OfflineFirst => new() { ["ENGRAM_DB_TYPE"] = "sqlite",   ["ENGRAM_SYNC_ENABLED"] = "true",
                                               ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "cloud" },
-        DeployProfile.Desktop     => new() { ["ENGRAM_DB_TYPE"] = "postgres", ["ENGRAM_SYNC_ENABLED"] = "true",
-                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "desktop" },
+        DeployProfile.Desktop     => new() { ["ENGRAM_DB_TYPE"] = "sqlite", ["ENGRAM_SYNC_ENABLED"] = "true",
+                                              ["ENGRAM_SYNC_POLL_SECONDS"] = "30", ["ENGRAM_SYNC_TARGET"] = "desktop",
+                                              ["ENGRAM_SERVER_URL"] = "http://localhost:7437" },
     };
 }
 

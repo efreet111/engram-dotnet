@@ -42,7 +42,7 @@ declare -A PROFILE_DESCRIPTIONS=(
   [local]="SQLite local, sin sync"
   [offline-first]="SQLite local + sync a servidor remoto"
   [remote-server]="PostgreSQL compartido, sin sync"
-  [desktop]="PostgreSQL + sync local (Docker) — un usuario, varios dispositivos"
+  [desktop]="CLI SQLite local + contenedor Docker (remote-server + PostgreSQL) como hub de sync — un usuario, varios dispositivos"
 )
 
 # ── Tabla de mapeo perfil→métodos (T1.1) ─────────────────────────────────────
@@ -663,13 +663,11 @@ ${image_block}
       - ${DATA_DIR}/engram:/data/engram
       - ${DATA_DIR}/postgres:/data/postgres
     environment:
-      ENGRAM_PROFILE: desktop
+      ENGRAM_PROFILE: remote-server
       ENGRAM_DB_TYPE: postgres
       ENGRAM_DATA_DIR: /data/engram
       ENGRAM_PORT: "7437"
       ENGRAM_PG_CONNECTION: "${PG_CONNECTION}"
-      ENGRAM_SERVER_URL: http://localhost:7437
-      ENGRAM_SYNC_ENABLED: "true"
       ENGRAM_SYNC_AUTO_SYNC: "${SYNC_AUTO_SYNC}"
       ENGRAM_USER: "${ENGRAM_USER}"
 EOF
@@ -710,13 +708,11 @@ services:
     volumes:
       - ${DATA_DIR}/engram:/data/engram
     environment:
-      ENGRAM_PROFILE: desktop
+      ENGRAM_PROFILE: remote-server
       ENGRAM_DB_TYPE: postgres
       ENGRAM_DATA_DIR: /data/engram
       ENGRAM_PORT: "7437"
       ENGRAM_PG_CONNECTION: "${PG_CONNECTION}"
-      ENGRAM_SERVER_URL: http://localhost:7437
-      ENGRAM_SYNC_ENABLED: "true"
       ENGRAM_SYNC_AUTO_SYNC: "${SYNC_AUTO_SYNC}"
       ENGRAM_USER: "${ENGRAM_USER}"
 EOF
@@ -738,13 +734,11 @@ services:
     volumes:
       - ${DATA_DIR}/engram:/data/engram
     environment:
-      ENGRAM_PROFILE: desktop
+      ENGRAM_PROFILE: remote-server
       ENGRAM_DB_TYPE: postgres
       ENGRAM_DATA_DIR: /data/engram
       ENGRAM_PORT: "7437"
       ENGRAM_PG_CONNECTION: "${PG_CONNECTION}"
-      ENGRAM_SERVER_URL: http://localhost:7437
-      ENGRAM_SYNC_ENABLED: "true"
       ENGRAM_SYNC_AUTO_SYNC: "${SYNC_AUTO_SYNC}"
       ENGRAM_USER: "${ENGRAM_USER}"
 EOF
