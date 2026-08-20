@@ -20,10 +20,11 @@ internal static class ProfileCommandTree
 
         // profile show
         var showCmd = new Command("show", "Show the active deployment profile and effective variables");
-        var showJsonOpt = new Option<bool>("--json", "Output as JSON");
-        showCmd.AddOption(showJsonOpt);
-        showCmd.SetHandler((bool json) =>
+        var showJsonOpt = new Option<bool>("--json") { Description = "Output as JSON" };
+        showCmd.Options.Add(showJsonOpt);
+        showCmd.SetAction((ParseResult parseResult) =>
         {
+            var json = parseResult.GetValue(showJsonOpt);
             var raw = Environment.GetEnvironmentVariable(ProfileConfig.ProfileEnvVar);
             var isDefault = string.IsNullOrWhiteSpace(raw);
             var profile = DeployProfileExtensions.FromEnvironment();
@@ -56,18 +57,22 @@ internal static class ProfileCommandTree
             Console.WriteLine("Effective variables:");
             foreach (var (key, value, source) in ProfileConfig.GetEffectiveVariables(profile))
                 Console.WriteLine($"  {key,-28} {value}  [{source}]");
-        }, showJsonOpt);
+        });
 
         // profile set
         var setCmd = new Command("set", "Set the deployment profile (writes ~/.engram/.env)");
-        var setNameArg = new Argument<string>("profile", "Profile name: local, remote-server, offline-first, desktop");
-        var setDryRunOpt = new Option<bool>("--dry-run", "Preview changes without writing files");
-        var setJsonOpt = new Option<bool>("--json", "Output as JSON");
-        setCmd.AddArgument(setNameArg);
-        setCmd.AddOption(setDryRunOpt);
-        setCmd.AddOption(setJsonOpt);
-        setCmd.SetHandler((string name, bool dryRun, bool json) =>
+        var setNameArg = new Argument<string>("profile") { Description = "Profile name: local, remote-server, offline-first, desktop" };
+        var setDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview changes without writing files" };
+        var setJsonOpt = new Option<bool>("--json") { Description = "Output as JSON" };
+        setCmd.Arguments.Add(setNameArg);
+        setCmd.Options.Add(setDryRunOpt);
+        setCmd.Options.Add(setJsonOpt);
+        setCmd.SetAction((ParseResult parseResult) =>
         {
+            var name = parseResult.GetValue(setNameArg)!;
+            var dryRun = parseResult.GetValue(setDryRunOpt);
+            var json = parseResult.GetValue(setJsonOpt);
+
             DeployProfile target;
             try
             {
@@ -123,13 +128,13 @@ internal static class ProfileCommandTree
             Console.WriteLine($"  Backup:  {backupPath}");
             if (missing.Count > 0)
                 Console.WriteLine($"  Note: profile requires: {string.Join(", ", missing)} — set them before starting the server.");
-        }, setNameArg, setDryRunOpt, setJsonOpt);
+        });
 
-        profileCmd.AddCommand(showCmd);
-        profileCmd.AddCommand(setCmd);
+        profileCmd.Subcommands.Add(showCmd);
+        profileCmd.Subcommands.Add(setCmd);
 
         var root = new RootCommand();
-        root.AddCommand(profileCmd);
+        root.Subcommands.Add(profileCmd);
         return root;
     }
 }

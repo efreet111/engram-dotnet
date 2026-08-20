@@ -38,7 +38,7 @@ public sealed class ProfileShowTests : IDisposable
         Console.SetError(stderr);
         try
         {
-            await ProfileCommandTree.Build().InvokeAsync(args);
+            await ProfileCommandTree.Build().Parse(args).InvokeAsync();
         }
         finally
         {

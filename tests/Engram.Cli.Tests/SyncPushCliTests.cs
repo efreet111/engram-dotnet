@@ -25,17 +25,17 @@ public sealed class SyncPushCliTests
         // Arrange
         var syncCmd = new Command("sync", "Sync operations");
         var pushCmd = new Command("push", "Push pending mutations for a specific project");
-        var projectOpt = new Option<string>("--project", "Project to push mutations for");
-        pushCmd.AddOption(projectOpt);
-        syncCmd.AddCommand(pushCmd);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push mutations for" };
+        pushCmd.Options.Add(projectOpt);
+        syncCmd.Subcommands.Add(pushCmd);
 
         // Act
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
         var result = root.Parse("sync push --project my-project");
 
         // Assert
-        var projectValue = result.GetValueForOption(projectOpt);
+        var projectValue = result.GetValue(projectOpt);
         Assert.Equal("my-project", projectValue);
     }
 
@@ -47,21 +47,21 @@ public sealed class SyncPushCliTests
     {
         // Arrange
         var pushCmd = new Command("push", "Push pending mutations");
-        var projectOpt = new Option<string>("--project", "Project to push");
-        var targetOpt = new Option<string>("--target", () => "cloud", "Target key");
-        pushCmd.AddOption(projectOpt);
-        pushCmd.AddOption(targetOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push" };
+        var targetOpt = new Option<string>("--target") { Description = "Target key", DefaultValueFactory = _ => "cloud" };
+        pushCmd.Options.Add(projectOpt);
+        pushCmd.Options.Add(targetOpt);
 
         var syncCmd = new Command("sync") { pushCmd };
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
 
         // Act
         var result = root.Parse("sync push --project team/app --target staging");
 
         // Assert
-        Assert.Equal("team/app", result.GetValueForOption(projectOpt));
-        Assert.Equal("staging", result.GetValueForOption(targetOpt));
+        Assert.Equal("team/app", result.GetValue(projectOpt));
+        Assert.Equal("staging", result.GetValue(targetOpt));
     }
 
     /// <summary>
@@ -72,20 +72,20 @@ public sealed class SyncPushCliTests
     {
         // Arrange
         var pushCmd = new Command("push", "Push pending mutations");
-        var projectOpt = new Option<string>("--project", "Project to push");
-        var targetOpt = new Option<string>("--target", () => "cloud", "Target key");
-        pushCmd.AddOption(projectOpt);
-        pushCmd.AddOption(targetOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push" };
+        var targetOpt = new Option<string>("--target") { Description = "Target key", DefaultValueFactory = _ => "cloud" };
+        pushCmd.Options.Add(projectOpt);
+        pushCmd.Options.Add(targetOpt);
 
         var syncCmd = new Command("sync") { pushCmd };
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
 
         // Act
         var result = root.Parse("sync push --project my-project");
 
         // Assert
-        Assert.Equal("cloud", result.GetValueForOption(targetOpt));
+        Assert.Equal("cloud", result.GetValue(targetOpt));
     }
 
     /// <summary>
@@ -97,18 +97,18 @@ public sealed class SyncPushCliTests
     {
         // Arrange
         var pushCmd = new Command("push", "Push pending mutations");
-        var projectOpt = new Option<string>("--project", "Project to push");
-        pushCmd.AddOption(projectOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push" };
+        pushCmd.Options.Add(projectOpt);
 
         var syncCmd = new Command("sync") { pushCmd };
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
 
         // Act
         var result = root.Parse("sync push");
 
         // Assert: the handler should see null --project and show an error
-        var projectValue = result.GetValueForOption(projectOpt);
+        var projectValue = result.GetValue(projectOpt);
         Assert.Null(projectValue);
     }
 
@@ -120,18 +120,18 @@ public sealed class SyncPushCliTests
     {
         // Arrange
         var pushCmd = new Command("push", "Push pending mutations");
-        var projectOpt = new Option<string>("--project", "Project to push");
-        pushCmd.AddOption(projectOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push" };
+        pushCmd.Options.Add(projectOpt);
 
         var syncCmd = new Command("sync") { pushCmd };
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
 
         // Act
         var result = root.Parse("sync push --project user/project");
 
         // Assert
-        Assert.Equal("user/project", result.GetValueForOption(projectOpt));
+        Assert.Equal("user/project", result.GetValue(projectOpt));
     }
 
     /// <summary>
@@ -142,17 +142,17 @@ public sealed class SyncPushCliTests
     {
         // Arrange
         var pushCmd = new Command("push", "Push pending mutations");
-        var projectOpt = new Option<string>("--project", "Project to push");
-        pushCmd.AddOption(projectOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to push" };
+        pushCmd.Options.Add(projectOpt);
 
         var syncCmd = new Command("sync") { pushCmd };
         var root = new RootCommand();
-        root.AddCommand(syncCmd);
+        root.Subcommands.Add(syncCmd);
 
         // Act
-        var result = root.Parse("sync", "push", "--project", "My Project");
+        var result = root.Parse(new[] { "sync", "push", "--project", "My Project" });
 
         // Assert
-        Assert.Equal("My Project", result.GetValueForOption(projectOpt));
+        Assert.Equal("My Project", result.GetValue(projectOpt));
     }
 }

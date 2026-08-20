@@ -18,7 +18,6 @@
 
 using System;
 using System.CommandLine;
-using System.CommandLine.Invocation;
 using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
@@ -42,12 +41,15 @@ var root = new RootCommand("Engram — persistent memory for AI coding agents");
 // ─── serve ───────────────────────────────────────────────────────────────────
 
 var serveCmd  = new Command("serve", "Start the HTTP API server");
-var portOpt   = new Option<int>("--port", () => 7437, "Port to listen on (env: ENGRAM_PORT)");
-var serveNoAutoEnrollOpt = new Option<bool>("--no-auto-enroll", "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)");
-serveCmd.AddOption(portOpt);
-serveCmd.AddOption(serveNoAutoEnrollOpt);
-serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
+var portOpt   = new Option<int>("--port") { Description = "Port to listen on (env: ENGRAM_PORT)", DefaultValueFactory = _ => 7437 };
+var serveNoAutoEnrollOpt = new Option<bool>("--no-auto-enroll") { Description = "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)" };
+serveCmd.Options.Add(portOpt);
+serveCmd.Options.Add(serveNoAutoEnrollOpt);
+serveCmd.SetAction(async (ParseResult parseResult) =>
 {
+    int port = parseResult.GetValue(portOpt);
+    bool noAutoEnroll = parseResult.GetValue(serveNoAutoEnrollOpt);
+
     // HU-014 R6: Apply sync config from ~/.engram/config.json before server construction.
     // Only sets env var if not already explicitly set in the current process environment.
     ApplySyncConfigFromFile();
@@ -118,17 +120,20 @@ serveCmd.SetHandler(async (int port, bool noAutoEnroll) =>
     app.Urls.Clear();
     app.Urls.Add($"http://0.0.0.0:{port}");
     await app.RunAsync();
-}, portOpt, serveNoAutoEnrollOpt);
+});
 
 // ─── mcp ─────────────────────────────────────────────────────────────────────
 
 var mcpCmd       = new Command("mcp", "Start the MCP server (stdio transport)");
-var mcpProjectOpt = new Option<string?>("--project", "Override detected project name");
-var mcpAutoEnrollOpt = new Option<bool>("--no-auto-enroll", "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)");
-mcpCmd.AddOption(mcpProjectOpt);
-mcpCmd.AddOption(mcpAutoEnrollOpt);
-mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
+var mcpProjectOpt = new Option<string?>("--project") { Description = "Override detected project name" };
+var mcpAutoEnrollOpt = new Option<bool>("--no-auto-enroll") { Description = "Disable auto-generation of .engram-id (enabled by default; also via ENGRAM_AUTO_ENROLL=false)" };
+mcpCmd.Options.Add(mcpProjectOpt);
+mcpCmd.Options.Add(mcpAutoEnrollOpt);
+mcpCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string? project = parseResult.GetValue(mcpProjectOpt);
+    bool noAutoEnroll = parseResult.GetValue(mcpAutoEnrollOpt);
+
     var storeCfg = StoreConfig.FromEnvironment();
 
     // Project detection chain: --project → ENGRAM_PROJECT → git remote → git root → cwd basename
@@ -274,23 +279,29 @@ mcpCmd.SetHandler(async (string? project, bool noAutoEnroll) =>
     }
 
     await mcpBuilder.Build().RunAsync();
-}, mcpProjectOpt, mcpAutoEnrollOpt);
+});
 
 // ─── search ──────────────────────────────────────────────────────────────────
 
 var searchCmd      = new Command("search", "Search memories");
-var searchQueryArg = new Argument<string>("query", "Search query");
-var searchTypeOpt  = new Option<string?>("--type",    "Filter by type");
-var searchProjOpt  = new Option<string?>("--project", "Filter by project");
-var searchScopeOpt = new Option<string?>("--scope",   "Filter by scope: team or personal (omit for both)");
-var searchLimitOpt = new Option<int>("--limit", () => 10, "Max results");
-searchCmd.AddArgument(searchQueryArg);
-searchCmd.AddOption(searchTypeOpt);
-searchCmd.AddOption(searchProjOpt);
-searchCmd.AddOption(searchScopeOpt);
-searchCmd.AddOption(searchLimitOpt);
-searchCmd.SetHandler(async (string query, string? type, string? proj, string? scope, int limit) =>
+var searchQueryArg = new Argument<string>("query") { Description = "Search query" };
+var searchTypeOpt  = new Option<string?>("--type") { Description = "Filter by type" };
+var searchProjOpt  = new Option<string?>("--project") { Description = "Filter by project" };
+var searchScopeOpt = new Option<string?>("--scope") { Description = "Filter by scope: team or personal (omit for both)" };
+var searchLimitOpt = new Option<int>("--limit") { Description = "Max results", DefaultValueFactory = _ => 10 };
+searchCmd.Arguments.Add(searchQueryArg);
+searchCmd.Options.Add(searchTypeOpt);
+searchCmd.Options.Add(searchProjOpt);
+searchCmd.Options.Add(searchScopeOpt);
+searchCmd.Options.Add(searchLimitOpt);
+searchCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string query = parseResult.GetValue(searchQueryArg)!;
+    string? type = parseResult.GetValue(searchTypeOpt);
+    string? proj = parseResult.GetValue(searchProjOpt);
+    string? scope = parseResult.GetValue(searchScopeOpt);
+    int limit = parseResult.GetValue(searchLimitOpt);
+
     using var store = OpenStore();
     var results = await store.SearchAsync(query, new SearchOptions
     {
@@ -311,25 +322,32 @@ searchCmd.SetHandler(async (string query, string? type, string? proj, string? sc
         Console.WriteLine($"    {Truncate(r.Content, 300)}");
         Console.WriteLine($"    {r.CreatedAt}{projectDisplay} | scope: {r.Scope}\n");
     }
-}, searchQueryArg, searchTypeOpt, searchProjOpt, searchScopeOpt, searchLimitOpt);
+});
 
 // ─── save ─────────────────────────────────────────────────────────────────────
 
 var saveCmd       = new Command("save", "Save a memory");
-var saveTitleArg  = new Argument<string>("title",   "Memory title");
-var saveContentArg= new Argument<string>("content", "Memory content");
-var saveTypeOpt   = new Option<string>("--type",    () => "manual", "Type");
-var saveProjOpt   = new Option<string?>("--project", "Project name");
-var saveScopeOpt  = new Option<string?>("--scope",  "Scope: team (shared with all devs) or personal (private). Default: auto-classified from --type");
-var saveTopicOpt  = new Option<string?>("--topic",  "Topic key for upsert");
-saveCmd.AddArgument(saveTitleArg);
-saveCmd.AddArgument(saveContentArg);
-saveCmd.AddOption(saveTypeOpt);
-saveCmd.AddOption(saveProjOpt);
-saveCmd.AddOption(saveScopeOpt);
-saveCmd.AddOption(saveTopicOpt);
-saveCmd.SetHandler(async (string title, string content, string type, string? proj, string? scope, string? topic) =>
+var saveTitleArg  = new Argument<string>("title") { Description = "Memory title" };
+var saveContentArg= new Argument<string>("content") { Description = "Memory content" };
+var saveTypeOpt   = new Option<string>("--type") { Description = "Type", DefaultValueFactory = _ => "manual" };
+var saveProjOpt   = new Option<string?>("--project") { Description = "Project name" };
+var saveScopeOpt  = new Option<string?>("--scope") { Description = "Scope: team (shared with all devs) or personal (private). Default: auto-classified from --type" };
+var saveTopicOpt  = new Option<string?>("--topic") { Description = "Topic key for upsert" };
+saveCmd.Arguments.Add(saveTitleArg);
+saveCmd.Arguments.Add(saveContentArg);
+saveCmd.Options.Add(saveTypeOpt);
+saveCmd.Options.Add(saveProjOpt);
+saveCmd.Options.Add(saveScopeOpt);
+saveCmd.Options.Add(saveTopicOpt);
+saveCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string title = parseResult.GetValue(saveTitleArg)!;
+    string content = parseResult.GetValue(saveContentArg)!;
+    string type = parseResult.GetValue(saveTypeOpt)!;
+    string? proj = parseResult.GetValue(saveProjOpt);
+    string? scope = parseResult.GetValue(saveScopeOpt);
+    string? topic = parseResult.GetValue(saveTopicOpt);
+
     using var store = OpenStore();
     var sessionId = string.IsNullOrEmpty(proj) ? "manual-save" : $"manual-save-{proj}";
     await store.CreateSessionAsync(sessionId, proj ?? "", "");
@@ -344,26 +362,29 @@ saveCmd.SetHandler(async (string title, string content, string type, string? pro
         TopicKey  = topic,
     });
     Console.WriteLine($"Memory saved: #{id} \"{title}\" ({type})");
-}, saveTitleArg, saveContentArg, saveTypeOpt, saveProjOpt, saveScopeOpt, saveTopicOpt);
+});
 
 // ─── context ─────────────────────────────────────────────────────────────────
 
 var contextCmd     = new Command("context", "Show recent memory context");
-var contextProjArg = new Argument<string?>("project", () => null, "Project name (optional)");
-var contextScopeOpt= new Option<string?>("--scope", "Scope filter");
-contextCmd.AddArgument(contextProjArg);
-contextCmd.AddOption(contextScopeOpt);
-contextCmd.SetHandler(async (string? proj, string? scope) =>
+var contextProjArg = new Argument<string?>("project") { Description = "Project name (optional)", DefaultValueFactory = _ => null };
+var contextScopeOpt= new Option<string?>("--scope") { Description = "Scope filter" };
+contextCmd.Arguments.Add(contextProjArg);
+contextCmd.Options.Add(contextScopeOpt);
+contextCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string? proj = parseResult.GetValue(contextProjArg);
+    string? scope = parseResult.GetValue(contextScopeOpt);
+
     using var store = OpenStore();
     var ctx = await store.FormatContextAsync(proj, scope);
     Console.WriteLine(string.IsNullOrEmpty(ctx) ? "No previous session memories found." : ctx);
-}, contextProjArg, contextScopeOpt);
+});
 
 // ─── stats ────────────────────────────────────────────────────────────────────
 
 var statsCmd = new Command("stats", "Show memory system statistics");
-statsCmd.SetHandler(async () =>
+statsCmd.SetAction(async (ParseResult _) =>
 {
     var cfg = StoreConfig.FromEnvironment();
     using var store = OpenStore(cfg);
@@ -387,10 +408,12 @@ statsCmd.SetHandler(async () =>
 // ─── export ───────────────────────────────────────────────────────────────────
 
 var exportCmd     = new Command("export", "Export all memories to a JSON file");
-var exportFileArg = new Argument<string>("file", () => "engram-export.json", "Output file");
-exportCmd.AddArgument(exportFileArg);
-exportCmd.SetHandler(async (string file) =>
+var exportFileArg = new Argument<string>("file") { Description = "Output file", DefaultValueFactory = _ => "engram-export.json" };
+exportCmd.Arguments.Add(exportFileArg);
+exportCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string file = parseResult.GetValue(exportFileArg)!;
+
     using var store = OpenStore();
     var data = await store.ExportAsync();
     var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
@@ -403,15 +426,17 @@ exportCmd.SetHandler(async (string file) =>
     Console.WriteLine($"  Sessions:     {data.Sessions.Count}");
     Console.WriteLine($"  Observations: {data.Observations.Count}");
     Console.WriteLine($"  Prompts:      {data.Prompts.Count}");
-}, exportFileArg);
+});
 
 // ─── import ───────────────────────────────────────────────────────────────────
 
 var importCmd     = new Command("import", "Import memories from a JSON export file");
-var importFileArg = new Argument<string>("file", "Input JSON file");
-importCmd.AddArgument(importFileArg);
-importCmd.SetHandler(async (string file) =>
+var importFileArg = new Argument<string>("file") { Description = "Input JSON file" };
+importCmd.Arguments.Add(importFileArg);
+importCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string file = parseResult.GetValue(importFileArg)!;
+
     var json = await File.ReadAllTextAsync(file);
     var data = JsonSerializer.Deserialize<ExportData>(json, new JsonSerializerOptions
     {
@@ -425,7 +450,7 @@ importCmd.SetHandler(async (string file) =>
     Console.WriteLine($"  Sessions:     {result.SessionsImported}");
     Console.WriteLine($"  Observations: {result.ObservationsImported}");
     Console.WriteLine($"  Prompts:      {result.PromptsImported}");
-}, importFileArg);
+});
 
 // ─── sync ─────────────────────────────────────────────────────────────────────
 
@@ -433,12 +458,15 @@ var syncCmd = new Command("sync", "Sync operations");
 
 // sync status — mutation-based sync health via HTTP
 var syncStatusCmd = new Command("status", "Show mutation-based sync status");
-var syncStatusJsonOpt = new Option<bool>("--json", "Output as JSON (machine-readable)");
-var syncStatusLocalOpt = new Option<bool>("--local", "Show local enrollment status (no server required)");
-syncStatusCmd.AddOption(syncStatusJsonOpt);
-syncStatusCmd.AddOption(syncStatusLocalOpt);
-syncStatusCmd.SetHandler(async (bool json, bool local) =>
+var syncStatusJsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)" };
+var syncStatusLocalOpt = new Option<bool>("--local") { Description = "Show local enrollment status (no server required)" };
+syncStatusCmd.Options.Add(syncStatusJsonOpt);
+syncStatusCmd.Options.Add(syncStatusLocalOpt);
+syncStatusCmd.SetAction(async (ParseResult parseResult) =>
 {
+    bool json = parseResult.GetValue(syncStatusJsonOpt);
+    bool local = parseResult.GetValue(syncStatusLocalOpt);
+
     // HU-018: --local dispatch — local enrollment view (no server required)
     if (local)
     {
@@ -491,11 +519,11 @@ syncStatusCmd.SetHandler(async (bool json, bool local) =>
         Console.Error.WriteLine("error: No se pudo conectar al servidor — ¿está engram server corriendo? (timeout)");
         Environment.Exit(1);
     }
-}, syncStatusJsonOpt, syncStatusLocalOpt);
+});
 
 // sync export — export git-friendly chunks
 var syncExportCmd = new Command("export", "Export a new chunk to sync dir");
-syncExportCmd.SetHandler(async () =>
+syncExportCmd.SetAction(async (ParseResult _) =>
 {
     var syncCfg = SyncConfig.FromEnvironment();
     if (!syncCfg.IsConfigured)
@@ -511,7 +539,7 @@ syncExportCmd.SetHandler(async () =>
 
 // sync import — import git-friendly chunks
 var syncImportCmd = new Command("import", "Import new chunks from sync dir");
-syncImportCmd.SetHandler(async () =>
+syncImportCmd.SetAction(async (ParseResult _) =>
 {
     var syncCfg = SyncConfig.FromEnvironment();
     if (!syncCfg.IsConfigured)
@@ -527,23 +555,23 @@ syncImportCmd.SetHandler(async () =>
 
 // sync enroll — enroll a project for local sync push (ENG-514: HU-013)
 var syncEnrollCmd = new Command("enroll", "Enroll a project for sync push");
-var enrollProjectOpt = new Option<string>("--project", "Project to enroll");
-var enrollBehaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
-var enrollExcludeServerOpt = new Option<string[]>("--exclude-server", "Exclude server from sync (can be repeated)");
-var enrollInteractiveOpt = new Option<bool>("--interactive", "Interactive enrollment with project selection");
-var enrollAllOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
-syncEnrollCmd.AddOption(enrollProjectOpt);
-syncEnrollCmd.AddOption(enrollBehaviorOpt);
-syncEnrollCmd.AddOption(enrollExcludeServerOpt);
-syncEnrollCmd.AddOption(enrollInteractiveOpt);
-syncEnrollCmd.AddOption(enrollAllOpt);
-syncEnrollCmd.SetHandler(async (InvocationContext context) =>
+var enrollProjectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+var enrollBehaviorOpt = new Option<string>("--behavior") { Description = "Sync behavior: silent-skip or fail-loud", DefaultValueFactory = _ => "fail-loud" };
+var enrollExcludeServerOpt = new Option<string[]>("--exclude-server") { Description = "Exclude server from sync (can be repeated)" };
+var enrollInteractiveOpt = new Option<bool>("--interactive") { Description = "Interactive enrollment with project selection" };
+var enrollAllOpt = new Option<bool>("--all") { Description = "Enroll and push all projects with pending mutations" };
+syncEnrollCmd.Options.Add(enrollProjectOpt);
+syncEnrollCmd.Options.Add(enrollBehaviorOpt);
+syncEnrollCmd.Options.Add(enrollExcludeServerOpt);
+syncEnrollCmd.Options.Add(enrollInteractiveOpt);
+syncEnrollCmd.Options.Add(enrollAllOpt);
+syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
 {
-    var project = context.ParseResult.GetValueForOption(enrollProjectOpt);
-    var behavior = context.ParseResult.GetValueForOption(enrollBehaviorOpt);
-    var excludedServers = context.ParseResult.GetValueForOption(enrollExcludeServerOpt) ?? [];
-    var interactive = context.ParseResult.GetValueForOption(enrollInteractiveOpt);
-    var all = context.ParseResult.GetValueForOption(enrollAllOpt);
+    var project = parseResult.GetValue(enrollProjectOpt);
+    var behavior = parseResult.GetValue(enrollBehaviorOpt);
+    var excludedServers = parseResult.GetValue(enrollExcludeServerOpt) ?? [];
+    var interactive = parseResult.GetValue(enrollInteractiveOpt);
+    var all = parseResult.GetValue(enrollAllOpt);
 
     // --all and --project are mutually exclusive (mirrors syncPushCmd)
     if (all && !string.IsNullOrWhiteSpace(project))
@@ -641,10 +669,12 @@ syncEnrollCmd.SetHandler(async (InvocationContext context) =>
 
 // sync unenroll — unenroll a project from local sync push (ENG-514: HU-013)
 var syncUnenrollCmd = new Command("unenroll", "Unenroll a project from sync push");
-var unenrollProjectOpt = new Option<string>("--project", "Project to unenroll");
-syncUnenrollCmd.AddOption(unenrollProjectOpt);
-syncUnenrollCmd.SetHandler(async (string project) =>
+var unenrollProjectOpt = new Option<string>("--project") { Description = "Project to unenroll" };
+syncUnenrollCmd.Options.Add(unenrollProjectOpt);
+syncUnenrollCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string project = parseResult.GetValue(unenrollProjectOpt)!;
+
     if (string.IsNullOrWhiteSpace(project))
     {
         Console.Error.WriteLine("error: --project is required");
@@ -672,18 +702,22 @@ syncUnenrollCmd.SetHandler(async (string project) =>
         Console.WriteLine($"Project '{project}' sync configuration retained. Enrollment kept in DB.");
         Console.WriteLine("  (Phase 4 YAML: sync_enabled=false will be set in config)");
     }
-}, unenrollProjectOpt);
+});
 
 // sync push — manual push of pending mutations for a project or all projects (HU-014)
 var syncPushCmd = new Command("push", "Push pending mutations for a specific project or all enrolled projects");
-var syncPushProjectOpt = new Option<string>("--project", "Project to push mutations for");
-var syncPushTargetOpt = new Option<string>("--target", () => "cloud", "Target key for sync state");
-var syncPushAllOpt = new Option<bool>("--all", "Push all enrolled projects");
-syncPushCmd.AddOption(syncPushProjectOpt);
-syncPushCmd.AddOption(syncPushTargetOpt);
-syncPushCmd.AddOption(syncPushAllOpt);
-syncPushCmd.SetHandler(async (string project, string targetKey, bool all) =>
+var syncPushProjectOpt = new Option<string>("--project") { Description = "Project to push mutations for" };
+var syncPushTargetOpt = new Option<string>("--target") { Description = "Target key for sync state", DefaultValueFactory = _ => "cloud" };
+var syncPushAllOpt = new Option<bool>("--all") { Description = "Push all enrolled projects" };
+syncPushCmd.Options.Add(syncPushProjectOpt);
+syncPushCmd.Options.Add(syncPushTargetOpt);
+syncPushCmd.Options.Add(syncPushAllOpt);
+syncPushCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string project = parseResult.GetValue(syncPushProjectOpt)!;
+    string targetKey = parseResult.GetValue(syncPushTargetOpt)!;
+    bool all = parseResult.GetValue(syncPushAllOpt);
+
     // --all and --project are mutually exclusive
     if (all && !string.IsNullOrWhiteSpace(project))
     {
@@ -754,18 +788,18 @@ syncPushCmd.SetHandler(async (string project, string targetKey, bool all) =>
     }
 
     _ = await PushProjectAsync(localStore, serverUrl, targetKey, project);
-}, syncPushProjectOpt, syncPushTargetOpt, syncPushAllOpt);
+});
 
-syncCmd.AddCommand(syncStatusCmd);
-syncCmd.AddCommand(syncExportCmd);
-syncCmd.AddCommand(syncImportCmd);
-syncCmd.AddCommand(syncEnrollCmd);
-syncCmd.AddCommand(syncUnenrollCmd);
-syncCmd.AddCommand(syncPushCmd);
+syncCmd.Subcommands.Add(syncStatusCmd);
+syncCmd.Subcommands.Add(syncExportCmd);
+syncCmd.Subcommands.Add(syncImportCmd);
+syncCmd.Subcommands.Add(syncEnrollCmd);
+syncCmd.Subcommands.Add(syncUnenrollCmd);
+syncCmd.Subcommands.Add(syncPushCmd);
 
 // sync setup — initial sync configuration wizard (HU-014 R6)
 var syncSetupCmd = new Command("setup", "Interactive initial sync setup (auto-sync on/off)");
-syncSetupCmd.SetHandler(() =>
+syncSetupCmd.SetAction(_ =>
 {
     Console.WriteLine("Engram Sync — Initial Setup");
     Console.WriteLine("============================");
@@ -796,22 +830,27 @@ syncSetupCmd.SetHandler(() =>
         Console.WriteLine("✓ Auto-sync disabled. Use 'engram sync push --project <name>' for manual sync.");
     Console.WriteLine("  Restart engram server/mcp for changes to take effect.");
 });
-syncCmd.AddCommand(syncSetupCmd);
+syncCmd.Subcommands.Add(syncSetupCmd);
 
 // ─── project id (ENG-432) ─────────────────────────────────────────────────────
 
 var projectCmd   = new Command("project", "Project identity operations");
 var projectIdCmd = new Command("id", "Show or regenerate the project identity GUID (.engram-id)");
-var projectIdJsonOpt      = new Option<bool>("--json", "Output as JSON (machine-readable)");
-var projectIdRegenOpt     = new Option<bool>("--regenerate", "Recompute and overwrite .engram-id with the deterministic GUID");
-var projectIdSetOpt       = new Option<string?>("--set", "Set .engram-id to a specific GUID (valid UUID)");
-var projectIdYesOpt       = new Option<bool>("-y", () => false, "Skip confirmation prompt (assumes yes)");
-projectIdCmd.AddOption(projectIdJsonOpt);
-projectIdCmd.AddOption(projectIdRegenOpt);
-projectIdCmd.AddOption(projectIdSetOpt);
-projectIdCmd.AddOption(projectIdYesOpt);
-projectIdCmd.SetHandler(async (bool json, bool regen, string? setGuid, bool assumeYes) =>
+var projectIdJsonOpt      = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)" };
+var projectIdRegenOpt     = new Option<bool>("--regenerate") { Description = "Recompute and overwrite .engram-id with the deterministic GUID" };
+var projectIdSetOpt       = new Option<string?>("--set") { Description = "Set .engram-id to a specific GUID (valid UUID)" };
+var projectIdYesOpt       = new Option<bool>("-y") { Description = "Skip confirmation prompt (assumes yes)", DefaultValueFactory = _ => false };
+projectIdCmd.Options.Add(projectIdJsonOpt);
+projectIdCmd.Options.Add(projectIdRegenOpt);
+projectIdCmd.Options.Add(projectIdSetOpt);
+projectIdCmd.Options.Add(projectIdYesOpt);
+projectIdCmd.SetAction(async (ParseResult parseResult) =>
 {
+    bool json = parseResult.GetValue(projectIdJsonOpt);
+    bool regen = parseResult.GetValue(projectIdRegenOpt);
+    string? setGuid = parseResult.GetValue(projectIdSetOpt);
+    bool assumeYes = parseResult.GetValue(projectIdYesOpt);
+
     var cwd = Directory.GetCurrentDirectory();
     var fileGuid = ProjectIdentity.GetProjectId(cwd);
     var computedGuid = ProjectIdentity.TryComputeDeterministicGuid(cwd);
@@ -917,23 +956,28 @@ projectIdCmd.SetHandler(async (bool json, bool regen, string? setGuid, bool assu
     {
         Console.WriteLine("No project identity found.");
     }
-}, projectIdJsonOpt, projectIdRegenOpt, projectIdSetOpt, projectIdYesOpt);
+});
 
-projectCmd.AddCommand(projectIdCmd);
+projectCmd.Subcommands.Add(projectIdCmd);
 
 // ─── project migrate (ENG-435) ────────────────────────────────────────────
 
 var migrateCmd = new Command("migrate", "Migrate project data to a new identity");
-var migrateToOpt    = new Option<string>("--to", "Target project (GUID or name) - required");
-var migrateFromOpt   = new Option<string?>("--from", "Source project (defaults to .engram-id)");
-var migrateYesOpt   = new Option<bool>("-y", () => false, "Skip confirmation prompt");
-var migrateDryRunOpt = new Option<bool>("--dry-run", "Preview without making changes");
-migrateCmd.AddOption(migrateToOpt);
-migrateCmd.AddOption(migrateFromOpt);
-migrateCmd.AddOption(migrateYesOpt);
-migrateCmd.AddOption(migrateDryRunOpt);
-migrateCmd.SetHandler(async (string to, string? from, bool assumeYes, bool dryRun) =>
+var migrateToOpt    = new Option<string>("--to") { Description = "Target project (GUID or name) - required" };
+var migrateFromOpt   = new Option<string?>("--from") { Description = "Source project (defaults to .engram-id)" };
+var migrateYesOpt   = new Option<bool>("-y") { Description = "Skip confirmation prompt", DefaultValueFactory = _ => false };
+var migrateDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview without making changes" };
+migrateCmd.Options.Add(migrateToOpt);
+migrateCmd.Options.Add(migrateFromOpt);
+migrateCmd.Options.Add(migrateYesOpt);
+migrateCmd.Options.Add(migrateDryRunOpt);
+migrateCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string to = parseResult.GetValue(migrateToOpt)!;
+    string? from = parseResult.GetValue(migrateFromOpt);
+    bool assumeYes = parseResult.GetValue(migrateYesOpt);
+    bool dryRun = parseResult.GetValue(migrateDryRunOpt);
+
     // Auto-detect source from .engram-id if --from not provided
     var source = from;
     if (string.IsNullOrEmpty(source))
@@ -1017,23 +1061,28 @@ migrateCmd.SetHandler(async (string to, string? from, bool assumeYes, bool dryRu
         Console.Error.WriteLine($"Migration failed: {ex.Message}. Rolled back.");
         Environment.Exit(1);
     }
-}, migrateToOpt, migrateFromOpt, migrateYesOpt, migrateDryRunOpt);
+});
 
-projectCmd.AddCommand(migrateCmd);
+projectCmd.Subcommands.Add(migrateCmd);
 
 // ─── promote ─────────────────────────────────────────────────────────────────
 
 var promoteCmd = new Command("promote", "Promote observations to .md files");
-var promoteIdOpt = new Option<long>("--id", "Observation ID to promote");
-var promoteDirOpt = new Option<string?>("--md-dir", () => "docs/decisions", "Target directory for .md files");
-var promoteSyncOpt = new Option<bool>("--sync", "Promote all unpromoted observations");
-var promoteDryRunOpt = new Option<bool>("--dry-run", "Preview without writing");
-promoteCmd.AddOption(promoteIdOpt);
-promoteCmd.AddOption(promoteDirOpt);
-promoteCmd.AddOption(promoteSyncOpt);
-promoteCmd.AddOption(promoteDryRunOpt);
-promoteCmd.SetHandler(async (long id, string? mdDir, bool sync, bool dryRun) =>
+var promoteIdOpt = new Option<long>("--id") { Description = "Observation ID to promote" };
+var promoteDirOpt = new Option<string?>("--md-dir") { Description = "Target directory for .md files", DefaultValueFactory = _ => "docs/decisions" };
+var promoteSyncOpt = new Option<bool>("--sync") { Description = "Promote all unpromoted observations" };
+var promoteDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview without writing" };
+promoteCmd.Options.Add(promoteIdOpt);
+promoteCmd.Options.Add(promoteDirOpt);
+promoteCmd.Options.Add(promoteSyncOpt);
+promoteCmd.Options.Add(promoteDryRunOpt);
+promoteCmd.SetAction(async (ParseResult parseResult) =>
 {
+    long id = parseResult.GetValue(promoteIdOpt);
+    string? mdDir = parseResult.GetValue(promoteDirOpt);
+    bool sync = parseResult.GetValue(promoteSyncOpt);
+    bool dryRun = parseResult.GetValue(promoteDryRunOpt);
+
     using var store = OpenStore();
     var service = new Engram.MdGeneration.PromotionService(store);
 
@@ -1057,7 +1106,7 @@ promoteCmd.SetHandler(async (long id, string? mdDir, bool sync, bool dryRun) =>
     {
         Console.Error.WriteLine("error: specify --id or --sync");
     }
-}, promoteIdOpt, promoteDirOpt, promoteSyncOpt, promoteDryRunOpt);
+});
 
 // ─── projects ─────────────────────────────────────────────────────────────────
 
@@ -1065,7 +1114,7 @@ var projectsCmd = new Command("projects", "Manage projects");
 
 // projects list
 var projectsListCmd = new Command("list", "List all projects with stats");
-projectsListCmd.SetHandler(async () =>
+projectsListCmd.SetAction(async (ParseResult _) =>
 {
     using var store = OpenStore();
     var stats = await store.ListProjectsWithStatsAsync();
@@ -1096,13 +1145,16 @@ projectsListCmd.SetHandler(async () =>
 });
 
 // projects consolidate
-var consolidateAllOpt   = new Option<bool>("--all", "Consolidate all similar projects (no interactive)");
-var consolidateDryRunOpt = new Option<bool>("--dry-run", "Show what would be merged without changing anything");
+var consolidateAllOpt   = new Option<bool>("--all") { Description = "Consolidate all similar projects (no interactive)" };
+var consolidateDryRunOpt = new Option<bool>("--dry-run") { Description = "Show what would be merged without changing anything" };
 var consolidateCmd = new Command("consolidate", "Merge similar project names into a canonical name");
-consolidateCmd.AddOption(consolidateAllOpt);
-consolidateCmd.AddOption(consolidateDryRunOpt);
-consolidateCmd.SetHandler(async (bool doAll, bool dryRun) =>
+consolidateCmd.Options.Add(consolidateAllOpt);
+consolidateCmd.Options.Add(consolidateDryRunOpt);
+consolidateCmd.SetAction(async (ParseResult parseResult) =>
 {
+    bool doAll = parseResult.GetValue(consolidateAllOpt);
+    bool dryRun = parseResult.GetValue(consolidateDryRunOpt);
+
     using var store = OpenStore();
 
     if (!doAll)
@@ -1264,14 +1316,16 @@ consolidateCmd.SetHandler(async (bool doAll, bool dryRun) =>
         var result = await store.MergeProjectsAsync(sources, canonical);
         Console.WriteLine($"  Merged: {result.ObservationsUpdated} obs, {result.SessionsUpdated} sessions, {result.PromptsUpdated} prompts\n");
     }
-}, consolidateAllOpt, consolidateDryRunOpt);
+});
 
 // projects prune
-var pruneDryRunOpt = new Option<bool>("--dry-run", "Show what would be pruned without deleting anything");
+var pruneDryRunOpt = new Option<bool>("--dry-run") { Description = "Show what would be pruned without deleting anything" };
 var pruneCmd = new Command("prune", "Remove projects with 0 observations (sessions & prompts only)");
-pruneCmd.AddOption(pruneDryRunOpt);
-pruneCmd.SetHandler(async (bool dryRun) =>
+pruneCmd.Options.Add(pruneDryRunOpt);
+pruneCmd.SetAction(async (ParseResult parseResult) =>
 {
+    bool dryRun = parseResult.GetValue(pruneDryRunOpt);
+
     using var store = OpenStore();
     var allStats = await store.ListProjectsWithStatsAsync();
 
@@ -1339,11 +1393,11 @@ pruneCmd.SetHandler(async (bool dryRun) =>
     }
 
     Console.WriteLine($"\nPruned {selected.Count} project(s): {totalSessions} sessions, {totalPrompts} prompts removed.");
-}, pruneDryRunOpt);
+});
 
-projectsCmd.AddCommand(projectsListCmd);
-projectsCmd.AddCommand(consolidateCmd);
-projectsCmd.AddCommand(pruneCmd);
+projectsCmd.Subcommands.Add(projectsListCmd);
+projectsCmd.Subcommands.Add(consolidateCmd);
+projectsCmd.Subcommands.Add(pruneCmd);
 
 // ─── retention ────────────────────────────────────────────────────────────────
 
@@ -1351,7 +1405,7 @@ var retentionCmd = new Command("retention", "Manage memory retention and pruning
 
 // retention check
 var retentionCheckCmd = new Command("check", "Show retention statistics");
-retentionCheckCmd.SetHandler(async () =>
+retentionCheckCmd.SetAction(async (ParseResult _) =>
 {
     using var store = OpenStore();
     var stats = await store.GetRetentionStatsAsync();
@@ -1369,12 +1423,15 @@ retentionCheckCmd.SetHandler(async () =>
 
 // retention prune
 var retentionPruneCmd = new Command("prune", "Prune old observations by TTL");
-var retPruneTypeOpt = new Option<string?>("--type", "Filter by observation type");
-var retPruneDryRunOpt = new Option<bool>("--dry-run", "Preview without modifying");
-retentionPruneCmd.AddOption(retPruneTypeOpt);
-retentionPruneCmd.AddOption(retPruneDryRunOpt);
-retentionPruneCmd.SetHandler(async (string? type, bool dryRun) =>
+var retPruneTypeOpt = new Option<string?>("--type") { Description = "Filter by observation type" };
+var retPruneDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview without modifying" };
+retentionPruneCmd.Options.Add(retPruneTypeOpt);
+retentionPruneCmd.Options.Add(retPruneDryRunOpt);
+retentionPruneCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string? type = parseResult.GetValue(retPruneTypeOpt);
+    bool dryRun = parseResult.GetValue(retPruneDryRunOpt);
+
     using var store = OpenStore();
     var result = await store.PruneOldObservationsAsync(new RetentionPruneParams
     {
@@ -1389,45 +1446,44 @@ retentionPruneCmd.SetHandler(async (string? type, bool dryRun) =>
 
     foreach (var (t, count) in result.Details)
         Console.WriteLine($"  {t}: {count}");
-}, retPruneTypeOpt, retPruneDryRunOpt);
+});
 
-retentionCmd.AddCommand(retentionCheckCmd);
-retentionCmd.AddCommand(retentionPruneCmd);
+retentionCmd.Subcommands.Add(retentionCheckCmd);
+retentionCmd.Subcommands.Add(retentionPruneCmd);
 
 // ─── obsidian-export ──────────────────────────────────────────────────────────
 
 var obsidianCmd          = new Command("obsidian-export", "Export memories to an Obsidian vault as markdown files");
-var obsidianVaultOpt     = new Option<string>("--vault", "Path to the Obsidian vault root (required)");
-var obsidianProjectOpt   = new Option<string?>("--project", "Filter export to a single project");
-var obsidianPersonalOpt  = new Option<bool>("--include-personal", "Include scope=personal observations (default: team only)");
-var obsidianForceOpt     = new Option<bool>("--force", "Ignore state file, do a full re-export");
-var obsidianGraphOpt     = new Option<string>("--graph-config", () => "preserve", "Graph config mode: preserve|force|skip (default: preserve)");
-var obsidianLimitOpt     = new Option<int>("--limit", () => 0, "Max observations to export (0 = no limit)");
-var obsidianSinceOpt     = new Option<string?>("--since", "Filter by date: ISO 8601 (2025-01-01) or relative (30d, 7d, 24h, 5m)");
-var obsidianWatchOpt      = new Option<bool>("--watch", "Run in watch mode (continuous export at intervals)");
-var obsidianIntervalOpt  = new Option<string?>("--interval", "Watch interval: 30s, 5m, 1h (default 60s when --watch)");
-obsidianCmd.AddOption(obsidianVaultOpt);
-obsidianCmd.AddOption(obsidianProjectOpt);
-obsidianCmd.AddOption(obsidianPersonalOpt);
-obsidianCmd.AddOption(obsidianForceOpt);
-obsidianCmd.AddOption(obsidianGraphOpt);
-obsidianCmd.AddOption(obsidianLimitOpt);
-obsidianCmd.AddOption(obsidianSinceOpt);
-obsidianCmd.AddOption(obsidianWatchOpt);
-obsidianCmd.AddOption(obsidianIntervalOpt);
-obsidianCmd.SetHandler(async (InvocationContext context) =>
+var obsidianVaultOpt     = new Option<string>("--vault") { Description = "Path to the Obsidian vault root (required)" };
+var obsidianProjectOpt   = new Option<string?>("--project") { Description = "Filter export to a single project" };
+var obsidianPersonalOpt  = new Option<bool>("--include-personal") { Description = "Include scope=personal observations (default: team only)" };
+var obsidianForceOpt     = new Option<bool>("--force") { Description = "Ignore state file, do a full re-export" };
+var obsidianGraphOpt     = new Option<string>("--graph-config") { Description = "Graph config mode: preserve|force|skip (default: preserve)", DefaultValueFactory = _ => "preserve" };
+var obsidianLimitOpt     = new Option<int>("--limit") { Description = "Max observations to export (0 = no limit)", DefaultValueFactory = _ => 0 };
+var obsidianSinceOpt     = new Option<string?>("--since") { Description = "Filter by date: ISO 8601 (2025-01-01) or relative (30d, 7d, 24h, 5m)" };
+var obsidianWatchOpt      = new Option<bool>("--watch") { Description = "Run in watch mode (continuous export at intervals)" };
+var obsidianIntervalOpt  = new Option<string?>("--interval") { Description = "Watch interval: 30s, 5m, 1h (default 60s when --watch)" };
+obsidianCmd.Options.Add(obsidianVaultOpt);
+obsidianCmd.Options.Add(obsidianProjectOpt);
+obsidianCmd.Options.Add(obsidianPersonalOpt);
+obsidianCmd.Options.Add(obsidianForceOpt);
+obsidianCmd.Options.Add(obsidianGraphOpt);
+obsidianCmd.Options.Add(obsidianLimitOpt);
+obsidianCmd.Options.Add(obsidianSinceOpt);
+obsidianCmd.Options.Add(obsidianWatchOpt);
+obsidianCmd.Options.Add(obsidianIntervalOpt);
+obsidianCmd.SetAction(async (ParseResult parseResult) =>
 {
-    // Get option values from context - need explicit type
-    var vaultResult = context.ParseResult.GetValueForOption(obsidianVaultOpt);
-    var vault = vaultResult ?? "";
-    var project = context.ParseResult.GetValueForOption(obsidianProjectOpt);
-    var includePersonal = context.ParseResult.GetValueForOption(obsidianPersonalOpt);
-    var force = context.ParseResult.GetValueForOption(obsidianForceOpt);
-    var graphConfig = context.ParseResult.GetValueForOption(obsidianGraphOpt) ?? "preserve";
-    var limit = context.ParseResult.GetValueForOption(obsidianLimitOpt);
-    var since = context.ParseResult.GetValueForOption(obsidianSinceOpt);
-    var watch = context.ParseResult.GetValueForOption(obsidianWatchOpt);
-    var interval = context.ParseResult.GetValueForOption(obsidianIntervalOpt);
+    // Get option values from parse result
+    var vault = parseResult.GetValue(obsidianVaultOpt) ?? "";
+    var project = parseResult.GetValue(obsidianProjectOpt);
+    var includePersonal = parseResult.GetValue(obsidianPersonalOpt);
+    var force = parseResult.GetValue(obsidianForceOpt);
+    var graphConfig = parseResult.GetValue(obsidianGraphOpt) ?? "preserve";
+    var limit = parseResult.GetValue(obsidianLimitOpt);
+    var since = parseResult.GetValue(obsidianSinceOpt);
+    var watch = parseResult.GetValue(obsidianWatchOpt);
+    var interval = parseResult.GetValue(obsidianIntervalOpt);
 
     if (string.IsNullOrEmpty(vault))
     {
@@ -1536,15 +1592,17 @@ obsidianCmd.SetHandler(async (InvocationContext context) =>
 // ─── version ──────────────────────────────────────────────────────────────────
 
 var versionCmd = new Command("version", "Print version");
-versionCmd.SetHandler(() => Console.WriteLine($"engram {Version}"));
+versionCmd.SetAction(_ => Console.WriteLine($"engram {Version}"));
 
 // ─── doctor ───────────────────────────────────────────────────────────────────
 
 var doctorCmd = new Command("doctor", "Run diagnostic health checks on the engram ecosystem");
-var doctorServerOpt = new Option<string?>("--server", "Engram server URL (env: ENGRAM_SERVER_URL)");
-doctorCmd.AddOption(doctorServerOpt);
-doctorCmd.SetHandler(async (string? serverUrl) =>
+var doctorServerOpt = new Option<string?>("--server") { Description = "Engram server URL (env: ENGRAM_SERVER_URL)" };
+doctorCmd.Options.Add(doctorServerOpt);
+doctorCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string? serverUrl = parseResult.GetValue(doctorServerOpt);
+
     // Use provided URL or fall back to environment variable
     var url = serverUrl ?? Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
 
@@ -1614,7 +1672,7 @@ doctorCmd.SetHandler(async (string? serverUrl) =>
             Environment.Exit(1);
         }
     }
-}, doctorServerOpt);
+});
 
 // ─── profile (HU-023) ─────────────────────────────────────────────────────────
 
@@ -1622,10 +1680,12 @@ var profileCmd = new Command("profile", "Show or set the deployment profile");
 
 // profile show
 var profileShowCmd     = new Command("show", "Show the active deployment profile and effective variables");
-var profileShowJsonOpt = new Option<bool>("--json", "Output as JSON");
-profileShowCmd.AddOption(profileShowJsonOpt);
-profileShowCmd.SetHandler((bool json) =>
+var profileShowJsonOpt = new Option<bool>("--json") { Description = "Output as JSON" };
+profileShowCmd.Options.Add(profileShowJsonOpt);
+profileShowCmd.SetAction(parseResult =>
 {
+    bool json = parseResult.GetValue(profileShowJsonOpt);
+
     var raw = Environment.GetEnvironmentVariable(ProfileConfig.ProfileEnvVar);
     var isDefault = string.IsNullOrWhiteSpace(raw);
     var profile = DeployProfileExtensions.FromEnvironment();
@@ -1658,18 +1718,22 @@ profileShowCmd.SetHandler((bool json) =>
     Console.WriteLine("Effective variables:");
     foreach (var (key, value, source) in ProfileConfig.GetEffectiveVariables(profile))
         Console.WriteLine($"  {key,-28} {value}  [{source}]");
-}, profileShowJsonOpt);
+});
 
 // profile set
 var profileSetCmd       = new Command("set", "Set the deployment profile (writes ~/.engram/.env)");
-var profileSetNameArg   = new Argument<string>("profile", "Profile name: local, remote-server, offline-first, desktop");
-var profileSetDryRunOpt = new Option<bool>("--dry-run", "Preview changes without writing files");
-var profileSetJsonOpt   = new Option<bool>("--json", "Output as JSON");
-profileSetCmd.AddArgument(profileSetNameArg);
-profileSetCmd.AddOption(profileSetDryRunOpt);
-profileSetCmd.AddOption(profileSetJsonOpt);
-profileSetCmd.SetHandler((string name, bool dryRun, bool json) =>
+var profileSetNameArg   = new Argument<string>("profile") { Description = "Profile name: local, remote-server, offline-first, desktop" };
+var profileSetDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview changes without writing files" };
+var profileSetJsonOpt   = new Option<bool>("--json") { Description = "Output as JSON" };
+profileSetCmd.Arguments.Add(profileSetNameArg);
+profileSetCmd.Options.Add(profileSetDryRunOpt);
+profileSetCmd.Options.Add(profileSetJsonOpt);
+profileSetCmd.SetAction(parseResult =>
 {
+    string name = parseResult.GetValue(profileSetNameArg)!;
+    bool dryRun = parseResult.GetValue(profileSetDryRunOpt);
+    bool json = parseResult.GetValue(profileSetJsonOpt);
+
     DeployProfile target;
     try
     {
@@ -1725,27 +1789,33 @@ profileSetCmd.SetHandler((string name, bool dryRun, bool json) =>
     Console.WriteLine($"  Backup:  {backupPath}");
     if (missing.Count > 0)
         Console.WriteLine($"  Note: profile requires: {string.Join(", ", missing)} — set them before starting the server.");
-}, profileSetNameArg, profileSetDryRunOpt, profileSetJsonOpt);
+});
 
-profileCmd.AddCommand(profileShowCmd);
-profileCmd.AddCommand(profileSetCmd);
+profileCmd.Subcommands.Add(profileShowCmd);
+profileCmd.Subcommands.Add(profileSetCmd);
 
 // ─── relations (ENG-404) ──────────────────────────────────────────────────
 
 var relationsCmd = new Command("relations", "Manage memory observation relations");
 
-var relActionOpt = new Option<string>("--action", "Action: add, get, or delete (required)");
-var relObsIdOpt = new Option<long>("--observation-id", "Source observation ID (required)");
-var relTargetIdOpt = new Option<long>("--target-id", "Target observation ID (required for add/delete)");
-var relTypeOpt = new Option<string>("--type", "Relation type: depends_on, supersedes, conflicts_with, related_to (required for add/delete)");
-var relProjOpt = new Option<string?>("--project", "Project name");
-relationsCmd.AddOption(relActionOpt);
-relationsCmd.AddOption(relObsIdOpt);
-relationsCmd.AddOption(relTargetIdOpt);
-relationsCmd.AddOption(relTypeOpt);
-relationsCmd.AddOption(relProjOpt);
-relationsCmd.SetHandler(async (string action, long obsId, long targetId, string? relType, string? proj) =>
+var relActionOpt = new Option<string>("--action") { Description = "Action: add, get, or delete (required)" };
+var relObsIdOpt = new Option<long>("--observation-id") { Description = "Source observation ID (required)" };
+var relTargetIdOpt = new Option<long>("--target-id") { Description = "Target observation ID (required for add/delete)" };
+var relTypeOpt = new Option<string>("--type") { Description = "Relation type: depends_on, supersedes, conflicts_with, related_to (required for add/delete)" };
+var relProjOpt = new Option<string?>("--project") { Description = "Project name" };
+relationsCmd.Options.Add(relActionOpt);
+relationsCmd.Options.Add(relObsIdOpt);
+relationsCmd.Options.Add(relTargetIdOpt);
+relationsCmd.Options.Add(relTypeOpt);
+relationsCmd.Options.Add(relProjOpt);
+relationsCmd.SetAction(async (ParseResult parseResult) =>
 {
+    string action = parseResult.GetValue(relActionOpt)!;
+    long obsId = parseResult.GetValue(relObsIdOpt);
+    long targetId = parseResult.GetValue(relTargetIdOpt);
+    string? relType = parseResult.GetValue(relTypeOpt);
+    string? proj = parseResult.GetValue(relProjOpt);
+
     using var store = OpenStore();
     var project = proj ?? Normalizers.NormalizeProject(ProjectDetector.DetectProject(Directory.GetCurrentDirectory()));
     var sessionId = $"rel-cli-{DateTime.UtcNow:yyyyMMdd}";
@@ -1784,20 +1854,24 @@ relationsCmd.SetHandler(async (string action, long obsId, long targetId, string?
             Console.Error.WriteLine($"error: invalid action '{action}'. Valid: add, get, delete");
             return;
     }
-}, relActionOpt, relObsIdOpt, relTargetIdOpt, relTypeOpt, relProjOpt);
+});
 
-// ──�� lineage (ENG-404) ────────────────────────────────────────────────────
+// ─── lineage (ENG-404) ────────────────────────────────────────────────────
 
 var lineageCmd = new Command("lineage", "Build lineage tree for a memory observation");
 
-var linObsIdOpt = new Option<long>("--observation-id", "Root observation ID (required)");
-var linMaxHopsOpt = new Option<int>("--max-hops", () => 5, "Max traversal depth (default: 5, max: 10)");
-var linProjOpt = new Option<string?>("--project", "Project name");
-lineageCmd.AddOption(linObsIdOpt);
-lineageCmd.AddOption(linMaxHopsOpt);
-lineageCmd.AddOption(linProjOpt);
-lineageCmd.SetHandler(async (long obsId, int maxHops, string? proj) =>
+var linObsIdOpt = new Option<long>("--observation-id") { Description = "Root observation ID (required)" };
+var linMaxHopsOpt = new Option<int>("--max-hops") { Description = "Max traversal depth (default: 5, max: 10)", DefaultValueFactory = _ => 5 };
+var linProjOpt = new Option<string?>("--project") { Description = "Project name" };
+lineageCmd.Options.Add(linObsIdOpt);
+lineageCmd.Options.Add(linMaxHopsOpt);
+lineageCmd.Options.Add(linProjOpt);
+lineageCmd.SetAction(async (ParseResult parseResult) =>
 {
+    long obsId = parseResult.GetValue(linObsIdOpt);
+    int maxHops = parseResult.GetValue(linMaxHopsOpt);
+    string? proj = parseResult.GetValue(linProjOpt);
+
     if (obsId == 0) { Console.Error.WriteLine("error: --observation-id required"); return; }
 
     var clampedHops = Math.Clamp(maxHops, 1, 10);
@@ -1840,41 +1914,41 @@ lineageCmd.SetHandler(async (long obsId, int maxHops, string? proj) =>
 
     Console.WriteLine($"Hops: {result.Hops}");
     if (result.CycleDetected) Console.WriteLine("⚠️ Cycle detected!");
-}, linObsIdOpt, linMaxHopsOpt, linProjOpt);
+});
 
 // ─── interactive (HU-018) ─────────────────────────────────────────────────────
 
 var interactiveCmd = new Command("interactive", "Start interactive TUI navigator");
-interactiveCmd.SetHandler((InvocationContext context) =>
+interactiveCmd.SetAction(parseResult =>
 {
     using var store = OpenStore();
-    context.ExitCode = InteractiveMenu.Run(store, Console.In, Console.Out);
+    return InteractiveMenu.Run(store, Console.In, Console.Out);
 });
 
 // ─── Assemble ────────────────────────────────────────────────────────────────
 
-root.AddCommand(serveCmd);
-root.AddCommand(mcpCmd);
-root.AddCommand(searchCmd);
-root.AddCommand(saveCmd);
-root.AddCommand(contextCmd);
-root.AddCommand(statsCmd);
-root.AddCommand(exportCmd);
-root.AddCommand(importCmd);
-root.AddCommand(syncCmd);
-root.AddCommand(projectCmd);
-root.AddCommand(promoteCmd);
-root.AddCommand(projectsCmd);
-root.AddCommand(retentionCmd);
-root.AddCommand(obsidianCmd);
-root.AddCommand(versionCmd);
-root.AddCommand(doctorCmd);
-root.AddCommand(profileCmd);
-root.AddCommand(relationsCmd);
-root.AddCommand(lineageCmd);
-root.AddCommand(interactiveCmd);
+root.Subcommands.Add(serveCmd);
+root.Subcommands.Add(mcpCmd);
+root.Subcommands.Add(searchCmd);
+root.Subcommands.Add(saveCmd);
+root.Subcommands.Add(contextCmd);
+root.Subcommands.Add(statsCmd);
+root.Subcommands.Add(exportCmd);
+root.Subcommands.Add(importCmd);
+root.Subcommands.Add(syncCmd);
+root.Subcommands.Add(projectCmd);
+root.Subcommands.Add(promoteCmd);
+root.Subcommands.Add(projectsCmd);
+root.Subcommands.Add(retentionCmd);
+root.Subcommands.Add(obsidianCmd);
+root.Subcommands.Add(versionCmd);
+root.Subcommands.Add(doctorCmd);
+root.Subcommands.Add(profileCmd);
+root.Subcommands.Add(relationsCmd);
+root.Subcommands.Add(lineageCmd);
+root.Subcommands.Add(interactiveCmd);
 
-return await root.InvokeAsync(args);
+return await root.Parse(args).InvokeAsync();
 
 // ─── Sync Enrollment Helpers (ENG-514: HU-013 Phase 3) ──────────────────────────
 

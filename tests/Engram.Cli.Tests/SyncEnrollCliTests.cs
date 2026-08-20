@@ -19,15 +19,15 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_WithBehavior_ParsesBehaviorOption()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var behaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(behaviorOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var behaviorOpt = new Option<string>("--behavior") { Description = "Sync behavior: silent-skip or fail-loud", DefaultValueFactory = _ => "fail-loud" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(behaviorOpt);
 
         // Test silent-skip
         var result = enrollCmd.Parse("--project myproj --behavior silent-skip");
-        Assert.Equal("silent-skip", result.GetValueForOption(behaviorOpt));
-        Assert.Equal("myproj", result.GetValueForOption(projectOpt));
+        Assert.Equal("silent-skip", result.GetValue(behaviorOpt));
+        Assert.Equal("myproj", result.GetValue(projectOpt));
     }
 
     /// <summary>
@@ -37,13 +37,13 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_WithoutBehavior_DefaultsToFailLoud()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var behaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(behaviorOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var behaviorOpt = new Option<string>("--behavior") { Description = "Sync behavior: silent-skip or fail-loud", DefaultValueFactory = _ => "fail-loud" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(behaviorOpt);
 
         var result = enrollCmd.Parse("--project myproj");
-        Assert.Equal("fail-loud", result.GetValueForOption(behaviorOpt));
+        Assert.Equal("fail-loud", result.GetValue(behaviorOpt));
     }
 
     /// <summary>
@@ -84,21 +84,21 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_WithExcludeServer_SetsExcludeServers()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var excludeServerOpt = new Option<string[]>("--exclude-server", "Exclude server from sync (can be repeated)");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(excludeServerOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var excludeServerOpt = new Option<string[]>("--exclude-server") { Description = "Exclude server from sync (can be repeated)" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(excludeServerOpt);
 
         // Single server
         var result1 = enrollCmd.Parse("--project myproj --exclude-server server1");
-        var servers1 = result1.GetValueForOption(excludeServerOpt);
+        var servers1 = result1.GetValue(excludeServerOpt);
         Assert.NotNull(servers1);
         Assert.Single(servers1);
         Assert.Equal("server1", servers1[0]);
 
         // Multiple servers via repeated flag
         var result2 = enrollCmd.Parse("--project myproj --exclude-server srv-a --exclude-server srv-b --exclude-server srv-c");
-        var servers2 = result2.GetValueForOption(excludeServerOpt);
+        var servers2 = result2.GetValue(excludeServerOpt);
         Assert.NotNull(servers2);
         Assert.Equal(3, servers2.Length);
         Assert.Equal(new[] { "srv-a", "srv-b", "srv-c" }, servers2);
@@ -111,13 +111,13 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_WithoutExcludeServer_ReturnsEmptyArray()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var excludeServerOpt = new Option<string[]>("--exclude-server", "Exclude server from sync (can be repeated)");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(excludeServerOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var excludeServerOpt = new Option<string[]>("--exclude-server") { Description = "Exclude server from sync (can be repeated)" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(excludeServerOpt);
 
         var result = enrollCmd.Parse("--project myproj");
-        var servers = result.GetValueForOption(excludeServerOpt);
+        var servers = result.GetValue(excludeServerOpt);
         Assert.NotNull(servers);
         Assert.Empty(servers);
     }
@@ -131,16 +131,16 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_Interactive_ParsesFlag()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var interactiveOpt = new Option<bool>("--interactive", "Interactive enrollment with project selection");
-        enrollCmd.AddOption(interactiveOpt);
+        var interactiveOpt = new Option<bool>("--interactive") { Description = "Interactive enrollment with project selection" };
+        enrollCmd.Options.Add(interactiveOpt);
 
         // Present → true
         var resultWith = enrollCmd.Parse("--interactive");
-        Assert.True(resultWith.GetValueForOption(interactiveOpt));
+        Assert.True(resultWith.GetValue(interactiveOpt));
 
         // Absent → false (default)
         var resultWithout = enrollCmd.Parse("");
-        Assert.False(resultWithout.GetValueForOption(interactiveOpt));
+        Assert.False(resultWithout.GetValue(interactiveOpt));
     }
 
     /// <summary>
@@ -150,14 +150,14 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_Interactive_WithoutProject_IsAccepted()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var interactiveOpt = new Option<bool>("--interactive", "Interactive enrollment with project selection");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(interactiveOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var interactiveOpt = new Option<bool>("--interactive") { Description = "Interactive enrollment with project selection" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(interactiveOpt);
 
         var result = enrollCmd.Parse("--interactive");
-        Assert.True(result.GetValueForOption(interactiveOpt));
-        Assert.Null(result.GetValueForOption(projectOpt));
+        Assert.True(result.GetValue(interactiveOpt));
+        Assert.Null(result.GetValue(projectOpt));
     }
 
     // ─── --all flag (HU-018) ─────────────────────────────────────────────────
@@ -169,16 +169,16 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_WithAllFlag_ParsesBool()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var allOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
-        enrollCmd.AddOption(allOpt);
+        var allOpt = new Option<bool>("--all") { Description = "Enroll and push all projects with pending mutations" };
+        enrollCmd.Options.Add(allOpt);
 
         // Present → true
         var resultWith = enrollCmd.Parse("--all");
-        Assert.True(resultWith.GetValueForOption(allOpt));
+        Assert.True(resultWith.GetValue(allOpt));
 
         // Absent → false (default)
         var resultWithout = enrollCmd.Parse("");
-        Assert.False(resultWithout.GetValueForOption(allOpt));
+        Assert.False(resultWithout.GetValue(allOpt));
     }
 
     /// <summary>
@@ -188,18 +188,18 @@ public sealed class SyncEnrollCliTests
     public void SyncEnroll_AllFlag_CombinesWithExistingOptions()
     {
         var enrollCmd = new Command("enroll", "Enroll a project for sync push");
-        var projectOpt = new Option<string>("--project", "Project to enroll");
-        var behaviorOpt = new Option<string>("--behavior", () => "fail-loud", "Sync behavior: silent-skip or fail-loud");
-        var allOpt = new Option<bool>("--all", "Enroll and push all projects with pending mutations");
-        enrollCmd.AddOption(projectOpt);
-        enrollCmd.AddOption(behaviorOpt);
-        enrollCmd.AddOption(allOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to enroll" };
+        var behaviorOpt = new Option<string>("--behavior") { Description = "Sync behavior: silent-skip or fail-loud", DefaultValueFactory = _ => "fail-loud" };
+        var allOpt = new Option<bool>("--all") { Description = "Enroll and push all projects with pending mutations" };
+        enrollCmd.Options.Add(projectOpt);
+        enrollCmd.Options.Add(behaviorOpt);
+        enrollCmd.Options.Add(allOpt);
 
         var result = enrollCmd.Parse("--all --behavior silent-skip");
 
-        Assert.True(result.GetValueForOption(allOpt));
-        Assert.Equal("silent-skip", result.GetValueForOption(behaviorOpt));
-        Assert.Null(result.GetValueForOption(projectOpt));
+        Assert.True(result.GetValue(allOpt));
+        Assert.Equal("silent-skip", result.GetValue(behaviorOpt));
+        Assert.Null(result.GetValue(projectOpt));
     }
 
     // ─── Unenroll tests ──────────────────────────────────────────────────────
@@ -211,11 +211,11 @@ public sealed class SyncEnrollCliTests
     public void SyncUnenroll_RequiresProjectOption()
     {
         var unenrollCmd = new Command("unenroll", "Unenroll a project from sync push");
-        var projectOpt = new Option<string>("--project", "Project to unenroll");
-        unenrollCmd.AddOption(projectOpt);
+        var projectOpt = new Option<string>("--project") { Description = "Project to unenroll" };
+        unenrollCmd.Options.Add(projectOpt);
 
         var result = unenrollCmd.Parse("--project myproj");
-        Assert.Equal("myproj", result.GetValueForOption(projectOpt));
+        Assert.Equal("myproj", result.GetValue(projectOpt));
     }
 
     /// <summary>
@@ -226,11 +226,12 @@ public sealed class SyncEnrollCliTests
     {
         // Verify the prompt message matches what the handler shows
         var unenrollCmd = new Command("unenroll", "Unenroll a project from sync push");
-        var projectOpt = new Option<string>("--project", "Project to unenroll")
+        var projectOpt = new Option<string>("--project")
         {
-            IsRequired = true
+            Description = "Project to unenroll",
+            Required = true
         };
-        unenrollCmd.AddOption(projectOpt);
+        unenrollCmd.Options.Add(projectOpt);
 
         var result = unenrollCmd.Parse("--project myproj");
 
@@ -238,7 +239,7 @@ public sealed class SyncEnrollCliTests
         var standardOutput = new StringWriter();
         Console.SetOut(standardOutput);
 
-        var project = result.GetValueForOption(projectOpt);
+        var project = result.GetValue(projectOpt);
         Assert.Equal("myproj", project);
 
         // Simulate prompt (this is what the handler outputs)
