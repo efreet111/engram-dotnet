@@ -207,7 +207,7 @@ Instead of setting 10+ variables manually, use `ENGRAM_PROFILE` to pick your dep
 | `local` (default) | Solo developer | SQLite | ❌ |
 | `remote-server` | Small team, shared DB | PostgreSQL | ❌ |
 | `offline-first` | Large team, offline-first | SQLite (local) + PostgreSQL (server) | ✅ |
-| `desktop` | ⚠️ Pendiente de diseño | PostgreSQL | ⚠️ Pendiente |
+| `desktop` | Personal PC with local sync hub | SQLite (local) | ✅ |
 
 ```json
 // OpenCode example — just set ENGRAM_PROFILE:
@@ -284,7 +284,7 @@ Set `ENGRAM_PROFILE` and the required variables for your use case:
 | **`local`** (default) | Solo developer, no sharing | *(none)* |
 | **`remote-server`** | Shared server, no offline | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
 | **`offline-first`** | Offline-first, multi-device | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
-| **`desktop`** | Personal/shared workstation | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| **`desktop`** | Personal PC with local sync hub | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 ### Profile: `local`
 
@@ -345,18 +345,21 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 
 ### Profile: `desktop`
 
-> ⚠️ **Pendiente de revisión** — El perfil `desktop` necesita redefinirse.
-> Propuesta: debería levantar PostgreSQL + servidor + permitir clientes sync (tipo "server personal").
-> Tracking: ENG-XXX (pendiente de crear).
+Para PC personal que quiere tener su propio hub de sync. El CLI local usa SQLite + sync habilitado,
+y el Docker container levanta el hub con PostgreSQL (remote-server profile).
 
 ```bash
+# CLI local (tu PC):
 ENGRAM_PROFILE=desktop \
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_SERVER_URL=http://localhost:7437 \
 ENGRAM_USER=your-username \
 ./engram serve
+
+# El wizard install.sh genera el docker-compose.yml del hub automáticamente.
 ```
 
-Por ahora usar `remote-server` + levantar PostgreSQL en Docker si se necesita servidor con sync.
+El perfil `desktop` auto-configura `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENABLED=true`,
+`ENGRAM_SYNC_POLL_SECONDS=30`, y `ENGRAM_SYNC_TARGET=desktop`.
 
 > **Backward compatible**: All existing env vars still work. If you don't set `ENGRAM_PROFILE`, the system behaves exactly as before — no migration needed.
 
