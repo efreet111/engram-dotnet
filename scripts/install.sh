@@ -51,7 +51,7 @@ declare -A PROFILE_METHODS=(
   [local]="release build"
   [offline-first]="release build"
   [remote-server]="release build docker"
-  [desktop]="docker"
+  [desktop]="docker build"
 )
 
 declare -A METHOD_LABELS=(
@@ -587,11 +587,19 @@ install_build() {
     error ".NET 10 SDK no encontrado. Instalalo o usá método 1."
     return 1
   fi
-  info "  Compilando (puede tardar varios minutos)..."
   if [[ ! -f "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" ]]; then
     error "No se encontró el repo. Clonalo o especificá la ruta."
     return 1
   fi
+
+  # Actualizar System.CommandLine a versión estable (fija el bug de los pre-built)
+  info "  Actualizando System.CommandLine a 2.0.11..."
+  dotnet add "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" \
+    package System.CommandLine --version 2.0.11 || {
+    warn "  No se pudo actualizar System.CommandLine, continuando con la versión existente..."
+  }
+
+  info "  Compilando (puede tardar varios minutos)..."
   local rid="linux-x64"
   [[ "$(uname -s)" == "Darwin" ]] && rid="macos-x64"
   local tmpdir="${HOME}/.local/tmp-engram"
