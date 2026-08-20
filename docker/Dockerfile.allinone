@@ -27,8 +27,8 @@ RUN mkdir -p /app \
     && chmod +x /app/engram
 
 # Supervisor + script de arranque de PostgreSQL (initdb + createdb + run)
-COPY docker/supervisord.conf /etc/supervisord.conf
-COPY docker/allinone-postgres.sh /usr/local/bin/allinone-postgres.sh
+COPY files/supervisord.conf /etc/supervisord.conf
+COPY files/allinone-postgres.sh /usr/local/bin/allinone-postgres.sh
 RUN chmod +x /usr/local/bin/allinone-postgres.sh
 
 # Volumen único con subdirectorios (decisión confirmada):
