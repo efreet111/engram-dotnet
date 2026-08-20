@@ -3,6 +3,10 @@
 # PostgreSQL 16 + supervisor + binario engram en UN solo contenedor.
 # Base: mcr.microsoft.com/dotnet/aspnet:10.0 (decisión confirmada — Path A).
 #
+# Build args:
+#   ENGRAM_VERSION  — versión para descargar de GitHub (default: v1.3.0)
+#   ENGRAM_BINARY   — path local al binary (si se provee, usa este en vez de descargar)
+#
 # NOTA: postgresql-16 está disponible en los repos Debian de la base
 # (Debian 13 trixie). Si la base cambia a una versión sin postgresql-16,
 # agregar el repo PGDG antes del `apt-get install`.
@@ -10,6 +14,7 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 
 ARG ENGRAM_VERSION=v1.3.0
+ARG ENGRAM_BINARY=""
 
 # PostgreSQL 16 + supervisor + utilidades mínimas
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,12 +24,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Binario engram self-contained (mismo release que el Dockerfile estándar)
+# Binario engram: usa ENGRAM_BINARY local si se provee, si no descarga de GitHub
 RUN mkdir -p /app \
-    && curl -L \
-    "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
-    -o /app/engram \
-    && chmod +x /app/engram
+    && if [[ -n "${ENGRAM_BINARY}" ]]; then \
+         echo "Using local binary: ${ENGRAM_BINARY}" \
+         && cp "${ENGRAM_BINARY}" /app/engram \
+         && chmod +x /app/engram; \
+       else \
+         echo "Downloading binary from GitHub: ${ENGRAM_VERSION}" \
+         && curl -L \
+           "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
+           -o /app/engram \
+         && chmod +x /app/engram; \
+       fi
 
 # Supervisor + script de arranque de PostgreSQL (initdb + createdb + run)
 COPY files/supervisord.conf /etc/supervisord.conf

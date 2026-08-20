@@ -606,6 +606,26 @@ install_build() {
   dotnet publish "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" \
     -c Release -r "$rid" --self-contained false \
     -o "$tmpdir" || return 1
+
+  # Si es desktop, también buildamos la imagen Docker local con este binary
+  if [[ "$SELECTED_PROFILE" == "$PROFILE_DESKTOP" ]]; then
+    info "  Buildando imagen Docker local con el binary compilado..."
+    if ! command -v docker >/dev/null 2>&1; then
+      error "Docker no encontrado. No se puede buildar la imagen."
+      return 1
+    fi
+    local binary_path="${tmpdir}/engram"
+    if ! docker build \
+        --build-arg ENGRAM_BINARY="$binary_path" \
+        -t "engram-dotnet-allinone:latest" \
+        -f "${REPO_ROOT}/docker/Dockerfile.allinone" \
+        "${REPO_ROOT}"; then
+      error "Falló el build de la imagen Docker."
+      return 1
+    fi
+    info "  Imagen Docker local lista: engram-dotnet-allinone:latest"
+  fi
+
   mv "${tmpdir}/engram" "$ENGRAM_CMD"
   rm -rf "$tmpdir"
   chmod +x "$ENGRAM_CMD"
@@ -770,12 +790,21 @@ step_install() {
   ENGRAM_CMD="${HOME}/.local/bin/engram"
 
   if [[ "$SELECTED_PROFILE" == "$PROFILE_DESKTOP" ]]; then
-    # Desktop: servidor vía Docker Compose + CLI (release) para el cliente MCP.
-    if ! install_release; then
-      error "No se pudo instalar el CLI de engram."
-      TOKEN="quit"; WIZARD_ERROR=1
-      return 0
-    fi
+    # Desktop: servidor vía Docker Compose + CLI local para el cliente MCP.
+    # El método determina cómo se instala el CLI:
+    #   - release: descarga de GitHub (pre-built)
+    #   - build: compila localmente (fix System.CommandLine) + build imagen Docker local
+    case "$SELECTED_METHOD" in
+      release)
+        install_release || { error "Instalación falló."; TOKEN="quit"; WIZARD_ERROR=1; return 0; }
+        ;;
+      build)
+        install_build || { error "Instalación falló."; TOKEN="quit"; WIZARD_ERROR=1; return 0; }
+        ;;
+      docker)
+        install_docker || { error "Instalación falló."; TOKEN="quit"; WIZARD_ERROR=1; return 0; }
+        ;;
+    esac
     if ! generate_desktop_compose; then
       TOKEN="quit"; WIZARD_ERROR=1
       return 0
