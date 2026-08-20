@@ -90,18 +90,26 @@ fi
 
 # Docker containers
 if command -v docker >/dev/null 2>&1; then
-    CONTAINERS=(engram engram-server engram-postgres engram-postgres-test engram-opencode)
+    CONTAINERS=(engram engram-server engram-postgres engram-postgres-test engram-opencode engram-dotnet-allinone)
     for c in "${CONTAINERS[@]}"; do
         if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
             echo -n "  Removing Docker container $c... "
             dry docker rm -f "$c" >/dev/null 2>&1 && echo "done" || echo "not found"
         fi
     done
-    if confirm "¿Eliminar las imágenes Docker de engram (engram-test, opencode-test)?"; then
+    # Desktop profile: detener y eliminar contenedores del compose si ~/.engram/desktop existe
+    if [[ -d "${HOME}/.engram/desktop" ]]; then
+        if [[ -f "${HOME}/.engram/desktop/docker-compose.yml" ]]; then
+            echo -n "  Stopping desktop compose services... "
+            dry (cd "${HOME}/.engram/desktop" && docker compose down 2>/dev/null) && echo "done" || echo "not running"
+        fi
+    fi
+    if confirm "¿Eliminar las imágenes Docker de engram (engram-test, opencode-test, engram-dotnet-allinone)?"; then
         echo -n "  Removing Docker images... "
         dry docker rmi -f \
             "$(docker images -q 'engram-test:latest' 2>/dev/null)" \
             "$(docker images -q 'opencode-test:latest' 2>/dev/null)" \
+            "$(docker images -q 'engram-dotnet-allinone:latest' 2>/dev/null)" \
             "$(docker images -q 'ghcr.io/efreet111/engram-dotnet*' 2>/dev/null)" \
             2>/dev/null && echo "done" || echo "none found"
     fi

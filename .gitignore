@@ -56,6 +56,10 @@ dist-cli/
 # Engram MCP local memory (per-user runtime state, not project source)
 /.engram/
 
+# Build artifact: local binary passed to docker build for Dockerfile.allinone
+# Created by install_build and by 'docker build --build-arg ENGRAM_BINARY=local'
+engram-local
+
 # FlowForge rework tickets live in .ai-work/{slug}/, not at repo root
 /rework_ticket.md
 

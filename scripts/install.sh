@@ -615,8 +615,13 @@ install_build() {
       return 1
     fi
     local binary_path="${tmpdir}/engram"
+    # Copiar el binary al contexto de build (repo root) para que COPY pueda usarlo
+    local context_binary="${REPO_ROOT}/engram-local"
+    # Crear dummy si no existe (para que COPY en Dockerfile nunca falle)
+    touch "$context_binary"
+    cp "$binary_path" "$context_binary"
     if ! docker build \
-        --build-arg ENGRAM_BINARY="$binary_path" \
+        --build-arg ENGRAM_BINARY=local \
         -t "engram-dotnet-allinone:latest" \
         -f "${REPO_ROOT}/docker/Dockerfile.allinone" \
         "${REPO_ROOT}"; then

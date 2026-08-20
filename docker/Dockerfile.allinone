@@ -5,7 +5,16 @@
 #
 # Build args:
 #   ENGRAM_VERSION  — versión para descargar de GitHub (default: v1.3.0)
-#   ENGRAM_BINARY   — path local al binary (si se provee, usa este en vez de descargar)
+#   ENGRAM_BINARY   — "local" = copia el binary desde el contexto de build
+#                     (build local previo — el archivo debe estar en el repo root
+#                      antes de invocar docker build)
+#                     cualquier otro valor o vacío = descarga de GitHub
+#
+# Flujo de build local (install_build en install.sh):
+#   1. Compila el binary a un directorio temporal
+#   2. Copia el binary al repo root como 'engram-local'
+#   3. docker build --build-arg ENGRAM_BINARY=local
+#   4. install.sh limpia engram-local del repo root al terminar
 #
 # NOTA: postgresql-16 está disponible en los repos Debian de la base
 # (Debian 13 trixie). Si la base cambia a una versión sin postgresql-16,
@@ -24,15 +33,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Binario engram: usa ENGRAM_BINARY local si se provee, si no descarga de GitHub
+# Binario engram:
+#   - Si ENGRAM_BINARY="local" → copia desde el contexto de build (engram-local)
+#   - Caso contrario → descarga de GitHub
+# shell: /bin/sh (dash) — no soporta [[ — usar [ ] para POSIX compatibility
+#
+# install_build copia el binary compilado al repo root (engram-local) ANTES de invocar
+# docker build. El archivo se SOBREESCRIBE sobre un dummy placeholder que siempre
+# existe en el build context para que COPY nunca falle.
+COPY engram-local /tmp/engram-local
 RUN mkdir -p /app \
-    && if [[ -n "${ENGRAM_BINARY}" ]]; then \
-         echo "Using local binary: ${ENGRAM_BINARY}" \
-         && cp "${ENGRAM_BINARY}" /app/engram \
+    && if [ "${ENGRAM_BINARY}" = "local" ] && [ -s /tmp/engram-local ]; then \
+         echo "Installing local binary from build context..." \
+         && mv /tmp/engram-local /app/engram \
          && chmod +x /app/engram; \
        else \
          echo "Downloading binary from GitHub: ${ENGRAM_VERSION}" \
-         && curl -L \
+         && curl -L --fail \
            "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
            -o /app/engram \
          && chmod +x /app/engram; \
