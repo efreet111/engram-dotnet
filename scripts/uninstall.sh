@@ -13,6 +13,12 @@
 
 set -euo pipefail
 
+# Require bash (not dash/ash/sh) — bash-isms used throughout
+if [[ -z "${BASH_VERSION}" ]]; then
+    echo "ERROR: This script requires bash, not sh." >&2
+    exit 1
+fi
+
 DRY_RUN=false
 FORCE=false
 
@@ -101,6 +107,15 @@ if command -v docker >/dev/null 2>&1; then
     fi
 fi
 
+# Desktop profile Docker compose directory
+DESKTOP_DIR="${HOME}/.engram/desktop"
+if [[ -d "$DESKTOP_DIR" ]]; then
+    if confirm "¿Eliminar directorio desktop profile ($DESKTOP_DIR)?"; then
+        echo -n "  Removing $DESKTOP_DIR... "
+        dry rm -rf -- "$DESKTOP_DIR" && echo "done"
+    fi
+fi
+
 # ── 2. Binaries ──────────────────────────────────────────────────────────────
 echo ""
 echo "── 2. Binarios ───────────────────────────────────────────"
@@ -108,6 +123,8 @@ echo "── 2. Binarios ──────────────────�
 BINARIES=(
     "${HOME}/.local/bin/engram"
     "${HOME}/.local/bin/engram-mcp"
+    "${HOME}/.local/bin/libe_sqlite3.so"
+    "${HOME}/.local/bin/e_sqlite3.so"
     "${HOME}/dist/engram"
     "/usr/local/bin/engram"
     "/usr/local/bin/engram-mcp"
@@ -116,7 +133,7 @@ BINARIES=(
 # Also check common dist/ locations in repos
 for d in ~/dev/ ~/projects/ ~/code/; do
     if [[ -d "$d" ]]; then
-        find "$d" -maxdepth 3 -name "engram" -type f -executable 2>/dev/null | while read -r f; do
+        find "$d" -maxdepth 3 -name "engram" -type f -perm +111 2>/dev/null | while read -r f; do
             echo "  Found: $f"
             BINARIES+=("$f")
         done
@@ -336,9 +353,9 @@ LOG_FILES=(
 )
 
 for f in "${LOG_FILES[@]}"; do
-    if ls $f &>/dev/null 2>&1; then
+    if ls "$f" &>/dev/null 2>&1; then
         echo -n "  Removing $f... "
-        dry rm -f $f && echo "done"
+        dry rm -f -- "$f" && echo "done"
     fi
 done
 
