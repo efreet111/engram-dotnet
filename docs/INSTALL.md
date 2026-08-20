@@ -348,6 +348,16 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 Para PC personal que quiere tener su propio hub de sync. El CLI local usa SQLite + sync habilitado,
 y el Docker container levanta el hub con PostgreSQL (remote-server profile).
 
+El install.sh (`./scripts/install.sh --profile desktop`) ofrece 3 métodos de instalación:
+
+| Método | CLI | Imagen Docker | Cuándo usarlo |
+|--------|-----|---------------|---------------|
+| `docker` | Pre-built de GHCR | Pre-built de GHCR | Rápido, sin .NET SDK |
+| `build` | Compilado localmente | Compilado localmente | Últimos fixes (System.CommandLine 2.0.11) |
+| `release` | Descarga de GitHub | Pre-built de GHCR | Solo CLI, sin build local |
+
+**Recomendado**: `build` si tenés .NET 10 SDK y querés los últimos fixes.
+
 ```bash
 # CLI local (tu PC):
 ENGRAM_PROFILE=desktop \
