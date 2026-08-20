@@ -650,8 +650,6 @@ generate_compose_allinone() {
   fi
 
   cat <<EOF
-version: "3.8"
-
 services:
   engram:
 ${image_block}
@@ -675,8 +673,6 @@ EOF
 
 generate_compose_separate() {
   cat <<EOF
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -720,8 +716,6 @@ EOF
 
 generate_compose_existing() {
   cat <<EOF
-version: "3.8"
-
 services:
   engram:
     image: ghcr.io/efreet111/engram-dotnet:latest

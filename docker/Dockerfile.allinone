@@ -1,13 +1,13 @@
 # engram-dotnet — Imagen "all-in-one" para el perfil desktop (modo 1).
 #
 # PostgreSQL 16 + supervisor + binario engram en UN solo contenedor.
-# Base: mcr.microsoft.com/dotnet/aspnet:10 (decisión confirmada — Path A).
+# Base: mcr.microsoft.com/dotnet/aspnet:10.0 (decisión confirmada — Path A).
 #
 # NOTA: postgresql-16 está disponible en los repos Debian de la base
 # (Debian 13 trixie). Si la base cambia a una versión sin postgresql-16,
 # agregar el repo PGDG antes del `apt-get install`.
 
-FROM mcr.microsoft.com/dotnet/aspnet:10
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 
 ARG ENGRAM_VERSION=v1.3.0
 
