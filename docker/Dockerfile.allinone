@@ -38,7 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   libe_sqlite3-local  → librería nativa SQLite (puede no existir si no se compiló localmente)
 #   Los dummies se crean con touch para que COPY nunca falle.
 COPY engram-local /tmp/engram-local
-COPY libe_sqlite3-local /tmp/libe_sqlite3-local || true
+# libe_sqlite3-local es opcional en el contexto: si no existe, crear dummy
+# para que COPY no falle (el RUN posterior la descargará de GitHub si falta).
+RUN if [ ! -s /tmp/libe_sqlite3-local ]; then touch /tmp/libe_sqlite3-local; fi
 
 RUN mkdir -p /app \
     && if [ "${ENGRAM_BINARY}" = "local" ] && [ -s /tmp/engram-local ]; then \
