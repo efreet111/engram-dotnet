@@ -603,8 +603,11 @@ install_build() {
   local rid="linux-x64"
   [[ "$(uname -s)" == "Darwin" ]] && rid="macos-x64"
   local tmpdir="${HOME}/.local/tmp-engram"
+  # --self-contained true: el binary incluye el runtime de .NET completo,
+  # necesario para que funcione dentro del contenedor Docker que solo tiene
+  # el runtime de ASP.NET Core (no el SDK completo).
   dotnet publish "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj" \
-    -c Release -r "$rid" --self-contained false \
+    -c Release -r "$rid" --self-contained true \
     -o "$tmpdir" || return 1
 
   # Si es desktop, también buildamos la imagen Docker local con este binary
@@ -620,6 +623,17 @@ install_build() {
     # Crear dummy si no existe (para que COPY en Dockerfile nunca falle)
     touch "$context_binary"
     cp "$binary_path" "$context_binary"
+
+    # Copiar la librería nativa SQLite al contexto de build.
+    # dotnet publish --self-contained true coloca la .so en runtimes/<rid>/native/.
+    local native_lib="${tmpdir}/runtimes/${rid}/native/libe_sqlite3.so"
+    local context_native="${REPO_ROOT}/libe_sqlite3-local"
+    if [[ -f "$native_lib" ]]; then
+      cp "$native_lib" "$context_native"
+    else
+      touch "$context_native"
+    fi
+
     if ! docker build \
         --build-arg ENGRAM_BINARY=local \
         -t "engram-dotnet-allinone:latest" \
@@ -629,6 +643,8 @@ install_build() {
       return 1
     fi
     info "  Imagen Docker local lista: engram-dotnet-allinone:latest"
+    # Limpiar archivos de contexto de build (dummies + copias)
+    rm -f "$context_binary" "$context_native"
   fi
 
   mv "${tmpdir}/engram" "$ENGRAM_CMD"
