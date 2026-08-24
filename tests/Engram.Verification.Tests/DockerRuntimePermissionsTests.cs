@@ -118,13 +118,10 @@ public sealed class DockerRuntimePermissionsTests
         Assert.Contains("ENGRAM_SYNC_ENABLED", guide, StringComparison.Ordinal);
         Assert.Contains("ENGRAM_AUTO_ENROLL", guide, StringComparison.Ordinal);
         Assert.Contains("ENGRAM_PROJECT", guide, StringComparison.Ordinal);
-<<<<<<< HEAD
         Assert.Contains("Large team, offline-first", guide, StringComparison.Ordinal);
         Assert.Contains("**Custom port**", guide, StringComparison.Ordinal);
-=======
         Assert.Contains("ENGRAM_PROFILE=remote-server", guide, StringComparison.Ordinal);
         Assert.Contains("ENGRAM_PROFILE=local", guide, StringComparison.Ordinal);
->>>>>>> origin/main
     }
 
     private static string ReadRepositoryFile(string relativePath) =>

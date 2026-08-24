@@ -2654,6 +2654,25 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         _logger?.LogInformation("Applied mutation session/upsert for entity_key={EntityKey} in project={Project}", entry.EntityKey, entry.Project);
     }
 
+    /// <summary>
+    /// Idempotently ensures a sessions row exists for the resolved session id, so the
+    /// observations.session_id / user_prompts.session_id FK constraint is always satisfied.
+    /// Existing sessions are left untouched (ON CONFLICT (id) DO NOTHING).
+    /// </summary>
+    private async Task EnsureSessionAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string sessionId, string? project, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        // NULLIF normalizes empty-string project to NULL; COALESCE supplies the NOT NULL fallback
+        cmd.CommandText = @"
+            INSERT INTO sessions (id, project, directory)
+            VALUES (@sid, COALESCE(NULLIF(@proj, ''), 'unknown'), '/')
+            ON CONFLICT (id) DO NOTHING";
+        cmd.Parameters.AddWithValue("@sid", sessionId);
+        cmd.Parameters.AddWithValue("@proj", (object?)project ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task ApplyObservationUpsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, MutationEntry entry, CancellationToken ct)
     {
         var payload = JsonSerializer.Deserialize<ObservationPullPayload>(entry.Payload, JsonPullOpts);
@@ -2695,6 +2714,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
         else
         {
+            // Resolve a non-empty session id before inserting (satisfies session_id FK).
+            var sessionId = string.IsNullOrEmpty(payload.SessionId)
+                ? $"obs-{entry.EntityKey}"
+                : payload.SessionId;
+            await EnsureSessionAsync(conn, tx, sessionId, payload.Project, ct);
+
             // Insert new
             await using var insertCmd = conn.CreateCommand();
             insertCmd.Transaction = tx;
@@ -2711,7 +2736,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                      COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
 
             insertCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
-            insertCmd.Parameters.AddWithValue("@sessionId", (object?)payload.SessionId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@sessionId", sessionId);
             insertCmd.Parameters.AddWithValue("@type", (object?)payload.Type ?? "manual");
             insertCmd.Parameters.AddWithValue("@title", (object?)payload.Title ?? "");
             insertCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? "");
@@ -2777,6 +2802,12 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         }
         else
         {
+            // Resolve a non-empty session id before inserting (satisfies session_id FK).
+            var sessionId = string.IsNullOrEmpty(payload.SessionId)
+                ? $"prompt-{entry.EntityKey}"
+                : payload.SessionId;
+            await EnsureSessionAsync(conn, tx, sessionId, payload.Project, ct);
+
             // Insert new
             await using var insertCmd = conn.CreateCommand();
             insertCmd.Transaction = tx;
@@ -2785,7 +2816,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 VALUES (@syncId, @sessionId, @content, @project, 'sync', COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
 
             insertCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
-            insertCmd.Parameters.AddWithValue("@sessionId", (object?)payload.SessionId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@sessionId", sessionId);
             insertCmd.Parameters.AddWithValue("@content", (object?)payload.Content ?? "");
             insertCmd.Parameters.AddWithValue("@project", (object?)payload.Project ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@occurredAt", (object?)payload.OccurredAt ?? DBNull.Value);
