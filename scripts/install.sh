@@ -648,6 +648,13 @@ install_build() {
     rm -f "$context_binary" "$context_native"
   fi
 
+  # Instalar el binary en el host (todos los perfiles).
+  # La librería libe_sqlite3.so debe copiarse ANTES de borrar tmpdir.
+  local published_lib="${tmpdir}/libe_sqlite3.so"
+  if [[ -f "$published_lib" ]]; then
+    mkdir -p "$(dirname "$ENGRAM_CMD")"
+    cp "$published_lib" "$(dirname "$ENGRAM_CMD")/libe_sqlite3.so"
+  fi
   mv "${tmpdir}/engram" "$ENGRAM_CMD"
   rm -rf "$tmpdir"
   chmod +x "$ENGRAM_CMD"

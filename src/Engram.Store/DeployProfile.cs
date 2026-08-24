@@ -158,7 +158,10 @@ public static class ProfileValidator
             missing.Add("ENGRAM_SERVER_URL");
 
         // RemoteServer profile: reject localhost connection strings (security gate)
-        if (cfg.Profile is DeployProfile.RemoteServer && !string.IsNullOrWhiteSpace(cfg.PgConnectionString))
+        // Exception: all-in-one containers set ENGRAM_ALLINONE=1 to explicitly allow
+        // localhost/loopback PostgreSQL when the DB runs on the same host.
+        var allowLocalhostPg = Environment.GetEnvironmentVariable("ENGRAM_ALLINONE") == "1";
+        if (cfg.Profile is DeployProfile.RemoteServer && !string.IsNullOrWhiteSpace(cfg.PgConnectionString) && !allowLocalhostPg)
         {
             if (IsLocalhostConnection(cfg.PgConnectionString))
                 missing.Add("ENGRAM_PG_CONNECTION (localhost not allowed for remote-server profile)");
