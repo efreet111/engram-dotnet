@@ -23,46 +23,46 @@ El perfil `desktop` es un **perfil híbrido** que combina:
 
 ### Cliente local (Desktop profile)
 
-- [ ] `DeployProfile.Desktop` setea: `ENGRAM_DB_TYPE=sqlite`
-- [ ] `DeployProfile.Desktop` setea: `ENGRAM_SYNC_ENABLED=true`
-- [ ] `DeployProfile.Desktop` setea: `ENGRAM_SERVER_URL=http://localhost:7437` (apunta al Docker)
+- [x] `DeployProfile.Desktop` setea: `ENGRAM_DB_TYPE=sqlite`
+- [x] `DeployProfile.Desktop` setea: `ENGRAM_SYNC_ENABLED=true`
+- [x] `DeployProfile.Desktop` setea: `ENGRAM_SERVER_URL=http://localhost:7437` (apunta al Docker)
 
 ### Servidor de sync en Docker (Remote-server profile)
 
-- [ ] `install.sh` genera compose con `ENGRAM_PROFILE: remote-server` (no `desktop`)
-- [ ] `install.sh` genera compose con `ENGRAM_DB_TYPE: postgres` (no `sqlite`)
-- [ ] PostgreSQL corre como backend del sync hub (no como storage primario del cliente)
+- [x] `install.sh` genera compose con `ENGRAM_PROFILE: remote-server` (no `desktop`)
+- [x] `install.sh` genera compose con `ENGRAM_DB_TYPE: postgres` (no `sqlite`)
+- [x] PostgreSQL corre como backend del sync hub (no como storage primario del cliente)
 
 ### Los 3 modos de PostgreSQL Docker
 
-- [ ] **all-in-one**: 1 contenedor con `engram serve --profile remote-server` + PostgreSQL embebido
-- [ ] **separate**: 2 contenedores — `engram serve --profile remote-server` + `postgres` raw separado
-- [ ] **existing**: 1 contenedor `engram serve --profile remote-server` + PostgreSQL externo del usuario
+- [x] **all-in-one**: 1 contenedor con `engram serve --profile remote-server` + PostgreSQL embebido
+- [x] **separate**: 2 contenedores — `engram serve --profile remote-server` + `postgres` raw separado
+- [x] **existing**: 1 contenedor `engram serve --profile remote-server` + PostgreSQL externo del usuario
 
 ### Experiencia multi-dispositivo
 
-- [ ] Desktop sirve como "remote server" para laptop/PC nuevos
-- [ ] Laptop usa `offline-first` apuntando a `http://<desktop-ip>:7437`
-- [ ] Sync bidireccional: cambios en desktop aparecen en laptop y viceversa
+- [x] Desktop sirve como "remote server" para laptop/PC nuevos
+- [x] Laptop usa `offline-first` apuntando a `http://<desktop-ip>:7437`
+- [x] Sync bidireccional: cambios en desktop aparecen en laptop y viceversa
 
 ### Resiliencia
 
-- [ ] Si PostgreSQL Docker no está disponible: engram local sigue funcionando con SQLite local
-- [ ] Sync se reanuda automáticamente cuando Docker vuelve
-- [ ] Sin data loss: SQLite local es source of truth
+- [x] Si PostgreSQL Docker no está disponible: engram local sigue funcionando con SQLite local
+- [x] Sync se reanuda automáticamente cuando Docker vuelve
+- [x] Sin data loss: SQLite local es source of truth
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] `src/Engram.Store/DeployProfile.cs` — Desktop: `DB_TYPE=sqlite`, `SYNC_ENABLED=true`, `SERVER_URL=http://localhost:7437`
-- [ ] `scripts/install.sh` — `generate_compose_allinone`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres`
-- [ ] `scripts/install.sh` — `generate_compose_separate`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres` para el contenedor engram
-- [ ] `scripts/install.sh` — `generate_compose_existing`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres` para el contenedor engram
-- [ ] `docs/DEPLOYMENT.md` — actualizar sección desktop: explicar modo híbrido (local SQLite + Docker remote-server)
-- [ ] `docs/01-QUICK-START.md` — tabla de perfiles actualizada
-- [ ] `DeployProfileTests` — Desktop defaults verifican SQLite + sync + server URL
-- [ ] Tests de integración: desktop híbrido + offline-first client
+- [x] `src/Engram.Store/DeployProfile.cs` — Desktop: `DB_TYPE=sqlite`, `SYNC_ENABLED=true`, `SERVER_URL=http://localhost:7437`
+- [x] `scripts/install.sh` — `generate_compose_allinone`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres`
+- [x] `scripts/install.sh` — `generate_compose_separate`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres` para el contenedor engram
+- [x] `scripts/install.sh` — `generate_compose_existing`: `ENGRAM_PROFILE=remote-server`, `ENGRAM_DB_TYPE=postgres` para el contenedor engram
+- [x] `docs/DEPLOYMENT.md` — actualizar sección desktop: explicar modo híbrido (local SQLite + Docker remote-server)
+- [x] `docs/01-QUICK-START.md` — tabla de perfiles actualizada
+- [x] `DeployProfileTests` — Desktop defaults verifican SQLite + sync + server URL
+- [x] Tests de integración: desktop híbrido + offline-first client
 
 ---
 

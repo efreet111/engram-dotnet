@@ -40,7 +40,7 @@ The current `install.sh` has two fundamental problems:
 - [x] When user selects `local` → only methods **Release** and **Build from source** are offered
 - [x] When user selects `offline-first` → only methods **Release** and **Build from source** are offered (no Docker)
 - [x] When user selects `remote-server` → methods **Release**, **Build from source**, and **Docker** are offered
-- [x] When user selects `desktop` → only method **Docker** is offered (postgresql in Docker, client local SQLite)
+- [x] When user selects `desktop` → methods **Docker** (GHCR pre-built) and **Build from source** (compila + build local Docker image con `Dockerfile.allinone`) son ofrecidos. Cliente local SQLite + PostgreSQL Docker como sync hub.
 
 ### AC2 — Profile-first wizard flow
 

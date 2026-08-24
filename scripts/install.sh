@@ -133,8 +133,8 @@ go_back() {
   if [[ $found -le 0 ]]; then
     quit_wizard
   else
-    STEP="${seq[$((found - 1))]}"
     PREV_STEP="$STEP"
+    STEP="${seq[$((found - 1))]}"
   fi
 }
 
@@ -215,6 +215,20 @@ step_profile() {
 step_method() {
   local methods=()
   read -r -a methods <<< "$(methods_for_profile "$SELECTED_PROFILE")"
+
+  # Validación de FORCE_METHOD ANTES del auto-select: si el usuario pasó
+  # --method inválido, debe errorear loud aunque el perfil tenga 1 método.
+  if [[ "$FORCE" == true && -n "$FORCE_METHOD" ]]; then
+    if method_allowed "$SELECTED_PROFILE" "$FORCE_METHOD"; then
+      SELECTED_METHOD="$FORCE_METHOD"
+      TOKEN="next"
+      return 0
+    else
+      error "Método inválido para el perfil '$SELECTED_PROFILE': $FORCE_METHOD"
+      WIZARD_ERROR=1; WIZARD_QUIT=1
+      return 0
+    fi
+  fi
 
   # Un solo método disponible (desktop → docker): auto-selección sin prompt.
   if [[ ${#methods[@]} -eq 1 ]]; then
@@ -667,7 +681,16 @@ install_docker() {
     error "Docker no encontrado. Instalalo primero."
     return 1
   fi
-  ENGRAM_CMD="docker run --rm ghcr.io/efreet111/engram-dotnet:latest engram"
+  # Wrapper script en ~/.local/bin/engram para que [[ -x ]] funcione y el
+  # usuario pueda invocar `engram` directamente desde PATH (step_verify hace
+  # `[[ -x "$ENGRAM_CMD" ]]` para confirmar la instalación).
+  mkdir -p "${HOME}/.local/bin"
+  cat > "${HOME}/.local/bin/engram" <<EOF
+#!/bin/bash
+exec docker run --rm ghcr.io/efreet111/engram-dotnet:latest engram "\$@"
+EOF
+  chmod +x "${HOME}/.local/bin/engram"
+  ENGRAM_CMD="${HOME}/.local/bin/engram"
   return 0
 }
 

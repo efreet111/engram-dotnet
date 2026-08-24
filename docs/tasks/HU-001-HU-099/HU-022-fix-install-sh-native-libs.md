@@ -8,24 +8,24 @@
 
 ## Acceptance Criteria
 
-- [ ] `scripts/install.sh` función `install_release()` descarga `libe_sqlite3.so` alongside el binary
-- [ ] `scripts/install.sh` crea symlinks: `e_sqlite3.so -> libe_sqlite3.so` y `libe_sqlite3.so` en `~/.local/bin/`
-- [ ] `scripts/test-install-wizard.sh` verifica que los symlinks existen post-instalación
-- [ ] El release URL `https://github.com/efreet111/engram-dotnet/releases/download/{version}/libe_sqlite3.so` funciona (verificado)
+- [x] `scripts/install.sh` función `install_release()` descarga `libe_sqlite3.so` alongside el binary
+- [x] `scripts/install.sh` crea symlinks: `e_sqlite3.so -> libe_sqlite3.so` y `libe_sqlite3.so` en `~/.local/bin/`
+- [x] `scripts/test-install-wizard.sh` verifica que los symlinks existen post-instalación
+- [x] El release URL `https://github.com/efreet111/engram-dotnet/releases/download/{version}/libe_sqlite3.so` funciona (verificado)
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] Auditar `scripts/install.sh` — función `install_release()` (líneas ~536-548)
-- [ ] Modificar `install_release()` para:
+- [x] Auditar `scripts/install.sh` — función `install_release()` (líneas ~536-548)
+- [x] Modificar `install_release()` para:
   1. Descargar `libe_sqlite3.so` desde el release
   2. Guardarlo en `~/.local/bin/libe_sqlite3.so`
   3. Crear symlink: `~/.local/bin/e_sqlite3.so -> ~/.local/bin/libe_sqlite3.so`
-- [ ] Agregar test en `scripts/test-install-wizard.sh` que verifique:
+- [x] Agregar test en `scripts/test-install-wizard.sh` que verifique:
   - `libe_sqlite3.so` existe en `~/.local/bin/` (o donde se instale)
   - `e_sqlite3.so` existe como symlink
-- [ ] Verificar que el URL del release existe: `curl -I https://github.com/efreet111/engram-dotnet/releases/download/v1.3.0/libe_sqlite3.so`
+- [x] Verificar que el URL del release existe: `curl -I https://github.com/efreet111/engram-dotnet/releases/download/v1.3.0/libe_sqlite3.so`
 - [ ] Probar la instalación en Linux (si es posible)
 
 ---

@@ -75,3 +75,8 @@ docs/architecture/adr/ADR-003-xml-doc-comment-policy.md
 
 # Manual testing checklists (per-user, not committed)
 docs/manual-test/
+openspec/engram-install-new/spec.md
+openspec/engram-install-new/proposal.md
+docker/sync-test.yml
+docker run --rm ghcr.io/efreet111/libe_sqlite3.so
+docker run --rm ghcr.io/efreet111/engram-dotnet:latest engram

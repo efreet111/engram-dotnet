@@ -57,7 +57,8 @@ echo "=== Unit: mapeo perfil→método (T3.1) ==="
 assert_eq "$(methods_for_profile local)" "release build" "local → release build"
 assert_eq "$(methods_for_profile offline-first)" "release build" "offline-first → release build"
 assert_eq "$(methods_for_profile remote-server)" "release build docker" "remote-server → release build docker"
-assert_eq "$(methods_for_profile desktop)" "docker" "desktop → docker"
+# HU-026: desktop permite docker y build (build para construir imagen local)
+assert_eq "$(methods_for_profile desktop)" "docker build" "desktop → docker build (HU-026)"
 
 assert_ok   "local permite release"        method_allowed local release
 assert_ok   "local permite build"          method_allowed local build
@@ -94,6 +95,17 @@ SELECTED_PROFILE="local"; STEP="profile"; WIZARD_QUIT=0
 go_back; assert_eq "$WIZARD_QUIT" "1" "go_back en paso 1 → quit"
 WIZARD_QUIT=0
 
+# Bug #1 (go_back PREV_STEP): debe guardar el step ANTERIOR, no el nuevo.
+SELECTED_PROFILE="local"; STEP="config"; PREV_STEP=""
+go_back
+assert_eq "$STEP" "method" "go_back config→method"
+assert_eq "$PREV_STEP" "config" "go_back guarda PREV_STEP (no el nuevo STEP)"
+
+# Confirmar que go_next sigue funcionando correctamente (regresión).
+SELECTED_PROFILE="local"; STEP="profile"; PREV_STEP=""
+go_next
+assert_eq "$PREV_STEP" "profile" "go_next guarda PREV_STEP anterior"
+
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "=== Integración: selección de perfil (stdin) ==="
@@ -112,15 +124,29 @@ assert_eq "$TOKEN" "stay" "input inválido → stay"
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "=== Integración: método filtrado por perfil ==="
-# desktop auto-selecciona docker sin prompt
+# desktop tiene 2 métodos (docker, build) tras HU-026 — debe mostrar ambos
 FORCE=false; SELECTED_PROFILE="desktop"; SELECTED_METHOD=""; TOKEN=""
-step_method <<< "" >/dev/null 2>&1
-assert_eq "$SELECTED_METHOD" "docker" "desktop auto-selecciona docker (único método)"
+step_method <<< "1" >/dev/null 2>&1
+assert_eq "$SELECTED_METHOD" "docker" "desktop elige docker cuando se selecciona opción 1"
 
 # back en step_method vuelve a perfil
 SELECTED_PROFILE="local"; SELECTED_METHOD=""; TOKEN=""
 step_method <<< "b" >/dev/null 2>&1
 assert_eq "$TOKEN" "back" "step_method (b) → back"
+
+# Bug #2 (step_method ignora FORCE_METHOD con 1 método válido):
+# Si un perfil tiene 1 solo método y el usuario pasa --method inválido,
+# debe errorear loud, NO auto-seleccionar silenciosamente.
+# (desktop normalmente tiene 2 métodos tras HU-026; temporalmente lo
+#  forzamos a 1 para reproducir la ruta del bug.)
+ORIG_DESKTOP_METHODS="${PROFILE_METHODS[desktop]}"
+PROFILE_METHODS[desktop]="docker"
+FORCE=true; FORCE_METHOD="release"
+SELECTED_PROFILE="desktop"; SELECTED_METHOD=""; TOKEN=""; WIZARD_QUIT=0; WIZARD_ERROR=0
+step_method >/dev/null 2>&1
+assert_eq "$WIZARD_ERROR" "1" "FORCE_METHOD inválido en perfil 1-method → WIZARD_ERROR"
+assert_eq "$WIZARD_QUIT" "1" "FORCE_METHOD inválido en perfil 1-method → WIZARD_QUIT"
+PROFILE_METHODS[desktop]="$ORIG_DESKTOP_METHODS"
 
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
@@ -152,11 +178,17 @@ if [[ -f "$COMPOSE" ]]; then ok "all-in-one compose generado"; else fail "all-in
 assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "Dockerfile.allinone" "all-in-one referencia Dockerfile.allinone"
 assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "/data/postgres" "all-in-one monta PGDATA"
 assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "Host=localhost" "all-in-one PG apunta a localhost"
+# HU-024: el contenedor server usa perfil remote-server + DB postgres (no desktop)
+assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "ENGRAM_PROFILE: remote-server" "all-in-one usa ENGRAM_PROFILE=remote-server (HU-024)"
+assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "ENGRAM_DB_TYPE: postgres" "all-in-one usa ENGRAM_DB_TYPE=postgres (HU-024)"
 
 PG_MODE="separate"; PG_CONNECTION="Host=postgres;Port=5432;Database=engram;Username=engram;Password=secret123"
 generate_desktop_compose >/dev/null 2>&1
 assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "postgres:16-alpine" "separate tiene servicio postgres"
 assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "Host=postgres" "separate PG apunta a postgres"
+# HU-024: el contenedor engram (no postgres) usa remote-server + postgres
+assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "ENGRAM_PROFILE: remote-server" "separate usa ENGRAM_PROFILE=remote-server (HU-024)"
+assert_contains "$(cat "$COMPOSE" 2>/dev/null)" "ENGRAM_DB_TYPE: postgres" "separate usa ENGRAM_DB_TYPE=postgres (HU-024)"
 
 PG_MODE="existing"; PG_CONNECTION="Host=192.168.1.50;Port=5432;Database=engram;Username=admin;Password=pw"
 generate_desktop_compose >/dev/null 2>&1
@@ -296,7 +328,104 @@ assert_eq "$WIZARD_ERROR" "0" "-y desktop (all-in-one) completa sin error"
 assert_eq "$SERVER_URL" "http://localhost:7437" "-y desktop URL localhost"
 assert_eq "$SELECTED_METHOD" "docker" "-y desktop método docker"
 
+# HU-026 (install_build desktop): verificar que con método build se intenta
+# construir imagen local. Stub dotnet (crea binary fake) + stub docker.
+STUB_BUILD_DIR="$(mktemp -d)"
+cat > "$STUB_BUILD_DIR/docker" <<'EOF'
+#!/bin/bash
+# Detectar "docker build" en los args ($1 = "build")
+if [[ "${1:-}" == "build" ]]; then
+  echo "STUB_DOCKER_BUILD_INVOKED" >&2
+fi
+exit 0
+EOF
+chmod +x "$STUB_BUILD_DIR/docker"
+# Stub dotnet: `dotnet add` no-op; `dotnet publish -o DIR` crea binary fake.
+cat > "$STUB_BUILD_DIR/dotnet" <<'EOF'
+#!/bin/bash
+prev=""
+output_dir=""
+for a in "$@"; do
+  if [[ "$prev" == "-o" ]]; then output_dir="$a"; fi
+  prev="$a"
+done
+if [[ "$1" == "publish" && -n "$output_dir" ]]; then
+  mkdir -p "$output_dir"
+  printf '#!/bin/bash\necho "stub engram"\n' > "$output_dir/engram"
+  chmod +x "$output_dir/engram"
+  # stub native lib
+  printf 'fake lib' > "$output_dir/libe_sqlite3.so"
+fi
+exit 0
+EOF
+chmod +x "$STUB_BUILD_DIR/dotnet"
+export PATH="$STUB_BUILD_DIR:$PATH"
+TMP_HOME_BUILD="$(mktemp -d)"
+export HOME="$TMP_HOME_BUILD"
+# Crear dummy csproj en repo para que install_build no se queje.
+mkdir -p "${REPO_ROOT}/src/Engram.Cli"
+touch "${REPO_ROOT}/src/Engram.Cli/Engram.Cli.csproj"
+# Set vars AFTER sourcing install.sh — install.sh resets them on source.
+SELECTED_PROFILE="desktop"; SELECTED_METHOD="build"; DATA_DIR="$TMP_HOME_BUILD/data"
+mkdir -p "$DATA_DIR"
+OUT="$(install_build 2>&1)"
+if [[ "$OUT" == *"STUB_DOCKER_BUILD_INVOKED"* ]]; then
+  ok "install_build desktop invoca docker build localmente (HU-026)"
+else
+  fail "install_build desktop NO invoca docker build (HU-026): $OUT"
+fi
+# No debe haber dejado archivos leak en el repo root
+if [[ -f "${REPO_ROOT}/engram-local" || -f "${REPO_ROOT}/libe_sqlite3-local" ]]; then
+  fail "install_build desktop dejó archivos leak en repo root"
+else
+  ok "install_build desktop limpia archivos de contexto"
+fi
+rm -rf "$STUB_BUILD_DIR" "$TMP_HOME_BUILD"
+
 rm -rf "$STUB_DIR" "$TMP_HOME"
+
+# ══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo "=== Bug #3: install_docker crea wrapper ejecutable ==="
+# Setup fresh: HOME aislado, stub docker que solo verifica exec.
+DOCKER_STUB_DIR="$(mktemp -d)"
+cat > "$DOCKER_STUB_DIR/docker" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+chmod +x "$DOCKER_STUB_DIR/docker"
+export PATH="$DOCKER_STUB_DIR:$PATH"
+TMP_HOME_D="$(mktemp -d)"
+export HOME="$TMP_HOME_D"
+ENGRAM_CMD=""
+install_docker >/dev/null 2>&1
+
+WRAPPER="${HOME}/.local/bin/engram"
+if [[ -x "$ENGRAM_CMD" ]]; then
+  ok "ENGRAM_CMD es ejecutable: $ENGRAM_CMD"
+else
+  fail "ENGRAM_CMD NO es ejecutable (bug #3): $ENGRAM_CMD"
+fi
+if [[ -f "$WRAPPER" ]]; then
+  ok "wrapper existe en $WRAPPER"
+else
+  fail "wrapper NO existe en $WRAPPER"
+fi
+if [[ -f "$WRAPPER" ]] && grep -q "docker run" "$WRAPPER" 2>/dev/null; then
+  ok "wrapper invoca docker run"
+else
+  fail "wrapper NO contiene 'docker run'"
+fi
+# step_verify hace [[ -x "$ENGRAM_CMD" ]]; simular esa verificación.
+if [[ -x "$ENGRAM_CMD" ]]; then
+  ok "step_verify [[ -x ]] pasa para install_docker (bug #3 fixed)"
+else
+  fail "step_verify [[ -x ]] falla para install_docker (bug #3)"
+fi
+
+rm -rf "$DOCKER_STUB_DIR" "$TMP_HOME_D"
+# Restaurar PATH por las dudas
+export PATH="$(echo "$PATH" | sed "s|$STUB_DIR||g; s|^:||; s|:$||")"
 
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
