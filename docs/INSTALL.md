@@ -360,6 +360,8 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 
 > **Note**: `offline-first` uses SQLite locally on each developer machine, NOT PostgreSQL. The server runs `remote-server` profile with PostgreSQL.
 
+> **⚠️ Enrollment required before sync works**: Both the **server** (project enrollment via `/sync/enroll`) and the **client** (local enrollment via `engram sync enroll --project <name>`) must be enrolled before push sync starts. Without local enrollment, the SyncManager blocks push with "non-enrolled-pending" — even if the server enrollment succeeded.
+
 **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync documentation.
 
 ### Profile: `desktop`

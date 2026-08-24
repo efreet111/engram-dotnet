@@ -8,32 +8,50 @@
 
 ## Acceptance Criteria
 
-- [ ] Push batch with empty/null `session_id` applies on PostgreSQL without constraint error
-- [ ] Retry loop stops after fix — batch is acked and `consecutive_failures` resets
-- [ ] Normal sync path unaffected — sessions-first batch makes ensure-session insert a no-op
-- [ ] Both `ApplyObservationUpsertAsync` and `ApplyPromptUpsertAsync` handle missing session correctly
-- [ ] Placeholder sessions are namedpaced (`obs-{syncId}`) to avoid collisions
+- [x] Push batch with empty/null `session_id` applies on PostgreSQL without constraint error
+- [x] Retry loop stops after fix — batch is acked and `consecutive_failures` resets
+- [x] Normal sync path unaffected — sessions-first batch makes ensure-session insert a no-op
+- [x] Both `ApplyObservationUpsertAsync` and `ApplyPromptUpsertAsync` handle missing session correctly
+- [x] Placeholder sessions are namespaced (`obs-{syncId}` / `prompt-{syncId}`) to avoid collisions
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] Add ensure-session upsert in `ApplyObservationUpsertAsync` (PostgresStore.cs)
-- [ ] Add ensure-session upsert in `ApplyPromptUpsertAsync` (PostgresStore.cs)
-- [ ] Add unit test: observation mutation with empty/null `session_id` → inserts successfully
-- [ ] Add unit test: prompt mutation with empty/null `session_id` → inserts successfully
-- [ ] Verify T2 tests pass: `dotnet test -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests"`
+- [x] Add ensure-session upsert in `ApplyObservationUpsertAsync` (PostgresStore.cs)
+- [x] Add ensure-session upsert in `ApplyPromptUpsertAsync` (PostgresStore.cs)
+- [x] Add unit test: observation mutation with empty/null `session_id` → inserts successfully
+- [x] Add unit test: prompt mutation with empty/null `session_id` → inserts successfully
+- [x] Verify T2 tests pass: `dotnet test -c Release --filter "FullyQualifiedName!~Engram.Postgres.Tests"`
 
 ---
 
 ## Notes
 
 - **Root cause**: `PostgresStore.cs:2714` binds `(object?)payload.SessionId ?? DBNull.Value` — `DBNull` violates `NOT NULL REFERENCES sessions(id)` constraint. SQLite uses `?? ""` + `InsertDeferred` on FK failure; PostgreSQL has no deferral.
-- **Ensure-session SQL**: `INSERT INTO sessions (id, project, directory) VALUES (@sid, COALESCE(@proj, 'unknown'), '/') ON CONFLICT (id) DO NOTHING`
-- **Fallback session id**: `string.IsNullOrEmpty(payload.SessionId) ? $"obs-{entry.EntityKey}" : payload.SessionId`
-- **Why `COALESCE(@proj, 'unknown')`**: `sessions.project TEXT NOT NULL` — without it, a null project in the payload would fail the ensure-session insert too
+- **Ensure-session SQL**: `INSERT INTO sessions (id, project, directory) VALUES (@sid, COALESCE(NULLIF(@proj, ''), 'unknown'), '/') ON CONFLICT (id) DO NOTHING`
+- **Fallback session id**: `string.IsNullOrEmpty(sessionId) ? $"obs-{entityKey}" : sessionId` for observations; `prompt-{entityKey}` for prompts
+- **Why `COALESCE(NULLIF(@proj, ''), 'unknown')`**: Distinguishes null from empty-string project values; both would otherwise violate the `sessions.project NOT NULL` constraint
 - **Affected code paths**:
-  - `src/Engram.Store/PostgresStore.cs:2714` — `ApplyObservationUpsertAsync`
-  - `src/Engram.Store/PostgresStore.cs:2788` — `ApplyPromptUpsertAsync`
+  - `src/Engram.Store/PostgresStore.cs` — `ApplyObservationUpsertAsync` (EnsureSessionAsync call in insert branch)
+  - `src/Engram.Store/PostgresStore.cs` — `ApplyPromptUpsertAsync` (EnsureSessionAsync call in insert branch)
 - **Sync flow**: offline-first (SQLite) → HTTP push → remote-server (PostgreSQL) → batch atómico → whole batch rolls back on constraint violation → never acked → infinite retry loop
-- **Existing tests**: `SyncBehaviorPostgresTests` (RequiresDocker) covers sync push — should add sessionless mutation case
+- **Tests**: `PostgresStoreTests.cs` — `ApplyObservationUpsert_NullSessionId_CreatesPlaceholderAndSucceeds`, `ApplyPromptUpsert_NullSessionId_CreatesPlaceholderAndSucceeds`, `PushMutation_MixedNullAndValidSession_BatchCommitsAtomically`, `PushMutation_NullSessionId_ReapplyCreatesNoDuplicatePlaceholder`
+
+---
+
+## Implementation Results
+
+**Commit**: `6c451fc` — `fix: add EnsureSessionAsync for null session_id in PostgreSQL sync push (HU-027)`
+
+**Testing**:
+- Postgres suite: 59 passed / 0 failed (`PostgresStoreTests.cs`)
+- T2 suite: all green
+- T3 integration (scripts/sync-integration-test.sh): offline-first → remote-server sync verified — null session observation pushed to PostgreSQL server, placeholder session `obs-{EntityKey}` auto-created
+
+**Key behaviors verified**:
+- Null session_id mutation accepted with `accepted_seqs` returned
+- Placeholder session `obs-test-null-session-obs` created in PostgreSQL
+- Observation stored with FK reference to placeholder session
+- Existing sessions cause no-op (ON CONFLICT DO NOTHING)
+- Retry loop terminates when batch succeeds
