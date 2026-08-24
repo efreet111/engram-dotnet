@@ -625,8 +625,9 @@ install_build() {
     cp "$binary_path" "$context_binary"
 
     # Copiar la librería nativa SQLite al contexto de build.
-    # dotnet publish --self-contained true coloca la .so en runtimes/<rid>/native/.
-    local native_lib="${tmpdir}/runtimes/${rid}/native/libe_sqlite3.so"
+    # dotnet publish --self-contained true coloca libe_sqlite3.so en la raíz del output,
+    # NO dentro de runtimes/<rid>/native/ (ese es el path de otros packages).
+    local native_lib="${tmpdir}/libe_sqlite3.so"
     local context_native="${REPO_ROOT}/libe_sqlite3-local"
     if [[ -f "$native_lib" ]]; then
       cp "$native_lib" "$context_native"
