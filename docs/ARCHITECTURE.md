@@ -21,7 +21,8 @@ src/
 │   ├── IStore.cs        ← Core interface (35+ methods)
 │   ├── SqliteStore.cs   ← SQLite implementation (~2400 lines)
 │   ├── PostgresStore.cs ← PostgreSQL implementation (~2100 lines)
-│   └── HttpStore.cs     ← Remote server proxy (via HTTP)
+│   ├── HttpStore.cs     ← Remote server proxy (via HTTP)
+│   └── DeployProfile.cs ← Deployment profile system (local/remote-server/offline-first/desktop)
 ├── Engram.Server/       ← HTTP REST API (ASP.NET Core)
 │   ├── EngramServer.cs  ← 33 route handlers + DI wiring
 │   └── CloudSyncEndpoints.cs ← 8 sync endpoints
@@ -52,12 +53,23 @@ src/
 ### Selection Logic
 
 ```
-Is ENGRAM_URL set?
-  ├─ YES → HttpStore (remote proxy)
-  └─ NO  → Is ENGRAM_DB_TYPE=postgres?
-              ├─ YES → PostgresStore
-              └─ NO  → SqliteStore (default)
+Is ENGRAM_PROFILE set?
+  ├─ YES → DeployProfile applies defaults:
+  │         ├─ local           → SqliteStore, sync disabled
+  │         ├─ remote-server   → PostgresStore, sync disabled
+  │         ├─ offline-first   → SqliteStore, sync enabled
+  │         └─ desktop         → PostgresStore, sync enabled
+  │         
+  │         Individual env vars (ENGRAM_DB_TYPE, ENGRAM_SYNC_ENABLED) can override profile defaults.
+  │
+  └─ NO  → Is ENGRAM_URL set?
+              ├─ YES → HttpStore (remote proxy)
+              └─ NO  → Is ENGRAM_DB_TYPE=postgres?
+                          ├─ YES → PostgresStore
+                          └─ NO  → SqliteStore (default)
 ```
+
+> **Deployment Profiles** (NEW): The `ENGRAM_PROFILE` environment variable provides pre-configured defaults for common deployment scenarios. Individual environment variables always take precedence, allowing fine-grained customization. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
 
 > **Polymorphism in action**: The client (MCP, REST handlers) only knows `IStore`. Dependency injection resolves the correct implementation at startup. Zero coupling — switching from SQLite to PostgreSQL requires only env vars, no code changes.
 

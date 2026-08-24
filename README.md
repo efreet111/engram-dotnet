@@ -111,6 +111,26 @@ ENGRAM_SYNC_ENABLED=true ENGRAM_SYNC_TARGET=cloud ./engram serve
 
 > **Result**: Bidirectional sync, offline work, project enrollment, admin pause/resume.
 
+### 🎯 Deployment Profiles (NEW)
+
+Simplify your setup with pre-configured deployment profiles. Just set `ENGRAM_PROFILE` and go:
+
+```bash
+# Solo developer (SQLite, no sync)
+ENGRAM_PROFILE=local ./engram serve
+
+# Small team (PostgreSQL, shared DB)
+ENGRAM_PROFILE=remote-server ENGRAM_PG_CONNECTION="..." ./engram serve
+
+# Large team (offline-first sync)
+ENGRAM_PROFILE=offline-first ENGRAM_SERVER_URL="..." ./engram serve
+
+# Desktop app (PostgreSQL + sync)
+ENGRAM_PROFILE=desktop ENGRAM_PG_CONNECTION="..." ENGRAM_SERVER_URL="..." ./engram serve
+```
+
+Profiles define sensible defaults; override individual variables as needed. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full guide.
+
 ---
 
 ## ⚡ Features
@@ -165,6 +185,7 @@ engram doctor --server http://localhost:7437
 | Doc | Audience |
 |-----|----------|
 | [📖 Quick Start by Persona](docs/01-QUICK-START.md) | Everyone |
+| [📖 Deployment Guide](docs/DEPLOYMENT.md) | IT Admins (profiles, deploy.sh, Docker) |
 | [📖 API Reference](docs/API-REFERENCE.md) | Humans (curl, parameters, responses) |
 | [🤖 Agent Protocol](docs/AGENT-PROTOCOL.md) | AI agents (tools, scope, sync) |
 | [📖 Sync Setup](docs/SYNC-SETUP.md) | SysAdmins (PostgreSQL, env vars) |

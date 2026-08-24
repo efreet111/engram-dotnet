@@ -101,7 +101,11 @@ if command -v docker >/dev/null 2>&1; then
     if [[ -d "${HOME}/.engram/desktop" ]]; then
         if [[ -f "${HOME}/.engram/desktop/docker-compose.yml" ]]; then
             echo -n "  Stopping desktop compose services... "
-            dry (cd "${HOME}/.engram/desktop" && docker compose down 2>/dev/null) && echo "done" || echo "not running"
+            if [[ "$DRY_RUN" == true ]]; then
+                echo -e "${CYAN}[DRY]${NC} docker compose -f ${HOME}/.engram/desktop/docker-compose.yml down"
+            else
+                (cd "${HOME}/.engram/desktop" && docker compose down 2>/dev/null) && echo "done" || echo "not running"
+            fi
         fi
     fi
     if confirm "¿Eliminar las imágenes Docker de engram (engram-test, opencode-test, engram-dotnet-allinone)?"; then
@@ -131,22 +135,10 @@ echo "── 2. Binarios ──────────────────�
 BINARIES=(
     "${HOME}/.local/bin/engram"
     "${HOME}/.local/bin/engram-mcp"
-    "${HOME}/.local/bin/libe_sqlite3.so"
-    "${HOME}/.local/bin/e_sqlite3.so"
     "${HOME}/dist/engram"
     "/usr/local/bin/engram"
     "/usr/local/bin/engram-mcp"
 )
-
-# Also check common dist/ locations in repos
-for d in ~/dev/ ~/projects/ ~/code/; do
-    if [[ -d "$d" ]]; then
-        find "$d" -maxdepth 3 -name "engram" -type f -perm +111 2>/dev/null | while read -r f; do
-            echo "  Found: $f"
-            BINARIES+=("$f")
-        done
-    fi
-done
 
 for bin in "${BINARIES[@]}"; do
     if [[ -f "$bin" ]]; then
@@ -194,7 +186,6 @@ echo "── 4. Configuración MCP ───────────────
 
 MCP_FILES=(
     "${HOME}/.cursor/mcp.json"
-    "${HOME}/.config/opencode/opencode.json"
     "${HOME}/.config/Claude/claude_desktop_config.json"
     "${HOME}/.vscode/mcp.json"
     "${HOME}/.config/Code/User/globalStorage/storage.json"  # VS Code MCP
@@ -314,26 +305,6 @@ if command -v pip3 >/dev/null 2>&1; then
     fi
 fi
 
-# ── 9. Repo clone (if present) ─────────────────────────────────────────────
-echo ""
-echo "── 9. Repository clones ─────────────────────────────────"
-
-REPO_DIRS=(
-    "${HOME}/dev/engram-dotnet"
-    "${HOME}/projects/engram-dotnet"
-    "${HOME}/code/engram-dotnet"
-    "${HOME}/engram-dotnet"
-)
-
-for d in "${REPO_DIRS[@]}"; do
-    if [[ -d "$d/.git" ]]; then
-        if confirm "¿Eliminar repositorio clonado en $d?"; then
-            echo -n "  Removing $d... "
-            dry rm -rf "$d" && echo "done"
-        fi
-    fi
-done
-
 # ── 10. Docker volumes ──────────────────────────────────────────────────────
 echo ""
 echo "── 10. Docker volumes ───────────────────────────────────"
@@ -350,23 +321,6 @@ if command -v docker >/dev/null 2>&1; then
     done
 fi
 
-# ── 11. Log files ──────────────────────────────────────────────────────────
-echo ""
-echo "── 11. Log files ───────────────────────────────────────"
-
-LOG_FILES=(
-    "/var/log/engram*.log"
-    "/tmp/engram*.log"
-    "${HOME}/.engram/engram.log"
-)
-
-for f in "${LOG_FILES[@]}"; do
-    if ls "$f" &>/dev/null 2>&1; then
-        echo -n "  Removing $f... "
-        dry rm -f -- "$f" && echo "done"
-    fi
-done
-
 # ── Summary ────────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════"
@@ -376,7 +330,7 @@ echo ""
 echo "  Lo que se removió (ver arriba para detalles):"
 echo "    • Binarios y directorios dist/"
 echo "    • Datos (~/.engram/)"
-echo "    • Configuraciones MCP"
+echo "    • Configuraciones MCP (excepto opencode.json — preservado)"
 echo "    • Shell completions"
 echo "    • Modificaciones a PATH (~/.bashrc, etc.)"
 echo "    • Servicios systemd"
@@ -387,5 +341,4 @@ echo ""
 echo "  Para verificar que no queda nada:"
 echo "    which engram        # → no debería encontrar nada"
 echo "    ls ~/.engram        # → no debería existir"
-echo "    cat ~/.config/opencode/opencode.json  # → no debería existir"
 echo ""

@@ -16,6 +16,7 @@
 | ADR-008 | Self-loop Detection for SyncManager | 2026-07-01 |
 | ADR-009 | Two-version Model (product vs API/schema) | 2026-07-06 |
 | ADR-010 | Historical Documentation Immutability Policy | 2026-07-06 |
+| ADR-011 | Backend-specific Docker Compose Files | 2026-08-07 |
 
 ## Deprecated Location
 

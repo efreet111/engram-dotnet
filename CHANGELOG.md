@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Deployment Profile System**: New `ENGRAM_PROFILE` environment variable with 4 pre-configured profiles:
+  - `local` — SQLite, sync off (solo development)
+  - `remote-server` — PostgreSQL, sync off (small team with shared DB)
+  - `offline-first` — SQLite + SyncManager (large team, offline-first)
+  - `desktop` — PostgreSQL + SyncManager (personal/shared workstation)
+  
+  Profiles define sensible defaults; individual variables can override. New `DeployProfile.cs` with automatic profile detection. `deploy.sh` script (670 lines) for automated deployment. `DEPLOYMENT.md` guide (599 lines). See HU-010, HU-011, HU-012, ADR-011, ADR-012.
+
 ### Fixed
 
 - **HU-026**: System.CommandLine migration — `Program.cs` y `tests/Engram.Cli.Tests/` migrados de API beta (2.0.0-beta4.22272.1) a 2.0.11 estable. 244 errores de compilación corregidos (SetHandler→SetAction, root.Add→Subcommands.Add, GetValueForOption→GetValue, InvocationContext→ParseResult). 121 tests pasan.
