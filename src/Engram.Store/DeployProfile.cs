@@ -36,6 +36,7 @@ public enum DeployProfile
     /// with PostgreSQL Docker demoted to a sync server (not the primary backend).
     /// Requires <c>ENGRAM_SERVER_URL</c> and <c>ENGRAM_USER</c>.
     /// </summary>
+    [Obsolete("Desktop profile is temporarily suspended. See HU-058 and ADR-014.", DiagnosticId = "ENGRAM_DEPRECATED")]
     Desktop,
 }
 
@@ -61,7 +62,8 @@ public static class DeployProfileExtensions
             "local"          => DeployProfile.Local,
             "remote-server"  => DeployProfile.RemoteServer,
             "offline-first"  => DeployProfile.OfflineFirst,
-            "desktop"        => DeployProfile.Desktop,
+            "desktop"        => throw new NotSupportedException(
+                "The 'desktop' profile is temporarily suspended. See HU-058 and ADR-014."),
             _ => throw new InvalidOperationException(
                 $"Unknown profile '{raw}'. Use local, remote-server, offline-first, or desktop."),
         };

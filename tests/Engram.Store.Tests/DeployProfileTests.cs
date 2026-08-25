@@ -39,9 +39,6 @@ public class DeployProfileTests
     [InlineData("offline-first", DeployProfile.OfflineFirst)]
     [InlineData("Offline-First", DeployProfile.OfflineFirst)]
     [InlineData("OFFLINE-FIRST", DeployProfile.OfflineFirst)]
-    [InlineData("desktop", DeployProfile.Desktop)]
-    [InlineData("Desktop", DeployProfile.Desktop)]
-    [InlineData("DESKTOP", DeployProfile.Desktop)]
     public void FromEnvironment_ValidValues_ReturnsCorrectProfile(string raw, DeployProfile expected)
     {
         var original = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
@@ -114,7 +111,7 @@ public class DeployProfileTests
         Assert.Equal("cloud", defaults["ENGRAM_SYNC_TARGET"]);
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public void For_Desktop_HasCorrectKeysAndValues()
     {
         var defaults = ProfileDefaults.For(DeployProfile.Desktop);
@@ -398,7 +395,7 @@ public class DeployProfileTests
     // Desktop must resolve to SqliteStore (source of truth), never PostgresStore,
     // and never become a thin client even though ENGRAM_SERVER_URL is set for sync.
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public void FromEnvironment_Desktop_UsesSqliteNotPostgres()
     {
         var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
@@ -421,7 +418,7 @@ public class DeployProfileTests
         }
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public void FromEnvironment_Desktop_DefaultsServerUrlToLocalhost()
     {
         var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");

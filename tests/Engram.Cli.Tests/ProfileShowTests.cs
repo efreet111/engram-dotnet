@@ -104,7 +104,7 @@ public sealed class ProfileShowTests : IDisposable
         Assert.Equal("override", dbType.GetProperty("source").GetString());
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public async Task Show_WithConfigFile_ReportsFileAndDeclaredProfile()
     {
         using var env = new EnvVarScope().Set("ENGRAM_PROFILE", null);
@@ -127,7 +127,7 @@ public sealed class ProfileShowTests : IDisposable
 
     // ─── Shared ProfileConfig logic ───────────────────────────────────────
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public void ParseProfileName_ValidNames_ReturnCorrectEnum()
     {
         Assert.Equal(DeployProfile.Local, ProfileConfig.ParseProfileName("local"));

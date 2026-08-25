@@ -67,7 +67,7 @@ public sealed class ProfileSetTests : IDisposable
         Assert.Contains("ENGRAM_SYNC_ENABLED=true", content);
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public async Task Set_Overwrite_CreatesBackupWithOldContent()
     {
         File.WriteAllText(EnvPath, "ENGRAM_PROFILE=local\nCUSTOM_VAR=keepme\n");
@@ -89,7 +89,7 @@ public sealed class ProfileSetTests : IDisposable
         Assert.Equal(before, File.ReadAllText(EnvPath));
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public async Task Set_DryRun_DoesNotWrite()
     {
         var (output, _) = await InvokeAsync("profile set desktop --dry-run");
@@ -111,7 +111,7 @@ public sealed class ProfileSetTests : IDisposable
         Assert.Contains("ENGRAM_SERVER_URL", json.GetProperty("missing_variables").EnumerateArray().Select(e => e.GetString()));
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public async Task Set_Json_DryRun_ChangedFalse()
     {
         var (output, _) = await InvokeAsync("profile set desktop --json --dry-run");

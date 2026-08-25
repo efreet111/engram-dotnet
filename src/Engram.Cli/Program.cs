@@ -1722,7 +1722,7 @@ profileShowCmd.SetAction(parseResult =>
 
 // profile set
 var profileSetCmd       = new Command("set", "Set the deployment profile (writes ~/.engram/.env)");
-var profileSetNameArg   = new Argument<string>("profile") { Description = "Profile name: local, remote-server, offline-first, desktop" };
+var profileSetNameArg   = new Argument<string>("profile") { Description = "Profile name: local, remote-server, offline-first (desktop ⚠️ deprecated — see HU-058)" };
 var profileSetDryRunOpt = new Option<bool>("--dry-run") { Description = "Preview changes without writing files" };
 var profileSetJsonOpt   = new Option<bool>("--json") { Description = "Output as JSON" };
 profileSetCmd.Arguments.Add(profileSetNameArg);

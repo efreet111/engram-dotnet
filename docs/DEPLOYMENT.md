@@ -15,14 +15,14 @@ El sistema de Deployment Profiles (`ENGRAM_PROFILE`) permite configurar engram-d
 | `local` | SQLite | ❌ | Dev individual, sin compartir | Ninguno |
 | `remote-server` | PostgreSQL | ❌ | Equipo pequeño (2-5), DB compartida | `ENGRAM_PG_CONNECTION` |
 | `offline-first` | SQLite | ✅ | Equipo grande (5-20), offline-first | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
-| `desktop` | SQLite (local) + PostgreSQL (sync server) | ✅ | Desktop híbrido: SQLite local + PostgreSQL Docker como sync server | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+| `desktop` ⚠️ | SQLite (local) + PostgreSQL (sync server) | ✅ | Desktop híbrido: SQLite local + PostgreSQL Docker como sync server | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 ### Cuándo usar cada profile
 
 - **`local`**: Vos solo, no necesitás compartir memorias, querés máxima simplicidad
 - **`remote-server`**: Equipo chico con PostgreSQL existente (ej: TrueNAS), acceso directo por HTTP
 - **`offline-first`**: Equipo mediano/grande, cada dev tiene PostgreSQL local + SyncManager, offline-first
-- **`desktop`**: Usuario power con desktop (SQLite local + PostgreSQL Docker como sync server) y laptop/otros equipos con `offline-first` sincronizando al desktop
+- **`desktop`** ⚠️: **Postpuesto temporalmente.** Ver [HU-058](../tasks/HU-001-HU-099/HU-058-deprecate-desktop-profile.md) y [ADR-014](../architecture/adr/ADR-014-desktop-hybrid-sync-architecture.md). Usuario power con desktop (SQLite local + PostgreSQL Docker como sync server) y laptop/otros equipos con `offline-first` sincronizando al desktop
 
 ---
 

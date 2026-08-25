@@ -106,7 +106,8 @@ public static class ProfileConfig
             "local"         => DeployProfile.Local,
             "remote-server" => DeployProfile.RemoteServer,
             "offline-first" => DeployProfile.OfflineFirst,
-            "desktop"       => DeployProfile.Desktop,
+            "desktop"       => throw new NotSupportedException(
+                "The 'desktop' profile is temporarily suspended. See HU-058 and ADR-014."),
             _ => throw new InvalidOperationException(
                 $"Unknown profile '{name}'. Use local, remote-server, offline-first, or desktop."),
         };
