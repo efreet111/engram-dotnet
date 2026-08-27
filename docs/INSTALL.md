@@ -362,6 +362,28 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 
 > **⚠️ Enrollment required before sync works**: Both the **server** (project enrollment via `/sync/enroll`) and the **client** (local enrollment via `engram sync enroll --project <name>`) must be enrolled before push sync starts. Without local enrollment, the SyncManager blocks push with "non-enrolled-pending" — even if the server enrollment succeeded.
 
+**Multi-Project Sync** (HU-013):
+
+Configure per-project sync behavior:
+
+```bash
+# Interactive enrollment (recommended)
+engram sync enroll --interactive
+
+# Or via config file ~/.engram/sync-projects.dotnet.yml
+# See 01-QUICK-START.md for full details
+```
+
+**Smart Sync Triggers** (HU-014):
+
+```bash
+# Push specific project (not global)
+engram sync push --project my-project
+
+# Push all projects
+engram sync push --all
+```
+
 **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync documentation.
 
 ### Profile: `desktop`

@@ -254,9 +254,49 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 ### 5. Enroll Projects
 
 ```bash
+# Interactive enrollment (recommended)
+engram sync enroll --interactive
+
+# Or enroll specific project
 curl -X POST http://localhost:7437/sync/enroll \
   -H "X-Engram-User: your-username" \
   -d '{"project":"team/mi-api"}'
+```
+
+**Multi-Project Sync Management** (HU-013):
+
+Configure per-project sync behavior with `~/.engram/sync-projects.dotnet.yml`:
+
+```yaml
+# ~/.engram/sync-projects.dotnet.yml
+default_behavior: silent-skip  # applies to new projects
+projects:
+  mi-proyecto:
+    behavior: fail-loud  # blocks sync if not enrolled
+    excluded_servers:
+      - server-2
+  otro-proyecto:
+    behavior: silent-skip  # skips silently if not enrolled
+    excluded_servers: []
+```
+
+**Sync behaviors**:
+- `silent-skip`: project excluded or not enrolled → skipped, sync continues
+- `fail-loud`: project not enrolled with pending mutations → **blocks entire sync** (current default)
+
+**CLI commands**:
+```bash
+# Interactive enrollment with fzf-style selector
+engram sync enroll --interactive
+
+# Enroll with specific behavior
+engram sync enroll my-project --behavior=fail-loud
+
+# Exclude server for project
+engram sync enroll my-project --exclude-server=server-2
+
+# Check sync status with behavior info
+engram sync status --json
 ```
 
 ### 6. Verify Sync
@@ -284,6 +324,30 @@ curl -X POST http://localhost:7437/sync/pause \
 curl -X DELETE "http://localhost:7437/sync/pause?project=team/mi-api" \
   -H "X-Engram-User: admin"
 ```
+
+### 8. Smart Sync Triggers (HU-014)
+
+**Project-specific sync** (not global):
+
+The 30s poll only pushes projects with pending mutations. Manual sync per project:
+
+```bash
+# Push specific project
+engram sync push --project team/mi-api
+
+# Push all projects
+engram sync push --all
+
+# MCP tool with project-specific sync
+mem_save("my note", sync_project=true)  # only pushes this project
+```
+
+**Multi-server deduplication** (RFC-006):
+
+When pulling from multiple servers, dedup strategy:
+- Last-write-wins by `occurred_at`
+- Tiebreaker: `server_id` (higher wins)
+- Sequential pull with 5s timeout per server
 
 ---
 
