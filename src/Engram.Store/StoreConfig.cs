@@ -72,9 +72,28 @@ public class StoreConfig
     public bool IsPostgres => DbType == StoreDbType.Postgres;
 
     /// <summary>
-    /// True when the client is configured to operate in team/centralized mode.
+    /// True when the client operates as a pure thin client: it has a remote server
+    /// (via <c>ENGRAM_SERVER_URL</c>) and is NOT a sync profile (<c>offline-first</c>
+    /// or <c>desktop</c>), so every read/write is delegated to the remote server via
+    /// <c>HttpStore</c> instead of using a local store.
     /// </summary>
-    public bool IsRemote => !string.IsNullOrWhiteSpace(RemoteUrl);
+    /// <remarks>
+    /// ADR-013 separates "thin client" (delegate everything to a remote server) from
+    /// "sync enabled" (local store + background sync). The <c>offline-first</c> and
+    /// <c>desktop</c> profiles keep a local store and sync via <c>SyncManager</c>, so
+    /// they must never be treated as thin clients even though they set
+    /// <c>ENGRAM_SERVER_URL</c> for sync.
+    /// </remarks>
+    public bool IsThinClient =>
+        !string.IsNullOrWhiteSpace(RemoteUrl)
+        && Profile is not (DeployProfile.OfflineFirst or DeployProfile.Desktop);
+
+    /// <summary>
+    /// Deprecated alias for <see cref="IsThinClient"/>. Kept for backward compatibility
+    /// during the ADR-013 transition; use <see cref="IsThinClient"/> instead.
+    /// </summary>
+    [Obsolete("Use IsThinClient instead.")]
+    public bool IsRemote => IsThinClient;
 
     /// <summary>
     /// True when sync is enabled via ENGRAM_SYNC_ENABLED env var.
@@ -123,6 +142,7 @@ public class StoreConfig
             Profile = profile,
             DbType = ParseDbType(Resolve("ENGRAM_DB_TYPE", "sqlite")),
             PgConnectionString = Resolve("ENGRAM_PG_CONNECTION"),
+            RemoteUrl = Resolve("ENGRAM_SERVER_URL"),
             User = Resolve("ENGRAM_USER") ?? Environment.UserName,
         };
     }

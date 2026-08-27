@@ -226,7 +226,7 @@ Instead of setting 10+ variables manually, use `ENGRAM_PROFILE` to pick your dep
 | `local` (default) | Solo developer | SQLite | ❌ |
 | `remote-server` | Small team, shared DB | PostgreSQL | ❌ |
 | `offline-first` | Large team, offline-first | SQLite (local) + PostgreSQL (server) | ✅ |
-| `desktop` | Personal/shared workstation | PostgreSQL | ❌ |
+| `desktop` | Personal PC with local sync hub | SQLite (local) | ✅ |
 
 ```json
 // OpenCode example — just set ENGRAM_PROFILE:
@@ -303,7 +303,7 @@ Set `ENGRAM_PROFILE` and the required variables for your use case:
 | **`local`** (default) | Solo developer, no sharing | *(none)* |
 | **`remote-server`** | Shared server, no offline | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
 | **`offline-first`** | Offline-first, multi-device | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
-| **`desktop`** | Personal/shared workstation | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| **`desktop`** | Personal PC with local sync hub | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 ### Profile: `local`
 
@@ -360,20 +360,59 @@ The `offline-first` profile auto-sets `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENAB
 
 > **Note**: `offline-first` uses SQLite locally on each developer machine, NOT PostgreSQL. The server runs `remote-server` profile with PostgreSQL.
 
+> **⚠️ Enrollment required before sync works**: Both the **server** (project enrollment via `/sync/enroll`) and the **client** (local enrollment via `engram sync enroll --project <name>`) must be enrolled before push sync starts. Without local enrollment, the SyncManager blocks push with "non-enrolled-pending" — even if the server enrollment succeeded.
+
+**Multi-Project Sync** (HU-013):
+
+Configure per-project sync behavior:
+
+```bash
+# Interactive enrollment (recommended)
+engram sync enroll --interactive
+
+# Or via config file ~/.engram/sync-projects.dotnet.yml
+# See 01-QUICK-START.md for full details
+```
+
+**Smart Sync Triggers** (HU-014):
+
+```bash
+# Push specific project (not global)
+engram sync push --project my-project
+
+# Push all projects
+engram sync push --all
+```
+
 **See also**: [SYNC-SETUP.md](SYNC-SETUP.md) for full sync documentation.
 
 ### Profile: `desktop`
 
-For personal use or shared workstation with PostgreSQL:
+Para PC personal que quiere tener su propio hub de sync. El CLI local usa SQLite + sync habilitado,
+y el Docker container levanta el hub con PostgreSQL (remote-server profile).
+
+El install.sh (`./scripts/install.sh --profile desktop`) ofrece 3 métodos de instalación:
+
+| Método | CLI | Imagen Docker | Cuándo usarlo |
+|--------|-----|---------------|---------------|
+| `docker` | Pre-built de GHCR | Pre-built de GHCR | Rápido, sin .NET SDK |
+| `build` | Compilado localmente | Compilado localmente | Últimos fixes (System.CommandLine 2.0.11) |
+| `release` | Descarga de GitHub | Pre-built de GHCR | Solo CLI, sin build local |
+
+**Recomendado**: `build` si tenés .NET 10 SDK y querés los últimos fixes.
 
 ```bash
+# CLI local (tu PC):
 ENGRAM_PROFILE=desktop \
-ENGRAM_PG_CONNECTION="Host=localhost;Database=engram;Username=engram;Password=REPLACE_ME" \
+ENGRAM_SERVER_URL=http://localhost:7437 \
 ENGRAM_USER=your-username \
 ./engram serve
+
+# El wizard install.sh genera el docker-compose.yml del hub automáticamente.
 ```
 
-The `desktop` profile auto-sets `ENGRAM_DB_TYPE=postgres` and `ENGRAM_SYNC_ENABLED=false`. Allows both local and external connections.
+El perfil `desktop` auto-configura `ENGRAM_DB_TYPE=sqlite`, `ENGRAM_SYNC_ENABLED=true`,
+`ENGRAM_SYNC_POLL_SECONDS=30`, y `ENGRAM_SYNC_TARGET=desktop`.
 
 > **Backward compatible**: All existing env vars still work. If you don't set `ENGRAM_PROFILE`, the system behaves exactly as before — no migration needed.
 

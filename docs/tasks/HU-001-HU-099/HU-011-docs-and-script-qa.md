@@ -12,7 +12,7 @@
 - [ ] HU documents have no broken internal cross-references
 - [ ] `docs/architecture/adr/INDEX.md` exists and is up-to-date with all ADRs
 - [ ] `scripts/deploy.sh` passes `shellcheck` validation with no errors
-- [ ] `scripts/backup.sh` passes `shellcheck` validation with no errors
+- [ ] ~~`scripts/backup.sh` passes `shellcheck` validation with no errors~~ **N/A** _(script does not exist in repository)_
 - [ ] `scripts/*.sh` in root and `scripts/` directory are validated
 - [ ] Documentation update for HU-010 covers all affected docs: `INSTALL.md`, `01-QUICK-START.md`, `DOCKER-VANILLA.md`, `docker/README.md`
 
@@ -83,7 +83,7 @@ The MCP client (`mcp.json`) configuration should be documented per deployment pr
 }
 ```
 
-**Profile: `server`** (PostgreSQL, no sync)
+**Profile: `remote-server`** (PostgreSQL, no sync)
 ```json
 {
   "mcpServers": {
@@ -99,7 +99,7 @@ The MCP client (`mcp.json`) configuration should be documented per deployment pr
 }
 ```
 
-**Profile: `sync`** (offline-first with SyncManager)
+**Profile: `offline-first`** (offline-first with SyncManager)
 ```json
 {
   "mcpServers": {
@@ -149,9 +149,3 @@ jobs:
 | `scripts/regression-test.sh` | Regression tests |
 
 ---
-
-## Notes
-
-- **Priority**: Documentation fixes should be done BEFORE implementing HU-010 so the docs reflect the new profile system correctly.
-- **ADR Index**: If `INDEX.md` doesn't exist, creating it is a prerequisite for ADR validation.
-- **ShellCheck severity**: Only fix `error` level issues in CI. Warnings can be tracked separately.

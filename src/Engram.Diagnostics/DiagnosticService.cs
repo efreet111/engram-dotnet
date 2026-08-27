@@ -15,6 +15,7 @@ public sealed class DiagnosticService : IDiagnosticService
     private readonly HttpClient _httpClient;
     private readonly string? _serverUrl;
     private readonly ISyncStatusProvider? _syncStatusProvider;
+    private readonly DeployProfile _profile;
 
     /// <summary>
     /// Database check timeout in milliseconds.
@@ -30,16 +31,25 @@ public sealed class DiagnosticService : IDiagnosticService
         IStore store,
         HttpClient? httpClient = null,
         string? serverUrl = null,
-        ISyncStatusProvider? syncStatusProvider = null)
+        ISyncStatusProvider? syncStatusProvider = null,
+        DeployProfile profile = DeployProfile.Local)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _httpClient = httpClient ?? new HttpClient();
         _serverUrl = serverUrl;
         _syncStatusProvider = syncStatusProvider;
+        _profile = profile;
     }
 
     /// <summary>
-    /// Runs all diagnostic checks and returns the aggregated result.
+    /// True when the active profile runs a server and sync (offline-first / desktop).
+    /// Local and remote-server have no local server URL nor sync manager, so their
+    /// <c>http_server</c> and <c>sync_health</c> checks are skipped (HU-020).
+    /// </summary>
+    private bool RunsServerChecks => _profile is DeployProfile.OfflineFirst or DeployProfile.Desktop;
+
+    /// <summary>
+    /// Runs all diagnostic checks applicable to the active profile and returns the aggregated result.
     /// </summary>
     public async Task<DiagnosticResult> RunDiagnosticsAsync(CancellationToken cancellationToken = default)
     {
@@ -48,12 +58,18 @@ public sealed class DiagnosticService : IDiagnosticService
             Components = new Dictionary<string, ComponentHealth>()
         };
 
-        // Run all checks in parallel
+        // Checks that do not apply to the profile are skipped, not run.
+        var httpCheck = RunsServerChecks
+            ? CheckHttpServerAsync(cancellationToken)
+            : Task.FromResult(Skipped());
+        var syncCheck = RunsServerChecks
+            ? CheckSyncHealth()
+            : Task.FromResult(Skipped());
+
+        // Run all applicable checks in parallel
         var dbCheck = CheckDatabaseAsync(cancellationToken);
-        var httpCheck = CheckHttpServerAsync(cancellationToken);
         var mcpCheck = CheckMcpServerAsync(cancellationToken);
         var identityCheck = CheckProjectIdentityAsync(cancellationToken);
-        var syncCheck = CheckSyncHealth();
 
         await Task.WhenAll(dbCheck, httpCheck, mcpCheck, identityCheck, syncCheck);
 
@@ -68,6 +84,18 @@ public sealed class DiagnosticService : IDiagnosticService
 
         return result;
     }
+
+    /// <summary>
+    /// Builds the component health for a check that is skipped because it does not
+    /// apply to the active deployment profile.
+    /// </summary>
+    private ComponentHealth Skipped() => new()
+    {
+        IsHealthy = true,
+        IsSkipped = true,
+        Message = $"not applicable for profile '{_profile.ToLabel()}'",
+        LatencyMs = 0
+    };
 
     private Task<ComponentHealth> CheckSyncHealth()
     {

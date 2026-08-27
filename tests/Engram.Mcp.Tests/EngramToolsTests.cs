@@ -907,30 +907,31 @@ public class McpConfigTests
         Assert.Equal("team/shared-app", resultA);
     }
 
-    // ─── StoreConfig — IsRemote flag ──────────────────────────────────────────
+    // ─── StoreConfig — IsThinClient flag (ADR-013) ────────────────────────────
 
     [Fact]
-    public void StoreConfig_IsRemote_FalseByDefault()
+    public void StoreConfig_IsThinClient_FalseByDefault()
     {
-        var cfg = new StoreConfig();
+        var cfg = new StoreConfig { Profile = DeployProfile.Local, RemoteUrl = null };
 
-        Assert.False(cfg.IsRemote);
+        Assert.False(cfg.IsThinClient);
     }
 
     [Fact]
-    public void StoreConfig_IsRemote_TrueWhenRemoteUrlSet()
+    public void StoreConfig_IsThinClient_TrueForLocalWithRemoteUrl()
     {
-        var cfg = new StoreConfig { RemoteUrl = "http://10.0.0.5:7437" };
+        // A local-profile client pointing at a remote server delegates to it (thin client).
+        var cfg = new StoreConfig { Profile = DeployProfile.Local, RemoteUrl = "http://10.0.0.5:7437" };
 
-        Assert.True(cfg.IsRemote);
+        Assert.True(cfg.IsThinClient);
     }
 
     [Fact]
-    public void StoreConfig_IsRemote_FalseWhenRemoteUrlIsWhitespace()
+    public void StoreConfig_IsThinClient_FalseWhenRemoteUrlIsWhitespace()
     {
-        var cfg = new StoreConfig { RemoteUrl = "   " };
+        var cfg = new StoreConfig { Profile = DeployProfile.Local, RemoteUrl = "   " };
 
-        Assert.False(cfg.IsRemote);
+        Assert.False(cfg.IsThinClient);
     }
 
 }

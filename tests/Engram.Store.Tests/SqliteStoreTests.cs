@@ -1468,15 +1468,16 @@ public class SqliteStoreTests : IDisposable
 
     /// <summary>
     /// ENG-458: End-to-end — delete obs with project → sync not blocked.
+    /// Updated for ENG-514 (HU-013): uses silent-skip behavior so enrolled projects don't block sync.
     /// </summary>
     [Fact]
     public async Task DeleteObservation_SyncNotBlockedByEmptyProject()
     {
         await SeedSession();
         var id = await SeedObservation(project: "team/engram-dotnet");
-        // Enroll both projects so neither is "non-enrolled"
-        await _store.EnrollProjectLocalAsync("test-project");
-        await _store.EnrollProjectLocalAsync("team/engram-dotnet");
+        // Enroll both projects with silent-skip so neither blocks sync
+        await _store.EnrollProjectLocalAsync("test-project", "silent-skip");
+        await _store.EnrollProjectLocalAsync("team/engram-dotnet", "silent-skip");
 
         // Delete the observation — creates mutation with project="team/engram-dotnet"
         await _store.DeleteObservationAsync(id);

@@ -1,6 +1,6 @@
 # HU-002: obsidian-export
 
-**Status**: 🟡 In Progress
+**Status**: ✅ Done
 **Owner**: @owner
 **Created**: 2026-06-01
 **Priority**: Should

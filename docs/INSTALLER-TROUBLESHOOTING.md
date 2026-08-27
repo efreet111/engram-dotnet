@@ -242,6 +242,26 @@ chmod 755 config/mcp/generated
 
 ---
 
+### OpenCode: "missing key mcp.engram.enable"
+
+**Síntoma:** Al iniciar OpenCode aparece el error `missing key mcp.engram.enable`.
+
+**Causa:** La config `~/.config/opencode/opencode.json` tiene `mcp.engram` sin la key `enabled: true` (OpenCode la exige para levantar un MCP local; probablemente el mensaje real sea un typo de `enabled`).
+
+**Fix manual:** Editar `~/.config/opencode/opencode.json` y agregar `"enabled": true` dentro de `mcp.engram`:
+
+```json
+"engram": {
+  "enabled": true,
+  "command": ["engram", "mcp"],
+  "type": "local"
+}
+```
+
+**Alternativa:** Re-ejecutar `./scripts/setup.sh` (o `./scripts/install.sh`) y copiar la config generada a `~/.config/opencode/opencode.json`.
+
+---
+
 ### Cursor/Claude Desktop no muestra tools de engram
 
 **Solución:**

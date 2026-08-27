@@ -66,7 +66,8 @@ public sealed class MutationTransport : IMutationTransport, IDisposable
     public async Task<PullResult> PullMutationsAsync(
         long sinceSeq,
         int limit = 100,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? serverId = null)
     {
         var url = $"/sync/mutations/pull?since_seq={sinceSeq}&limit={Math.Min(limit, 100)}";
         var response = await SendWithRetryAsync(HttpMethod.Get, url, null, ct);

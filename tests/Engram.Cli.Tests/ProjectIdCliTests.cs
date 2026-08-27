@@ -34,12 +34,16 @@ public sealed class ProjectIdCliTests : IDisposable
         var projectIdCmd = new Command("id", "Show or regenerate the project identity GUID (.engram-id)");
         var jsonOpt      = new Option<bool>("--json");
         var regenOpt     = new Option<bool>("--regenerate");
-        var yesOpt       = new Option<bool>("-y", () => false);
-        projectIdCmd.AddOption(jsonOpt);
-        projectIdCmd.AddOption(regenOpt);
-        projectIdCmd.AddOption(yesOpt);
-        projectIdCmd.SetHandler(async (bool json, bool regen, bool assumeYes) =>
+        var yesOpt       = new Option<bool>("-y") { DefaultValueFactory = _ => false };
+        projectIdCmd.Options.Add(jsonOpt);
+        projectIdCmd.Options.Add(regenOpt);
+        projectIdCmd.Options.Add(yesOpt);
+        projectIdCmd.SetAction(async (ParseResult parseResult) =>
         {
+            var json = parseResult.GetValue(jsonOpt);
+            var regen = parseResult.GetValue(regenOpt);
+            var assumeYes = parseResult.GetValue(yesOpt);
+
             var cwd = Directory.GetCurrentDirectory();
             var fileGuid = ProjectIdentity.GetProjectId(cwd);
             var computedGuid = ProjectIdentity.TryComputeDeterministicGuid(cwd);
@@ -77,11 +81,11 @@ public sealed class ProjectIdCliTests : IDisposable
             if (fileGuid is not null) Console.WriteLine($"project_id: {fileGuid}");
             else if (computed is not null) Console.WriteLine($"project_id: {computed} (computed, not saved)");
             else Console.WriteLine("No project identity found.");
-        }, jsonOpt, regenOpt, yesOpt);
+        });
 
-        projectCmd.AddCommand(projectIdCmd);
+        projectCmd.Subcommands.Add(projectIdCmd);
         var root = new RootCommand();
-        root.AddCommand(projectCmd);
+        root.Subcommands.Add(projectCmd);
         return (root, jsonOpt, regenOpt, yesOpt);
     }
 
@@ -129,7 +133,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            var result = await root.InvokeAsync("project id");
+            var result = await root.Parse("project id").InvokeAsync();
             Assert.Equal(0, result);
         }
         finally
@@ -151,7 +155,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            await root.InvokeAsync("project id --json");
+            await root.Parse("project id --json").InvokeAsync();
         }
         finally
         {
@@ -175,7 +179,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            await root.InvokeAsync("project id");
+            await root.Parse("project id").InvokeAsync();
         }
         finally
         {
@@ -199,7 +203,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            await root.InvokeAsync("project id --json");
+            await root.Parse("project id --json").InvokeAsync();
         }
         finally
         {
@@ -228,7 +232,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            await root.InvokeAsync("project id --regenerate -y");
+            await root.Parse("project id --regenerate -y").InvokeAsync();
         }
         finally
         {
@@ -258,7 +262,7 @@ public sealed class ProjectIdCliTests : IDisposable
         Console.SetOut(stdout);
         try
         {
-            await root.InvokeAsync("project id");
+            await root.Parse("project id").InvokeAsync();
         }
         finally
         {
@@ -286,9 +290,10 @@ public sealed class ProjectIdCliTests : IDisposable
             var root = new RootCommand();
             var mcpCmd = new Command("mcp", "Start the MCP server");
             var noAutoEnrollOpt = new Option<bool>("--no-auto-enroll");
-            mcpCmd.AddOption(noAutoEnrollOpt);
-            mcpCmd.SetHandler(async (bool noAutoEnroll) =>
+            mcpCmd.Options.Add(noAutoEnrollOpt);
+            mcpCmd.SetAction(async (ParseResult parseResult) =>
             {
+                var noAutoEnroll = parseResult.GetValue(noAutoEnrollOpt);
                 if (!noAutoEnroll)
                 {
                     var cwd = Directory.GetCurrentDirectory();
@@ -298,11 +303,11 @@ public sealed class ProjectIdCliTests : IDisposable
                     }
                 }
                 await Task.CompletedTask;
-            }, noAutoEnrollOpt);
-            root.AddCommand(mcpCmd);
+            });
+            root.Subcommands.Add(mcpCmd);
 
             // No flag → auto-enroll ON by default
-            await root.InvokeAsync("mcp");
+            await root.Parse("mcp").InvokeAsync();
         }
         finally
         {
@@ -331,9 +336,10 @@ public sealed class ProjectIdCliTests : IDisposable
             var root = new RootCommand();
             var mcpCmd = new Command("mcp", "Start the MCP server");
             var noAutoEnrollOpt = new Option<bool>("--no-auto-enroll");
-            mcpCmd.AddOption(noAutoEnrollOpt);
-            mcpCmd.SetHandler(async (bool noAutoEnroll) =>
+            mcpCmd.Options.Add(noAutoEnrollOpt);
+            mcpCmd.SetAction(async (ParseResult parseResult) =>
             {
+                var noAutoEnroll = parseResult.GetValue(noAutoEnrollOpt);
                 if (!noAutoEnroll)
                 {
                     var cwd = Directory.GetCurrentDirectory();
@@ -343,10 +349,10 @@ public sealed class ProjectIdCliTests : IDisposable
                     }
                 }
                 await Task.CompletedTask;
-            }, noAutoEnrollOpt);
-            root.AddCommand(mcpCmd);
+            });
+            root.Subcommands.Add(mcpCmd);
 
-            await root.InvokeAsync("mcp --no-auto-enroll");
+            await root.Parse("mcp --no-auto-enroll").InvokeAsync();
         }
         finally
         {

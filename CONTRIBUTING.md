@@ -55,6 +55,39 @@ git push -u origin fix/eng-206-postgres-tests
 
 ---
 
+## Linting
+
+### ShellCheck
+
+All shell scripts in `scripts/` and the repository root (`*.sh`) must pass `shellcheck` validation with zero errors before merging.
+
+**Install shellcheck:**
+
+```bash
+# Ubuntu / Debian
+sudo apt install shellcheck
+
+# macOS
+brew install shellcheck
+
+# Verify installation
+shellcheck --version
+```
+
+**Usage:**
+
+```bash
+# Run on all scripts
+shellcheck scripts/*.sh *.sh
+
+# Run with CI settings (error level only)
+shellcheck -x -S error scripts/*.sh *.sh
+```
+
+CI runs `shellcheck` automatically on every push and pull request (see `.github/workflows/shellcheck.yml`). Contributors should run it locally before opening a PR.
+
+---
+
 ## Reportar bugs
 
 Abrí un [issue](https://github.com/efreet111/engram-dotnet/issues/new) con:

@@ -61,7 +61,8 @@ public sealed record PulledMutation(
     [property: JsonPropertyName("entity_key")] string EntityKey,
     [property: JsonPropertyName("op")] string Op,
     [property: JsonPropertyName("payload")] string Payload,
-    [property: JsonPropertyName("occurred_at")] string OccurredAt);
+    [property: JsonPropertyName("occurred_at")] string OccurredAt,
+    [property: JsonPropertyName("sync_id")] string? SyncId = null);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Error Response

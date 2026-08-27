@@ -1,10 +1,24 @@
 # HU-007: Logging Infrastructure
 
-**Status**: 🟡 In Progress
+**Status**: ✅ Done
 **Owner**: @owner
 **Created**: 2026-06-01
 **Priority**: High (bloquea debugging en producción)
 **Effort**: 2-3h
+
+---
+
+## 🎯 Intent
+
+Structured HTTP request/response logging for production debugging — log every incoming request (method, path, status, duration, client IP) and every error with full details (message, stack trace, exception type) so failures in production can be diagnosed without guesswork.
+
+## 📋 Scope
+
+- Request/response logging middleware in EngramServer
+- Global exception handler covering all routes, with 5xx full error details
+- POST body preview (first 1KB) on deserialization errors via CloudSyncEndpoints
+- Structured JSON output to stdout
+- Non-blocking logging (no latency impact)
 
 ---
 

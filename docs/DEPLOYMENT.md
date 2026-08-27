@@ -15,14 +15,14 @@ El sistema de Deployment Profiles (`ENGRAM_PROFILE`) permite configurar engram-d
 | `local` | SQLite | ❌ | Dev individual, sin compartir | Ninguno |
 | `remote-server` | PostgreSQL | ❌ | Equipo pequeño (2-5), DB compartida | `ENGRAM_PG_CONNECTION` |
 | `offline-first` | SQLite | ✅ | Equipo grande (5-20), offline-first | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
-| `desktop` | PostgreSQL | ✅ | Desktop↔laptop sync con PostgreSQL local | `ENGRAM_PG_CONNECTION`, `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
+| `desktop` ⚠️ | SQLite (local) + PostgreSQL (sync server) | ✅ | Desktop híbrido: SQLite local + PostgreSQL Docker como sync server | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 ### Cuándo usar cada profile
 
 - **`local`**: Vos solo, no necesitás compartir memorias, querés máxima simplicidad
 - **`remote-server`**: Equipo chico con PostgreSQL existente (ej: TrueNAS), acceso directo por HTTP
 - **`offline-first`**: Equipo mediano/grande, cada dev tiene PostgreSQL local + SyncManager, offline-first
-- **`desktop`**: Usuario con desktop y laptop, ambas con PostgreSQL, sync bidireccional entre máquinas
+- **`desktop`** ⚠️: **Postpuesto temporalmente.** Ver [HU-058](../tasks/HU-001-HU-099/HU-058-deprecate-desktop-profile.md) y [ADR-014](../architecture/adr/ADR-014-desktop-hybrid-sync-architecture.md). Usuario power con desktop (SQLite local + PostgreSQL Docker como sync server) y laptop/otros equipos con `offline-first` sincronizando al desktop
 
 ---
 
@@ -144,17 +144,16 @@ El script `scripts/deploy.sh` automatiza el workflow de Docker:
 | `ENGRAM_USER` | — | **Obligatorio**: identificador del dev |
 | `ENGRAM_PORT` | `7437` | Puerto del servidor |
 
-#### Profile `desktop` (Desktop↔Laptop sync con PostgreSQL local)
+#### Profile `desktop` (híbrido: SQLite local + PostgreSQL Docker como sync server)
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
 | `ENGRAM_PROFILE` | — | Obligatorio: `desktop` |
-| `ENGRAM_DB_TYPE` | `postgres` | Backend (auto-set por profile) |
+| `ENGRAM_DB_TYPE` | `sqlite` | Backend local (auto-set por profile) — SQLite es el source of truth |
 | `ENGRAM_SYNC_ENABLED` | `true` | Sync enabled (auto-set por profile) |
 | `ENGRAM_SYNC_POLL_SECONDS` | `30` | Intervalo de sync (auto-set por profile) |
 | `ENGRAM_SYNC_TARGET` | `desktop` | Target key (auto-set por profile) |
-| `ENGRAM_PG_CONNECTION` | — | **Obligatorio**: connection string de PostgreSQL local |
-| `ENGRAM_SERVER_URL` | — | **Obligatorio**: URL de la otra máquina (desktop↔laptop) |
+| `ENGRAM_SERVER_URL` | `http://localhost:7437` | URL del sync server (auto-set por profile; self-serving) |
 | `ENGRAM_USER` | — | **Obligatorio**: identificador del dev |
 | `ENGRAM_PORT` | `7437` | Puerto del servidor |
 
@@ -306,39 +305,27 @@ docker compose -f docker-compose.embedded.yml up -d
 
 ### `desktop`
 
-**Caso de uso**: Usuario con desktop y laptop, ambas máquinas con PostgreSQL local, sync bidireccional entre ellas (ej: desktop en casa, laptop en el trabajo conectando a desktop via VPN).
+**Caso de uso**: Usuario power con un desktop potente y otros equipos (laptop, PC nuevo). El desktop usa SQLite como source of truth local y levanta PostgreSQL en Docker como servidor de sync (self-serving). Los demás equipos usan `offline-first` apuntando al desktop.
 
 **Variables**:
 
 ```bash
 ENGRAM_PROFILE=desktop
-ENGRAM_DB_TYPE=postgres
-ENGRAM_SYNC_ENABLED=true
-ENGRAM_SYNC_POLL_SECONDS=30
-ENGRAM_SYNC_TARGET=desktop
-ENGRAM_PG_CONNECTION=Host=localhost;Port=5432;Database=engram;Username=engram;Password=REPLACE_ME
-ENGRAM_SERVER_URL=http://<ip-de-la-otra-maquina>:7437
+ENGRAM_DB_TYPE=sqlite                  # auto-set por profile
+ENGRAM_SYNC_ENABLED=true               # auto-set por profile
+ENGRAM_SYNC_POLL_SECONDS=30            # auto-set por profile
+ENGRAM_SYNC_TARGET=desktop             # auto-set por profile
+ENGRAM_SERVER_URL=http://localhost:7437 # auto-set por profile (self-serving)
 ENGRAM_USER=tu_nombre
 ```
 
 **Requirements**:
-- `ENGRAM_PG_CONNECTION`: Connection string de PostgreSQL local
-- `ENGRAM_SERVER_URL`: URL de la otra máquina (la que actúa como remote-server)
-- `ENGRAM_USER`: Tu identificador (mismo en ambas máquinas)
+- `ENGRAM_USER`: Tu identificador (mismo en todas las máquinas)
+- `ENGRAM_SERVER_URL`: auto-seteado a `http://localhost:7437` (self-serving); cambialo solo si el sync server corre en otra dirección
 
-**Importante**: El profile `desktop` asume que una de las dos máquinas actúa como remote-server. Ejecutá `engram serve` en la máquina que actúa como servidor.
+**Resiliencia**: Si PostgreSQL Docker no está disponible, engram sigue funcionando con SQLite local — sin data loss. El sync se reanuda cuando Docker vuelve.
 
-**Docker Compose (desktop como sync client)**:
-
-```bash
-ENGRAM_PROFILE=desktop
-ENGRAM_DB_MODE=embedded
-ENGRAM_PG_PASSWORD=REPLACE_ME
-ENGRAM_SERVER_URL=http://<ip-de-la-otra-maquina>:7437
-ENGRAM_USER=tu_nombre
-
-docker compose -f docker-compose.embedded.yml up -d
-```
+**Docker Compose**: El installer (`install.sh`) genera `${ENGRAM_DATA_DIR}/desktop/docker-compose.yml` que levanta PostgreSQL (como sync server) + `engram serve`. Los otros equipos apuntan a `http://<ip-del-desktop>:7437` con el profile `offline-first`.
 
 ---
 
@@ -438,7 +425,7 @@ Falta la connection string de PostgreSQL. Verificá que esté seteada en `.env`:
 grep ENGRAM_PG_CONNECTION docker/.env
 ```
 
-Si usás `ENGRAM_PROFILE=remote-server`, `offline-first` o `desktop`, necesitás setear `ENGRAM_PG_CONNECTION`.
+Si usás `ENGRAM_PROFILE=remote-server`, necesitás setear `ENGRAM_PG_CONNECTION`.
 
 ### "Configuration requires: ENGRAM_SERVER_URL"
 
@@ -576,10 +563,11 @@ Ejemplos:
 
 | Variable | `local` | `remote-server` | `offline-first` | `desktop` |
 |----------|---------|---------------|----------------|---------|
-| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `postgres` | `postgres` |
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `sqlite` |
 | `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `true` |
 | `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` | `30` |
 | `ENGRAM_SYNC_TARGET` | — | — | `cloud` | `desktop` |
+| `ENGRAM_SERVER_URL` | — | — | — | `http://localhost:7437` |
 
 ### ENGRAM_DB_MODE
 

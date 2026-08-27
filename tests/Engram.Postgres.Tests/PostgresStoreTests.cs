@@ -108,6 +108,20 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
         return Convert.ToInt32(result ?? 0);
     }
 
+    /// <summary>
+    /// Runs a single-value SELECT that binds one string parameter (@k) and returns the
+    /// scalar as a string (or null). Used by the HU-027 sync-push assertions.
+    /// </summary>
+    private async Task<string?> QuerySingleAsync(string sql, string value)
+    {
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@k", value);
+        var result = await cmd.ExecuteScalarAsync();
+        return result?.ToString();
+    }
+
     // ─── Sessions ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -849,38 +863,245 @@ public class PostgresStoreTests : IClassFixture<PostgresStoreFixture>
     }
 
     [Fact]
-    public async Task PushMutation_Batch_Atomic_RollbackOnFkViolation()
+    public async Task PushMutation_UnknownSessionId_AutoCreatesStubSession()
     {
-        // PM-5: Batch atómico con FK violation debe hacer rollback completo
+        // HU-027: observation referencing a non-existent (but non-null) session id
+        // now auto-creates a stub session with that exact id instead of failing the batch.
         await _fixture.ResetAsync();
-        var obsKey = $"pm5-rollback-obs-{Guid.NewGuid():N}";
-        var nonExistentSessionKey = $"non-existent-session-{Guid.NewGuid():N}";
+        var obsKey = $"hu027-unknown-obs-{Guid.NewGuid():N}";
+        var unknownSessionKey = $"unknown-session-{Guid.NewGuid():N}";
 
-        // Batch with observation referencing NON-EXISTENT-SESSION
         var obsPayload = JsonSerializer.Serialize(new
         {
-            session_id = nonExistentSessionKey,
+            session_id = unknownSessionKey,
             type = "manual",
-            title = "Should NOT exist",
+            title = "References unknown session",
             content = "Content",
-            project = "test-pm5-rollback"
+            project = "test-hu027"
         });
 
         var entries = new[]
         {
-            new MutationEntry("test-pm5-rollback", "observation", obsKey, "upsert", obsPayload)
+            new MutationEntry("test-hu027", "observation", obsKey, "upsert", obsPayload)
         };
 
-        // Attempt should fail due to FK violation
-        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => _fixture.Store.InsertMutationBatchAsync(entries));
+        // Should succeed — stub session auto-created with the exact unknown id
+        await _fixture.Store.InsertMutationBatchAsync(entries);
 
-        // Verify observation was NOT inserted (atomic rollback worked)
+        // Stub session exists with the unknown id
+        var stub = await _fixture.Store.GetSessionAsync(unknownSessionKey);
+        Assert.NotNull(stub);
+
+        // Observation was inserted referencing the stub
         await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
         await conn.OpenAsync();
-        await using var checkCmd = new NpgsqlCommand("SELECT title FROM observations WHERE sync_id = @syncId", conn);
+        await using var checkCmd = new NpgsqlCommand("SELECT session_id FROM observations WHERE sync_id = @syncId", conn);
         checkCmd.Parameters.AddWithValue("@syncId", obsKey);
-        var title = await checkCmd.ExecuteScalarAsync();
-        Assert.Null(title);
+        var sid = await checkCmd.ExecuteScalarAsync();
+        Assert.NotNull(sid);
+        Assert.Equal(unknownSessionKey, sid.ToString());
+    }
+
+    [Fact]
+    public async Task ApplyObservationUpsert_NullSessionId_CreatesPlaceholderAndSucceeds()
+    {
+        // HU-027: observation with null session_id auto-creates obs-{entityKey} placeholder
+        await _fixture.ResetAsync();
+        var obsKey = $"hu027-null-obs-{Guid.NewGuid():N}";
+
+        var obsPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            type = "manual",
+            title = "Sessionless observation",
+            content = "Content",
+            project = "test-hu027"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-hu027", "observation", obsKey, "upsert", obsPayload)
+        };
+
+        // Should succeed (no FK violation)
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Placeholder session created with obs-{entityKey}
+        var placeholderSid = $"obs-{obsKey}";
+        var session = await _fixture.Store.GetSessionAsync(placeholderSid);
+        Assert.NotNull(session);
+
+        // Observation references the placeholder
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("SELECT session_id FROM observations WHERE sync_id = @syncId", conn);
+        cmd.Parameters.AddWithValue("@syncId", obsKey);
+        var sid = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(sid);
+        Assert.Equal(placeholderSid, sid.ToString());
+    }
+
+    [Fact]
+    public async Task ApplyPromptUpsert_NullSessionId_CreatesPlaceholderAndSucceeds()
+    {
+        // HU-027: prompt with null session_id auto-creates prompt-{entityKey} placeholder
+        await _fixture.ResetAsync();
+        var promptKey = $"hu027-null-prompt-{Guid.NewGuid():N}";
+
+        var promptPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            content = "Sessionless prompt content",
+            project = "test-hu027"
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry("test-hu027", "prompt", promptKey, "upsert", promptPayload)
+        };
+
+        // Should succeed (no FK violation)
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Placeholder session created with prompt-{entityKey}
+        var placeholderSid = $"prompt-{promptKey}";
+        var session = await _fixture.Store.GetSessionAsync(placeholderSid);
+        Assert.NotNull(session);
+
+        // Prompt references the placeholder
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("SELECT session_id FROM user_prompts WHERE sync_id = @syncId", conn);
+        cmd.Parameters.AddWithValue("@syncId", promptKey);
+        var sid = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(sid);
+        Assert.Equal(placeholderSid, sid.ToString());
+    }
+
+    [Fact]
+    public async Task PushMutation_MixedNullAndValidSession_BatchCommitsAtomically()
+    {
+        // HU-027 (spec: "Mixed session_ids in one batch"): a single batch containing a
+        // null-session observation, a valid-session observation, and a sessionless prompt
+        // must commit atomically — each sessionless entry gets its own distinct placeholder.
+        await _fixture.ResetAsync();
+        const string project = "test-hu027-mixed";
+        var validSessionKey = $"hu027-valid-session-{Guid.NewGuid():N}";
+        var obsNullKey = $"hu027-mixed-null-obs-{Guid.NewGuid():N}";
+        var obsValidKey = $"hu027-mixed-valid-obs-{Guid.NewGuid():N}";
+        var promptNullKey = $"hu027-mixed-null-prompt-{Guid.NewGuid():N}";
+
+        // Seed the real session that the valid observation will reference.
+        await _fixture.Store.CreateSessionAsync(validSessionKey, project, "/tmp");
+
+        var obsNullPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            type = "manual",
+            title = "Sessionless observation",
+            content = "Content A",
+            project = project
+        });
+        var obsValidPayload = JsonSerializer.Serialize(new
+        {
+            session_id = validSessionKey,
+            type = "manual",
+            title = "Session-bound observation",
+            content = "Content B",
+            project = project
+        });
+        var promptNullPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            content = "Sessionless prompt",
+            project = project
+        });
+
+        var entries = new[]
+        {
+            new MutationEntry(project, "observation", obsNullKey, "upsert", obsNullPayload),
+            new MutationEntry(project, "observation", obsValidKey, "upsert", obsValidPayload),
+            new MutationEntry(project, "prompt", promptNullKey, "upsert", promptNullPayload)
+        };
+
+        // Should succeed — all three entries commit within one transaction.
+        await _fixture.Store.InsertMutationBatchAsync(entries);
+
+        // Observation A (null session) references its own obs-{key} placeholder.
+        Assert.Equal($"obs-{obsNullKey}", await QuerySingleAsync(
+            "SELECT session_id FROM observations WHERE sync_id = @k", obsNullKey));
+
+        // Observation B (valid session) references the real session.
+        Assert.Equal(validSessionKey, await QuerySingleAsync(
+            "SELECT session_id FROM observations WHERE sync_id = @k", obsValidKey));
+
+        // Prompt C (null session) references its own prompt-{key} placeholder.
+        Assert.Equal($"prompt-{promptNullKey}", await QuerySingleAsync(
+            "SELECT session_id FROM user_prompts WHERE sync_id = @k", promptNullKey));
+
+        // Distinct placeholder session rows exist for each sessionless entry.
+        Assert.Equal($"obs-{obsNullKey}", await QuerySingleAsync(
+            "SELECT id FROM sessions WHERE id = @k", $"obs-{obsNullKey}"));
+        Assert.Equal($"prompt-{promptNullKey}", await QuerySingleAsync(
+            "SELECT id FROM sessions WHERE id = @k", $"prompt-{promptNullKey}"));
+
+        // The valid session was not duplicated by the ensure-session step.
+        Assert.Equal("1", await QuerySingleAsync(
+            "SELECT COUNT(*) FROM sessions WHERE id = @k", validSessionKey));
+    }
+
+    [Fact]
+    public async Task PushMutation_NullSessionId_ReapplyCreatesNoDuplicatePlaceholder()
+    {
+        // HU-027 (spec: "Idempotent re-apply"): re-applying the same null-session observation
+        // hits the UPDATE branch and must NOT create a second placeholder session row.
+        await _fixture.ResetAsync();
+        const string project = "test-hu027-idempotent";
+        var obsKey = $"hu027-reapply-obs-{Guid.NewGuid():N}";
+        var placeholderSid = $"obs-{obsKey}";
+
+        var firstPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            type = "manual",
+            title = "Sessionless observation",
+            content = "Content",
+            project = project
+        });
+
+        // First apply: INSERT branch → creates the obs-{key} placeholder.
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry(project, "observation", obsKey, "upsert", firstPayload)
+        });
+
+        // Second apply: same EntityKey → UPDATE branch, EnsureSessionAsync not re-run.
+        var retryPayload = JsonSerializer.Serialize(new
+        {
+            session_id = (string?)null,
+            type = "manual",
+            title = "Sessionless observation (retry)",
+            content = "Content updated",
+            project = project
+        });
+        await _fixture.Store.InsertMutationBatchAsync(new[]
+        {
+            new MutationEntry(project, "observation", obsKey, "upsert", retryPayload)
+        });
+
+        // Exactly one placeholder session row — no duplicate was created.
+        Assert.Equal("1", await QuerySingleAsync(
+            "SELECT COUNT(*) FROM sessions WHERE id = @k", placeholderSid));
+
+        // Observation row was updated in place (not duplicated).
+        Assert.Equal("1", await QuerySingleAsync(
+            "SELECT COUNT(*) FROM observations WHERE sync_id = @k", obsKey));
+        Assert.Equal("Sessionless observation (retry)", await QuerySingleAsync(
+            "SELECT title FROM observations WHERE sync_id = @k", obsKey));
+
+        // And it still references the placeholder session.
+        Assert.Equal(placeholderSid, await QuerySingleAsync(
+            "SELECT session_id FROM observations WHERE sync_id = @k", obsKey));
     }
 
     [Fact]
