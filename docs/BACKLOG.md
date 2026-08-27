@@ -152,7 +152,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
 | — | ENG-414 | P2 | Feature | Contradicción temporal y supersedencia de memorias | Ready | L | ← PRD memoria semántica punto #2 | Depende de ENG-412 |
-| — | ENG-415 | P2 | Feature | Resolución de conflictos sync multi-dispositivo | 📝 Strategy defined | L | ← PRD memoria semántica punto #6 | Estrategia definida en RFC-006 (cursor per server, last-write-wins, tiebreaker by server_id). Implementación pendiente. |
+| — | ENG-415 | P2 | Feature | Resolución de conflictos sync multi-dispositivo | ✅ Done | L | ← PRD memoria semántica punto #6 | **Cerrado 2026-08-27**: Problema original (conflictos offline multi-dispositivo) resuelto por sync actual (single-server + ADR-009 last-write-wins). Escenario multi-servidor (RFC-006) es trabajo futuro, no requisito de producto actual. Si multi-servidor llega a ser necesario, RFC-006 provee la estrategia. |
 | — | ENG-416 | P2 | Chore | Schema evolution con migraciones versionadas | Ready | M | ← PRD memoria semántica punto #7 | — |
 | — | ENG-417 | P2 | Feature | SQLite encryption (SQLCipher) | Ready | M | ← PRD memoria semántica punto #8 | — |
 | — | ENG-418 | P2 | Feature | Búsqueda híbrida (vector + FTS5 + metadata) | Ready | XL | ← PRD memoria semántica punto #9 | Requiere embeddings |
@@ -1080,6 +1080,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-08-27 | **ENG-415 cerrado**: Problema original resuelto por sync actual (single-server + last-write-wins). Multi-server es escenario hipotético, no prioridad actual. |
 | 2026-08-27 | **Revisión de pendientes post-HU-013/014**: ENG-302 → Done (cubierto por HU-017), ENG-401 → Done (cubierto por HU-023), ENG-415 → Strategy defined (RFC-006), ENG-424 → 7 tools sin cobertura (eran 11, se cubrieron 4 con SyncTriggerMcpTests). |
 | 2026-08-27 | **ENG-488/489/490/491 agregados**: Multi-Project Sync (HU-013), Smart Sync Triggers (HU-014), Multi-Server Dedup (RFC-006), Observations Schema Migration (RFC-007/HU-016). Documentación actualizada: ROADMAP.md, BACKLOG.md, 01-QUICK-START.md, INSTALL.md. Fix: shellcheck workflow action (ludwanpierre → ludeeus/action-shellcheck). |
 | 2026-08-11 | **HU-013 Done**: Multi-project sync management implementado. Per-project `silent-skip`/`fail-loud` behavior, YAML config `~/.engram/sync-projects.dotnet.yml`, CLI interactive selector, MCP suggestion-only. Tests: SyncBehaviorTests 16/16, SyncManagerTests 65/65. PostgreSQL tests skipped (Testcontainers, se ejecutan en CI). |
