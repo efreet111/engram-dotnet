@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-08-18  
+**Última actualización:** 2026-08-27  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -91,7 +91,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-427 | P1 | Bug | ListMutationsSinceAsync: SQL syntax error con project filter (ANY array) | Done | S | descubierto en sesión ENG-426 | Fix en PostgresStore.cs:1814 (post-commit 781e9fe) |
 | — | **Siguiente** |
 | ✓ | ENG-301 | P1 | Feature | Stack installer (engram + FlowForge + FlowDocs, multi-platform) | Done | L | roadmap | Done in FlowForge v0.1.0-alpha.2 (2026-06-23). See [FlowForge release](https://github.com/efreet111/FlowForge/releases/tag/v0.1.0-alpha.2). Post-install scripts on `feat/eng-301-post-install-scripts` (commit 2dcbf80) — pending push+merge. |
-| 6 | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | Ready | L | → ENG-301 | — |
+| ✓ | ENG-302 | P1 | Feature | Wizard gráfico: modo local vs offline-first sync | ✅ Done | L | → ENG-301 | Cubierto por HU-017: `scripts/install.sh` con profile-first wizard, 4 perfiles, navegación back/quit, tests en `test-install-wizard.sh` |
 | 7 | ENG-303 | P1 | Doc | Guía "instalación desde git" unificada (enlaza `config/mcp/INSTALL.md`) | ✅ Done | S | → ENG-301 | `docs/INSTALL.md` creado, enlazado desde README, SETUP-WIZARD, QUICK-START |
 | 8 | HU-017 | P1 | Feature | Refactor install.sh: profile-first wizard + offline-first data collection + desktop profile 100% funcional | ✅ Done | L | sesión 2026-08-18 | `docs/tasks/HU-001-HU-099/HU-017-install-profile-refactor.md` — wizard por pasos en `scripts/install.sh`, perfil desktop con 3 modos PostgreSQL (`docker/Dockerfile.allinone`), tests `scripts/test-install-wizard.sh` |
 | 9 | HU-018 | P1 | Feature | Sync batch enroll (--all), sync status --local, projects list con Enrolled, TUI interactive mode | ✅ Done | L | esta sesión | `docs/tasks/HU-001-HU-099/HU-018-sync-interactive-batch.md` — enroll `--all`, status `--local`/`--json`, projects list Enrolled/Behavior, InteractiveMenu TUI; tests `SyncEnrollCliTests`, `SyncStatusCliTests`, `InteractiveMenuTests`, `SyncBehaviorTests` |
@@ -152,7 +152,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | ENG-412 | P2 | Feature | Memory taxonomy & lifecycle (Decision, Insight, Transient, consolidation) | Ready | L | ← PRD memoria semántica puntos #3, #10 | Ver [RFC-002](../docs/architecture/rfc/RFC-002-memory-taxonomy.md) (pendiente) |
 | — | ENG-413 | P2 | Feature | Smart token budget packer para queries | Ready | M | ← PRD memoria semántica punto #4 | — |
 | — | ENG-414 | P2 | Feature | Contradicción temporal y supersedencia de memorias | Ready | L | ← PRD memoria semántica punto #2 | Depende de ENG-412 |
-| — | ENG-415 | P2 | Feature | Resolución de conflictos sync multi-dispositivo | Ready | L | ← PRD memoria semántica punto #6 | — |
+| — | ENG-415 | P2 | Feature | Resolución de conflictos sync multi-dispositivo | 📝 Strategy defined | L | ← PRD memoria semántica punto #6 | Estrategia definida en RFC-006 (cursor per server, last-write-wins, tiebreaker by server_id). Implementación pendiente. |
 | — | ENG-416 | P2 | Chore | Schema evolution con migraciones versionadas | Ready | M | ← PRD memoria semántica punto #7 | — |
 | — | ENG-417 | P2 | Feature | SQLite encryption (SQLCipher) | Ready | M | ← PRD memoria semántica punto #8 | — |
 | — | ENG-418 | P2 | Feature | Búsqueda híbrida (vector + FTS5 + metadata) | Ready | XL | ← PRD memoria semántica punto #9 | Requiere embeddings |
@@ -164,9 +164,9 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | ✓ | ENG-426 | P0 | Architecture | ID mapping strategy: sync_id como canonical (sin mapping a server ID) | Done | M | ← ADR-002 decisión | Verificado V1-V6. Fix bug SQL en ListMutationsSinceAsync (L1703). |
 | ✓ | ENG-422 | P1 | Test | REST endpoints sin cobertura (13 rutas) | Done | M | ← audit AUD-023 | 32 tests HTTP agregados, 11/11 endpoints cubiertos |
 | — | ENG-423 | P1 | Test | RetentionPostgresTests → Testcontainers | Ready | S | ← audit AUD-016 | 5 tests skipped |
-| — | ENG-424 | P2 | Test | Unit tests 11 MCP tools sin cobertura | Ready | M | ← audit AUD-036 | mem_timeline, mem_doctor, etc. |
+| — | ENG-424 | P2 | Test | Unit tests 7 MCP tools sin cobertura (eran 11, se cubrieron 4 con SyncTriggerMcpTests) | Ready | S | ← audit AUD-036 | Faltan: mem_doctor, mem_lineage_obs, mem_project_redirects, mem_relations, mem_retention_prune, mem_retention_stats, mem_sync_md_to_repo |
 | ✓ | ENG-404 | P1 | Feature | Phase 4 — memory relations (grafo de observaciones) | Done | M | ← ENG-410 + spike 55bdbf8 | [spike learnings](../.ai-work/eng-404-spike/learnings.md) + MCP tools + CLI |
-| — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | Icebox | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) |
+| — | ENG-401 | P2 | Feature | Backend config file `~/.engram/config.json` | ✅ Done | M | [sdd/backend-config-switch/](../sdd/backend-config-switch/proposal.md) | Cubierto por HU-023: `engram profile show/set` con `~/.engram/.env`, backup automático, --dry-run, --json, validación de vars requeridas |
 | — | ENG-402 | P2 | Chore | Giant class refactor (Sqlite/Postgres partial) | Icebox | L | [TECHNICAL-DEBT](TECHNICAL-DEBT.md) TD-001/002 |
 | — | ENG-403 | P2 | Feature | Phase 3 — breaking (quitar `project` de writes) | Icebox | L | Requiere guía migración |
 | — | ENG-405 | P2 | Feature | Authentication & access control | Icebox | L | Sin proposal aún |
@@ -1080,6 +1080,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-08-27 | **Revisión de pendientes post-HU-013/014**: ENG-302 → Done (cubierto por HU-017), ENG-401 → Done (cubierto por HU-023), ENG-415 → Strategy defined (RFC-006), ENG-424 → 7 tools sin cobertura (eran 11, se cubrieron 4 con SyncTriggerMcpTests). |
 | 2026-08-27 | **ENG-488/489/490/491 agregados**: Multi-Project Sync (HU-013), Smart Sync Triggers (HU-014), Multi-Server Dedup (RFC-006), Observations Schema Migration (RFC-007/HU-016). Documentación actualizada: ROADMAP.md, BACKLOG.md, 01-QUICK-START.md, INSTALL.md. Fix: shellcheck workflow action (ludwanpierre → ludeeus/action-shellcheck). |
 | 2026-08-11 | **HU-013 Done**: Multi-project sync management implementado. Per-project `silent-skip`/`fail-loud` behavior, YAML config `~/.engram/sync-projects.dotnet.yml`, CLI interactive selector, MCP suggestion-only. Tests: SyncBehaviorTests 16/16, SyncManagerTests 65/65. PostgreSQL tests skipped (Testcontainers, se ejecutan en CI). |
 | 2026-07-25 | **ENG-475 Done**: PR #22 mergeado (`62eca98`). Fix: removido `title` de `idx_obs_dedupe` en PostgresStore.cs y SqliteStore.cs. Migración idempotente `MigrateDedupeIndex()` para DBs existentes. Tests regresión: 2/2 SQLite, 2/2 PostgreSQL (Testcontainers). Sync verificado funcionando (35 pushed, 70 pulled). |
