@@ -1,6 +1,6 @@
 # HU-009 — PostgreSQL Bug Fixes
 
-**Status**: 🟡 In Progress
+**Status**: ✅ Done
 **Owner**: @owner
 **Created**: 2026-06-01
 **Priority**: Medium

@@ -1,0 +1,91 @@
+# engram-dotnet — Imagen "all-in-one" para el perfil desktop (modo 1).
+#
+# PostgreSQL 16 + supervisor + binario engram en UN solo contenedor.
+# Base: mcr.microsoft.com/dotnet/aspnet:10.0 (decisión confirmada — Path A).
+#
+# Build args:
+#   ENGRAM_VERSION  — versión para descargar de GitHub (default: v1.3.0)
+#   ENGRAM_BINARY   — "local" = copia el binary desde el contexto de build
+#                     (build local previo — el archivo debe estar en el repo root
+#                      antes de invocar docker build)
+#                     cualquier otro valor o vacío = descarga de GitHub
+#
+# Flujo de build local (install_build en install.sh):
+#   1. Compila el binary a un directorio temporal
+#   2. Copia el binary al repo root como 'engram-local'
+#   3. docker build --build-arg ENGRAM_BINARY=local
+#   4. install.sh limpia engram-local del repo root al terminar
+#
+# NOTA: postgresql-16 está disponible en los repos Debian de la base
+# (Debian 13 trixie). Si la base cambia a una versión sin postgresql-16,
+# agregar el repo PGDG antes del `apt-get install`.
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+
+ARG ENGRAM_VERSION=v1.3.0
+ARG ENGRAM_BINARY=""
+
+# PostgreSQL 16 + supervisor + utilidades mínimas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16 \
+    supervisor \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Archivos del build context (copiados antes de docker build):
+#   engram-local        → binary compilado localmente
+#   libe_sqlite3-local  → librería nativa SQLite (puede no existir si no se compiló localmente)
+#   Los dummies se crean con touch para que COPY nunca falle.
+COPY engram-local /tmp/engram-local
+# libe_sqlite3-local es opcional en el contexto: si no existe, crear dummy
+# para que COPY no falle (el RUN posterior la descargará de GitHub si falta).
+RUN if [ ! -s /tmp/libe_sqlite3-local ]; then touch /tmp/libe_sqlite3-local; fi
+
+RUN mkdir -p /app \
+    && if [ "${ENGRAM_BINARY}" = "local" ] && [ -s /tmp/engram-local ]; then \
+         echo "Installing local binary from build context..." \
+         && mv /tmp/engram-local /app/engram \
+         && chmod +x /app/engram \
+         # La librería nativa es obligatoria: busca local primero, luego GitHub
+         && if [ -s /tmp/libe_sqlite3-local ]; then \
+              mv /tmp/libe_sqlite3-local /app/libe_sqlite3.so; \
+            else \
+              echo "libe_sqlite3.so not in build context, downloading from GitHub..." \
+              && curl -L --fail \
+                "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/libe_sqlite3.so" \
+                -o /app/libe_sqlite3.so; \
+            fi; \
+       else \
+         echo "Downloading binary from GitHub: ${ENGRAM_VERSION}" \
+         && curl -L --fail \
+           "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/engram-linux-x64" \
+           -o /app/engram \
+         && chmod +x /app/engram \
+         && echo "Downloading libe_sqlite3.so from GitHub..." \
+         && curl -L --fail \
+           "https://github.com/efreet111/engram-dotnet/releases/download/${ENGRAM_VERSION}/libe_sqlite3.so" \
+           -o /app/libe_sqlite3.so; \
+       fi
+
+# Supervisor + script de arranque de PostgreSQL (initdb + createdb + run)
+COPY files/supervisord.conf /etc/supervisord.conf
+COPY files/allinone-postgres.sh /usr/local/bin/allinone-postgres.sh
+RUN chmod +x /usr/local/bin/allinone-postgres.sh
+
+# Volumen único con subdirectorios (decisión confirmada):
+#   /data/engram    → datos del servidor engram
+#   /data/postgres  → $PGDATA de PostgreSQL
+RUN mkdir -p /data/engram /data/postgres \
+    && chown -R postgres:postgres /data
+
+VOLUME ["/data"]
+
+EXPOSE 7437
+
+ENV ENGRAM_DATA_DIR=/data/engram
+ENV ENGRAM_PORT=7437
+ENV ASPNETCORE_URLS=http://+:7437
+ENV PGDATA=/data/postgres
+
+ENTRYPOINT ["supervisord", "-c", "/etc/supervisord.conf"]

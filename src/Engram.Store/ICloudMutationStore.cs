@@ -44,6 +44,24 @@ public interface ICloudMutationStore
     Task<EnrollmentResult> EnrollProjectAsync(string project, string user, CancellationToken ct = default);
 
     /// <summary>
+    /// Enroll a user in a project with sync behavior and excluded servers.
+    /// Behavior: 'fail-loud' (default, blocks sync) or 'silent-skip' (skip project, continue sync).
+    /// ExcludedServers: JSON array stored as TEXT, e.g. '["server-1","server-2"]'.
+    /// </summary>
+    Task<EnrollmentResult> EnrollProjectAsync(string project, string user, string behavior, string? excludedServers, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get the sync behavior for a specific project.
+    /// Returns 'fail-loud', 'silent-skip', or null if project is not enrolled.
+    /// </summary>
+    Task<string?> GetProjectBehaviorAsync(string project, CancellationToken ct = default);
+
+    /// <summary>
+    /// List all enrolled projects with their sync behavior and excluded servers.
+    /// </summary>
+    Task<List<EnrolledProject>> ListEnrolledProjectsWithBehaviorAsync(string? user = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Unenroll a user from a project.
     /// Returns EnrollmentResult with status "not_found" if not enrolled.
     /// </summary>
@@ -75,15 +93,18 @@ public sealed record EnrollmentResult(
     string? EnrolledAt = null,
     string? EnrolledBy = null,
     string? UnenrolledAt = null,
-    string? Status = null);
+    string? Status = null,
+    string? Behavior = "fail-loud");
 
 /// <summary>
-/// Enrolled project with metadata.
+/// Enrolled project with metadata, sync behavior, and excluded servers.
 /// </summary>
 public sealed record EnrolledProject(
     string Project,
     string EnrolledAt,
-    string EnrolledBy);
+    string EnrolledBy,
+    string? Behavior = "fail-loud",
+    string? ExcludedServers = null);
 
 /// <summary>
 /// Mutation entry as received from clients (push request).

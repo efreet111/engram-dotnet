@@ -19,14 +19,14 @@ En lugar de configurar `ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED` y otras variables
 | `local` (default) | Desarrollador solo | SQLite | ❌ | *(ninguna)* |
 | `remote-server` | Equipo pequeño (2-5), BD compartida | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
 | `offline-first` | Equipo grande (5-20), offline-first | SQLite (local) + PostgreSQL (server) | ✅ | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
-| `desktop` | Uso personal/workstation compartida | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` |
+| `desktop` | PC personal con sync a hub local | SQLite (local) | ✅ | `ENGRAM_SERVER_URL`, `ENGRAM_USER` |
 
 Cada perfil define valores por defecto que podés sobrescribir individualmente:
 
 | Variable | `local` | `remote-server` | `offline-first` | `desktop` |
 |----------|---------|----------------|-----------------|-----------|
-| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `postgres` |
-| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `false` |
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `sqlite` |
+| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `true` |
 | `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` | — |
 | `ENGRAM_SYNC_TARGET` | — | — | `cloud` | — |
 
@@ -41,7 +41,7 @@ Controla si PostgreSQL corre como servicio embebido junto a Engram o se conecta 
 | `external` (default) | PostgreSQL está en el host o red — pasás `ENGRAM_PG_CONNECTION` con host/puerto |
 | `embedded` | Docker Compose levanta un servicio `postgres` junto a Engram — cero configuración manual de PG |
 
-`ENGRAM_DB_MODE` solo aplica con `ENGRAM_PROFILE=remote-server` o `desktop` (ambos requieren PostgreSQL). Con `local` u `offline-first` se ignora.
+`ENGRAM_DB_MODE` solo aplica con `ENGRAM_PROFILE=remote-server` (ambos requieren PostgreSQL). Con `local`, `offline-first` o `desktop` se ignora.
 
 ```bash
 # Modo embedded: PostgreSQL se levanta solo
@@ -92,15 +92,11 @@ ENGRAM_SERVER_URL=http://your-server:7437
 ENGRAM_USER=your-username
 ```
 
-**Perfil `desktop` (PostgreSQL, uso personal)**:
+**Perfil `desktop` (SQLite local + sync a hub)**:
 ```env
 ENGRAM_PROFILE=desktop
-ENGRAM_PG_HOST=host.docker.internal
-ENGRAM_PG_PORT=5432
-ENGRAM_PG_DATABASE=engram
-ENGRAM_PG_USER=engram
-ENGRAM_PG_PASSWORD=your-secure-password
-ENGRAM_USER=admin
+ENGRAM_SERVER_URL=http://localhost:7437
+ENGRAM_USER=your-username
 ```
 
 > **Sin perfil (retrocompatible)**: Si no ponés `ENGRAM_PROFILE`, el sistema funciona como antes. Seguí usando `ENGRAM_DB_TYPE`, `ENGRAM_SYNC_ENABLED`, etc. manualmente.
@@ -115,8 +111,8 @@ docker compose up -d --build
 
 ```bash
 curl http://localhost:7437/health
-# → {"status":"ok","service":"engram","version":"...","backend":"sqlite"}  (local/offline-first)
-# → {"status":"ok","service":"engram","version":"...","backend":"postgres"} (remote-server/desktop)
+# → {"status":"ok","service":"engram","version":"...","backend":"sqlite"}  (local/offline-first/desktop)
+# → {"status":"ok","service":"engram","version":"...","backend":"postgres"} (remote-server)
 ```
 
 ---
@@ -133,7 +129,7 @@ engram-dotnet supports two backends. Use the compose file that matches your choi
 
 > **Con perfil, rara vez necesitás archivos separados.** Poné `ENGRAM_PROFILE=remote-server`, `offline-first` o `desktop` en tu `.env` y usá `docker-compose.yml` — el perfil configura PostgreSQL automáticamente. Los archivos `*-postgres.yml` y `*-sqlite.yml` existen para setups avanzados y retrocompatibilidad.
 
-### PostgreSQL-only setup (recommended for remote-server or desktop)
+### PostgreSQL-only setup (recommended for remote-server)
 
 ```bash
 cd docker

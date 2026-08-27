@@ -18,6 +18,8 @@
 | [ADR-010](./ADR-010-historical-docs-immutability.md) | Historical documentation immutability policy | Accepted | 2026-07-06 | victor |
 | [ADR-011](./ADR-011-engram-url-env-var.md) | Estandarización de `ENGRAM_SERVER_URL` como variable canónica | Accepted | 2026-08-06 | victor |
 | [ADR-012](./ADR-012-remote-server-localhost-blocking.md) | Bloqueo de conexiones localhost en perfil `remote-server` | Accepted | 2026-08-06 | victor |
+| [ADR-013](./ADR-013-sync-enabled-vs-thin-client-separation.md) | Separación `IsSyncEnabled` vs `IsRemote`/`IsThinClient` | Accepted | 2026-08-19 | victor |
+| [ADR-014](./ADR-014-desktop-hybrid-sync-architecture.md) | Desktop hybrid profile sync requires dedicated engram server instance | Accepted | 2026-08-19 | — |
 
 ---
 
@@ -33,7 +35,7 @@
 ## Notas
 
 - **Gaps (002, 003, 005, 006)**: Reservados o eliminados. No reutilizar estos números.
-- **Nuevo ADR**: Usar el siguiente número disponible (011, 012...)
+- **Nuevo ADR**: Usar el siguiente número disponible (015, 016...)
 - **Formatos aceptados**: ADR-XXX-title-in-kebab-case.md
 
 ---
@@ -47,4 +49,4 @@
 
 ---
 
-*Última actualización: 2026-08-06*
+*Última actualización: 2026-08-19*

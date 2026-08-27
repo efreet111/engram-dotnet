@@ -83,6 +83,12 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
             new EventId(2011, "SyncRecovered"),
             "Sync recovered after {Failures} consecutive failures");
 
+    /// <summary>
+    /// Timeout per server during multi-server pull (RFC-006 §2.2).
+    /// If a server doesn't respond within this window, it's skipped and the cycle continues.
+    /// </summary>
+    private static readonly TimeSpan PerServerPullTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ILocalSyncStore _store;
     private readonly IMutationTransport _transport;
     private readonly SyncManagerConfig _cfg;
@@ -124,11 +130,19 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
         // from a previous session get flushed ASAP.
         try
         {
-            await TriggerPushAsync(stoppingToken);
+            await TriggerPushAsync(ct: stoppingToken);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Startup on-demand push failed (continuing to background loop)");
+        }
+
+        // HU-014 R6: Auto-sync guard — skip background poll loop when AutoSyncEnabled=false.
+        // On-demand pushes (CLI / MCP trigger) still work via TriggerPushAsync.
+        if (!_cfg.AutoSyncEnabled)
+        {
+            _logger.LogInformation("SyncManager: Auto-sync disabled (ENGRAM_SYNC_AUTO_SYNC=false). Background poll skipped. On-demand pushes still available.");
+            return;
         }
 
         try
@@ -222,7 +236,7 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
             }
 
             SetPhase(SyncPhase.Pulling);
-            await PullAsync(ct);
+            await PullAllServersAsync(ct);
 
             var previousFailures = _consecutiveFailures;
             SetPhase(SyncPhase.Healthy);
@@ -276,24 +290,67 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
         var pending = await _store.ListPendingSyncMutationsAsync(_cfg.TargetKey, _cfg.PushBatchSize, ct);
         if (pending.Count == 0) { _logger.LogDebug("SyncManager push: no pending mutations"); return true; }
 
+        // ENG-514 (HU-013): Check non-enrolled and fail-loud projects that block sync
         var nonEnrolled = await _store.CountPendingNonEnrolledAsync(_cfg.TargetKey, ct);
         if (nonEnrolled.Count > 0)
         {
-            _logger.LogWarning("SyncManager push blocked: {Count} non-enrolled projects detected", nonEnrolled.Count);
-            await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "non-enrolled-pending", $"{nonEnrolled.Count} projects not enrolled", ct);
+            var projectNames = string.Join(", ", nonEnrolled.Select(p => p.Project));
+            _logger.LogWarning("SyncManager push blocked: {Count} non-enrolled/fail-loud projects detected: {Projects}",
+                nonEnrolled.Count, projectNames);
+            await _store.MarkSyncBlockedAsync(_cfg.TargetKey, "non-enrolled-pending",
+                $"{nonEnrolled.Count} projects blocking sync: {projectNames}", ct);
             await WriteNotificationAsync(
                 "error",
                 _consecutiveFailures,
-                $"non-enrolled-pending: {nonEnrolled.Count} projects not enrolled",
+                $"non-enrolled-pending: {nonEnrolled.Count} projects not enrolled (fail-loud): {projectNames}",
                 "Enroll projects: POST /sync/enroll",
                 null);
             return false;
         }
 
-        var byProject = pending.GroupBy(m => m.Project).ToList();
-        PushBatch(_logger, pending.Count, byProject.Count, null);
+        // ENG-514 (HU-013): Filter out projects with behavior='silent-skip' — these don't push
+        var enrolledProjects = await _store.GetEnrolledProjectsLocalAsync(ct);
+        var silentSkipProjects = enrolledProjects
+            .Where(ep => ep.Behavior == "silent-skip")
+            .Select(ep => ep.Project)
+            .ToHashSet();
 
-        return await PushBatchInternalAsync(pending, ct);
+        if (silentSkipProjects.Count > 0)
+        {
+            var skippedMutations = pending.Where(m => silentSkipProjects.Contains(m.Project)).ToList();
+            if (skippedMutations.Count > 0)
+            {
+                _logger.LogInformation(
+                    "SyncManager push: skipping {Count} mutations from {ProjectCount} silent-skip projects: {Projects}",
+                    skippedMutations.Count,
+                    skippedMutations.Select(m => m.Project).Distinct().Count(),
+                    string.Join(", ", skippedMutations.Select(m => m.Project).Distinct()));
+            }
+        }
+
+        // Only push mutations from non-silent-skip projects
+        var toPush = pending.Where(m => !silentSkipProjects.Contains(m.Project)).ToList();
+
+        if (toPush.Count == 0)
+        {
+            _logger.LogDebug("SyncManager push: all pending mutations belong to silent-skip projects");
+            // Ack silent-skip mutations so they don't accumulate infinitely
+            var silentSeqs = pending
+                .Where(m => silentSkipProjects.Contains(m.Project))
+                .Select(m => m.Seq)
+                .ToList();
+            if (silentSeqs.Count > 0)
+            {
+                await _store.AckSyncMutationSeqsAsync(_cfg.TargetKey, silentSeqs, ct);
+                _logger.LogInformation("SyncManager push: acknowledged {Count} silent-skip mutations", silentSeqs.Count);
+            }
+            return true;
+        }
+
+        var byProject = toPush.GroupBy(m => m.Project).ToList();
+        PushBatch(_logger, toPush.Count, byProject.Count, null);
+
+        return await PushBatchInternalAsync(toPush, ct);
     }
 
     /// <summary>
@@ -374,6 +431,186 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
             _logger.LogInformation("SyncManager pulled {Total} mutations total", totalPulled);
             _metrics.IncrementPulled(totalPulled);
             await _store.UpdateSyncStateAsync(_cfg.TargetKey, sinceSeq, ct);
+        }
+    }
+
+    /// <summary>
+    /// Multi-server pull with deduplication (RFC-006).
+    /// Pulls mutations from all known servers sequentially, applying last-write-wins
+    /// deduplication on conflicts. Uses per-server cursors from sync_pull_cursors.
+    /// Each server gets a 5s timeout; if it doesn't respond, it's skipped with a warning.
+    /// </summary>
+    private async Task PullAllServersAsync(CancellationToken ct)
+    {
+        // Get the list of known servers (may be null from mocks or empty stores)
+        List<string>? servers;
+        try
+        {
+            servers = await _store.GetKnownServerIdsAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // Store doesn't support multi-server cursors — fall back to single-server pull
+            _logger.LogDebug(ex, "GetKnownServerIdsAsync not supported, falling back to single-server pull");
+            await PullAsync(ct);
+            return;
+        }
+
+        if (servers is null || servers.Count == 0)
+        {
+            // No servers registered — fall back to single-server pull
+            _logger.LogDebug("SyncManager pull: no servers in cursor store, using single-server pull");
+            await PullAsync(ct);
+            return;
+        }
+
+        // Single-server fast path: use the existing PullAsync logic
+        if (servers.Count == 1)
+        {
+            await PullAsync(ct);
+            return;
+        }
+
+        _logger.LogInformation("SyncManager multi-server pull: {ServerCount} servers", servers.Count);
+
+        var allMutations = new List<(string ServerId, PulledMutation Mutation)>();
+        var lastSeqPerServer = new Dictionary<string, long>();
+        var totalPulled = 0;
+
+        foreach (var serverId in servers)
+        {
+            // Get per-server cursor (RFC-006 §2.1)
+            var cursor = await _store.GetLastPulledSeqForServerAsync(_cfg.TargetKey, serverId, ct) ?? 0;
+
+            try
+            {
+                // Create a 5s timeout token for this server (RFC-006 §2.2)
+                using var serverCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                serverCts.CancelAfter(PerServerPullTimeout);
+
+                var result = await _transport.PullMutationsAsync(
+                    cursor, _cfg.PullBatchSize, serverCts.Token, serverId);
+
+                if (result.Mutations.Count > 0)
+                {
+                    foreach (var mutation in result.Mutations)
+                    {
+                        allMutations.Add((serverId, mutation));
+                    }
+                    totalPulled += result.Mutations.Count;
+                    lastSeqPerServer[serverId] = result.LatestSeq;
+                    _logger.LogDebug(
+                        "Pulled {Count} mutations from server {Server} (since seq {Cursor})",
+                        result.Mutations.Count, serverId, cursor);
+                }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Server timeout — skip and continue with next server (RFC-006 §3 Q4)
+                _logger.LogWarning(
+                    "Timeout pulling from server {Server} after {TimeoutSeconds}s, skipping",
+                    serverId, PerServerPullTimeout.TotalSeconds);
+                continue;
+            }
+            catch (HttpRequestException ex)
+            {
+                // Network error from this server — skip and continue (RFC-006 §2.2)
+                _logger.LogWarning(ex, "Network error pulling from server {Server}, skipping", serverId);
+                continue;
+            }
+        }
+
+        if (allMutations.Count == 0)
+        {
+            _logger.LogDebug("SyncManager multi-server pull: no mutations from any server");
+            return;
+        }
+
+        // Apply with dedup (RFC-006 §2.3)
+        await ApplyWithDedupAsync(allMutations, ct);
+
+        // Update per-server cursors (RFC-006 §2.2 step 7)
+        foreach (var (serverId, seq) in lastSeqPerServer)
+        {
+            await _store.SetLastPulledSeqForServerAsync(_cfg.TargetKey, serverId, seq, ct);
+        }
+
+        if (totalPulled > 0)
+        {
+            _logger.LogInformation(
+                "SyncManager multi-server pull: {Total} total mutations from {ServerCount} servers",
+                totalPulled, servers.Count);
+            _metrics.IncrementPulled(totalPulled);
+
+            // Update the global cursor for backward compat
+            var maxSeq = lastSeqPerServer.Values.Max();
+            await _store.UpdateSyncStateAsync(_cfg.TargetKey, maxSeq, ct);
+        }
+    }
+
+    /// <summary>
+    /// Apply pulled mutations with last-write-wins deduplication (RFC-006 §2.3).
+    /// Groups mutations by <c>sync_id</c> (canonical observation identifier).
+    /// When the same sync_id appears from multiple servers, the winner is determined by:
+    /// 1. Most recent <c>occurred_at</c> (last-write-wins, ADR-009)
+    /// 2. Highest <c>server_id</c> as tiebreaker (RFC-006 §3 Q1)
+    /// Mutations without a sync_id are treated as unique (no grouping).
+    /// </summary>
+    private async Task ApplyWithDedupAsync(
+        List<(string ServerId, PulledMutation Mutation)> allMutations,
+        CancellationToken ct)
+    {
+        if (allMutations.Count == 0) return;
+
+        // Group by sync_id for dedup (RFC-006 §2.3, AD8)
+        var groups = allMutations
+            .GroupBy(m => m.Mutation.SyncId ?? $"__unique__{Guid.NewGuid()}");
+
+        foreach (var group in groups)
+        {
+            PulledMutation winner;
+            string winningServerId;
+
+            if (group.Count() == 1)
+            {
+                var single = group.First();
+                winner = single.Mutation;
+                winningServerId = single.ServerId;
+            }
+            else
+            {
+                // Multiple versions from different servers → last-write-wins (ADR-009)
+                // Tiebreaker: highest server_id (RFC-006 §3 Q1)
+                var winnerTuple = group
+                    .OrderByDescending(m => DateTime.TryParse(m.Mutation.OccurredAt, out var dt) ? dt : DateTime.MinValue)
+                    .ThenByDescending(m => m.ServerId)
+                    .First();
+
+                winner = winnerTuple.Mutation;
+                winningServerId = winnerTuple.ServerId;
+
+                _logger.LogDebug(
+                    "Dedup conflict for {SyncId}: {Count} versions, winning from {Server} at {OccurredAt}",
+                    winner.SyncId ?? "(no sync_id)",
+                    group.Count(),
+                    winningServerId,
+                    winner.OccurredAt);
+            }
+
+            // Apply to local store via existing mutation pipeline
+            var tempMutation = new SyncMutation(
+                0, _cfg.TargetKey, winner.Entity, winner.EntityKey,
+                winner.Op, winner.Payload, "pull", winner.Project,
+                DateTime.TryParse(winner.OccurredAt, out var occurredAt) ? occurredAt : DateTime.UtcNow,
+                null);
+
+            var localSeq = await _store.InsertPulledMutationAsync(_cfg.TargetKey, tempMutation, ct);
+            var syncMutation = new SyncMutation(
+                localSeq, _cfg.TargetKey, winner.Entity, winner.EntityKey,
+                winner.Op, winner.Payload, "pull", winner.Project,
+                tempMutation.OccurredAt, null);
+
+            await _store.ApplyPulledMutationAsync(_cfg.TargetKey, syncMutation, ct);
         }
     }
 
@@ -460,12 +697,39 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
 
     /// <summary>
     /// Fire-and-forget push triggered by MCP tools after a write.
+    /// When <paramref name="project"/> is provided, validates enrollment and pushes only that project
+    /// (HU-014 R4, R5 denylist integration).
+    /// When null (default), pushes all enrolled projects (backward-compatible).
     /// Respects lease (skips if background holds it) and backoff (skips if active).
     /// Never throws to caller.
     /// </summary>
-    public async Task TriggerPushAsync(CancellationToken ct = default)
+    public async Task TriggerPushAsync(string? project = null, CancellationToken ct = default)
     {
         if (!_cfg.Enabled) return;
+
+        // HU-014 R5: Validate project enrollment before acquiring lease (fail fast)
+        if (!string.IsNullOrWhiteSpace(project))
+        {
+            try
+            {
+                var behavior = await _store.GetProjectBehaviorAsync(project, ct);
+                if (behavior is null)
+                {
+                    _logger.LogWarning("On-demand push for project {Project} skipped: project not enrolled", project);
+                    return;
+                }
+                if (behavior == "silent-skip")
+                {
+                    _logger.LogDebug("On-demand push for project {Project} skipped: silent-skip behavior", project);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "On-demand push for project {Project}: failed to check enrollment", project);
+                return;
+            }
+        }
 
         // FR-005: Respect backoff
         if (_backoffUntil.HasValue && DateTime.UtcNow < _backoffUntil.Value)
@@ -490,14 +754,57 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
             var pending = await _store.ListPendingSyncMutationsAsync(
                 _cfg.TargetKey, _cfg.PushBatchSize, ct);
 
+            // HU-014: Filter to target project when scoped push is requested
+            if (!string.IsNullOrWhiteSpace(project))
+            {
+                pending = pending.Where(m => string.Equals(m.Project, project, StringComparison.Ordinal)).ToList();
+            }
+
             if (pending.Count == 0)
             {
                 _logger.LogDebug("On-demand push: no pending mutations");
                 return;
             }
 
-            _logger.LogInformation("On-demand push starting: {Count} pending mutations", pending.Count);
-            await PushBatchInternalAsync(pending, ct);
+            // ENG-514 (HU-013): Filter out silent-skip projects on on-demand push
+            var enrolledProjects = await _store.GetEnrolledProjectsLocalAsync(ct);
+            var silentSkipProjects = enrolledProjects
+                .Where(ep => ep.Behavior == "silent-skip")
+                .Select(ep => ep.Project)
+                .ToHashSet();
+
+            var toPush = pending;
+            if (silentSkipProjects.Count > 0)
+            {
+                var skipped = pending.Where(m => silentSkipProjects.Contains(m.Project)).ToList();
+                if (skipped.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "On-demand push: skipping {Count} mutations from silent-skip projects: {Projects}",
+                        skipped.Count,
+                        string.Join(", ", skipped.Select(m => m.Project).Distinct()));
+                }
+                toPush = pending.Where(m => !silentSkipProjects.Contains(m.Project)).ToList();
+            }
+
+            if (toPush.Count == 0)
+            {
+                _logger.LogDebug("On-demand push: all pending mutations in silent-skip projects");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(project))
+            {
+                _logger.LogInformation(
+                    "On-demand push for project {Project} starting: {Count} pending mutations",
+                    project, toPush.Count);
+            }
+            else
+            {
+                _logger.LogInformation("On-demand push starting: {Count} pending mutations", toPush.Count);
+            }
+
+            await PushBatchInternalAsync(toPush, ct);
         }
         catch (Exception ex)
         {
@@ -518,6 +825,36 @@ public sealed class SyncManager : BackgroundService, ISyncStatusProvider, ISyncO
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "CountPendingMutationsAsync failed");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget push for a specific project only.
+    /// Delegates to <see cref="TriggerPushAsync"/> with the project parameter.
+    /// </summary>
+    [Obsolete("Use TriggerPushAsync(project) instead.")]
+    public Task TriggerPushForProjectAsync(string project, CancellationToken ct = default)
+    {
+        return TriggerPushAsync(project, ct);
+    }
+
+    /// <summary>
+    /// Count pending local mutations for a specific project (HU-014).
+    /// Delegates to store-level grouped query for efficiency.
+    /// </summary>
+    public async Task<int> CountPendingMutationsByProjectAsync(string project, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(project)) return 0;
+            var all = await _store.CountPendingMutationsByProjectAsync(_cfg.TargetKey, ct);
+            var entry = all.FirstOrDefault(p => p.Project == project);
+            return entry is null ? 0 : (int)entry.Count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "CountPendingMutationsByProjectAsync failed for project {Project}", project);
             return 0;
         }
     }

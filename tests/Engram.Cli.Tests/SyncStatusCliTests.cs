@@ -12,13 +12,13 @@ public sealed class SyncStatusCliTests
         var root = new RootCommand();
         var syncCmd = new Command("sync", "Sync operations");
         var syncStatusCmd = new Command("status", "Show mutation-based sync status");
-        var jsonOpt = new Option<bool>("--json", () => false, "Output as JSON (machine-readable)");
-        syncStatusCmd.AddOption(jsonOpt);
-        syncCmd.AddCommand(syncStatusCmd);
-        root.AddCommand(syncCmd);
+        var jsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)", DefaultValueFactory = _ => false };
+        syncStatusCmd.Options.Add(jsonOpt);
+        syncCmd.Subcommands.Add(syncStatusCmd);
+        root.Subcommands.Add(syncCmd);
 
         var result = root.Parse("sync status --json");
-        var jsonValue = result.GetValueForOption(jsonOpt);
+        var jsonValue = result.GetValue(jsonOpt);
 
         Assert.True(jsonValue);
     }
@@ -29,29 +29,71 @@ public sealed class SyncStatusCliTests
         var root = new RootCommand();
         var syncCmd = new Command("sync", "Sync operations");
         var syncStatusCmd = new Command("status", "Show mutation-based sync status");
-        var jsonOpt = new Option<bool>("--json", () => false, "Output as JSON (machine-readable)");
-        syncStatusCmd.AddOption(jsonOpt);
-        syncCmd.AddCommand(syncStatusCmd);
-        root.AddCommand(syncCmd);
+        var jsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)", DefaultValueFactory = _ => false };
+        syncStatusCmd.Options.Add(jsonOpt);
+        syncCmd.Subcommands.Add(syncStatusCmd);
+        root.Subcommands.Add(syncCmd);
 
         var result = root.Parse("sync status");
-        var jsonValue = result.GetValueForOption(jsonOpt);
+        var jsonValue = result.GetValue(jsonOpt);
 
         Assert.False(jsonValue);
+    }
+
+    [Fact]
+    public void SyncStatus_WithLocalFlag_ParsesOption()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local") { Description = "Show local enrollment status (no server required)" };
+        var jsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)", DefaultValueFactory = _ => false };
+        syncStatusCmd.Options.Add(localOpt);
+        syncStatusCmd.Options.Add(jsonOpt);
+
+        var result = syncStatusCmd.Parse("--local");
+
+        Assert.True(result.GetValue(localOpt));
+        Assert.False(result.GetValue(jsonOpt));
+    }
+
+    [Fact]
+    public void SyncStatus_WithLocalAndJson_ParsesBoth()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local") { Description = "Show local enrollment status (no server required)" };
+        var jsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)", DefaultValueFactory = _ => false };
+        syncStatusCmd.Options.Add(localOpt);
+        syncStatusCmd.Options.Add(jsonOpt);
+
+        var result = syncStatusCmd.Parse("--local --json");
+
+        Assert.True(result.GetValue(localOpt));
+        Assert.True(result.GetValue(jsonOpt));
+    }
+
+    [Fact]
+    public void SyncStatus_WithoutLocalFlag_DefaultsToFalse()
+    {
+        var syncStatusCmd = new Command("status", "Show mutation-based sync status");
+        var localOpt = new Option<bool>("--local") { Description = "Show local enrollment status (no server required)" };
+        syncStatusCmd.Options.Add(localOpt);
+
+        var result = syncStatusCmd.Parse("");
+
+        Assert.False(result.GetValue(localOpt));
     }
 
     [Fact]
     public async Task SyncStatus_WithServerOffline_ShowsErrorMessage()
     {
         var syncStatusCmd = new Command("status", "Show mutation-based sync status");
-        var jsonOpt = new Option<bool>("--json", () => false, "Output as JSON (machine-readable)");
-        syncStatusCmd.AddOption(jsonOpt);
+        var jsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)", DefaultValueFactory = _ => false };
+        syncStatusCmd.Options.Add(jsonOpt);
 
         var errorOut = new StringWriter();
         var originalError = Console.Error;
         Console.SetError(errorOut);
 
-        syncStatusCmd.SetHandler(async (bool json) =>
+        syncStatusCmd.SetAction(async (ParseResult _) =>
         {
             var serverUrl = "http://localhost:1";
             try
@@ -68,9 +110,9 @@ public sealed class SyncStatusCliTests
             {
                 await Console.Error.WriteLineAsync("error: No se pudo conectar al servidor — ¿está engram server corriendo? (timeout)");
             }
-        }, jsonOpt);
+        });
 
-        await syncStatusCmd.InvokeAsync("");
+        await syncStatusCmd.Parse("").InvokeAsync();
 
         Console.SetError(originalError);
 

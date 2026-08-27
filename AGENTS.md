@@ -50,12 +50,14 @@ AGENTS.md                     ← Este archivo
 | Feature / bug / refactor | `docs/tasks/HU-001-HU-099/HU-XXX-nombre.md` | Trabajo con requisitos y escenarios |
 | Decisión arquitectónica | `docs/architecture/adr/ADR-XXX-titulo.md` | Decisión tomada e irreversible |
 | Propuesta en discusión | `docs/architecture/rfc/RFC-XXX-titulo.md` | Antes de implementar |
+| Requisito de producto | `docs/PRD/PRD-XXX-titulo.md` | Descripción de qué se quiere lograr (≠ implementación) |
 | Orden de trabajo | `docs/BACKLOG.md` | Ítems ENG-XXX con estado y prioridad |
 | Guías operativas | `docs/*.md` | Setup, API, testing manual, etc. |
 
+> **Templates**: Al crear un nuevo documento FlowDoc, usar el template correspondiente en [`docs/templates/`](docs/templates/). Los templates definen las secciones requeridas y el formato de cada tipo de documento.
+
 ### 3.2 Qué NO imponemos
 
-- El ciclo de 15 días de FlowDoc (`docs/flowdoc-ciclo.md`, si existe) es **referencia opcional**, no proceso obligatorio del equipo.
 - No crear documentación nueva fuera de `docs/` salvo artefactos temporales acordados en `.ai-work/`.
 
 ### 3.3 Al cerrar trabajo

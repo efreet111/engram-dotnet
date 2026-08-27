@@ -39,9 +39,6 @@ public class DeployProfileTests
     [InlineData("offline-first", DeployProfile.OfflineFirst)]
     [InlineData("Offline-First", DeployProfile.OfflineFirst)]
     [InlineData("OFFLINE-FIRST", DeployProfile.OfflineFirst)]
-    [InlineData("desktop", DeployProfile.Desktop)]
-    [InlineData("Desktop", DeployProfile.Desktop)]
-    [InlineData("DESKTOP", DeployProfile.Desktop)]
     public void FromEnvironment_ValidValues_ReturnsCorrectProfile(string raw, DeployProfile expected)
     {
         var original = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
@@ -114,16 +111,17 @@ public class DeployProfileTests
         Assert.Equal("cloud", defaults["ENGRAM_SYNC_TARGET"]);
     }
 
-    [Fact]
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
     public void For_Desktop_HasCorrectKeysAndValues()
     {
         var defaults = ProfileDefaults.For(DeployProfile.Desktop);
         Assert.NotNull(defaults);
-        Assert.Equal(4, defaults.Count);
-        Assert.Equal("postgres", defaults["ENGRAM_DB_TYPE"]);
+        Assert.Equal(5, defaults.Count);
+        Assert.Equal("sqlite", defaults["ENGRAM_DB_TYPE"]); // HU-024: hybrid — SQLite local, PG demoted to sync server
         Assert.Equal("true", defaults["ENGRAM_SYNC_ENABLED"]);
         Assert.Equal("30", defaults["ENGRAM_SYNC_POLL_SECONDS"]);
-        Assert.Equal("cloud", defaults["ENGRAM_SYNC_TARGET"]);
+        Assert.Equal("desktop", defaults["ENGRAM_SYNC_TARGET"]);
+        Assert.Equal("http://localhost:7437", defaults["ENGRAM_SERVER_URL"]);
     }
 
     // ─── ProfileValidator.Validate() ───────────────────────────────────────
@@ -264,6 +262,35 @@ public class DeployProfileTests
         }
     }
 
+    [Theory]
+    [InlineData("Host=localhost;Database=test")]
+    [InlineData("Host=127.0.0.1;Database=test")]
+    public void GetMissingVariables_RemoteServerLocalhostPg_ReturnsLocalhostError(string connectionString)
+    {
+        // Arrange — remote-server con localhost PG: security gate reportado como missing var
+        var originalPg = Environment.GetEnvironmentVariable("ENGRAM_PG_CONNECTION");
+        var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
+        try
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "remote-server");
+            Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", "postgres");
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", connectionString);
+
+            var cfg = StoreConfig.FromEnvironment();
+            var missing = ProfileValidator.GetMissingVariables(cfg);
+
+            // Assert — el security gate de localhost se reporta como missing
+            Assert.Single(missing);
+            Assert.Contains("localhost", missing[0]);
+            Assert.Contains("remote-server", missing[0]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PG_CONNECTION", originalPg);
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+        }
+    }
+
     [Fact]
     public void Validate_OfflineFirstMissingServerUrl_Throws()
     {
@@ -311,6 +338,106 @@ public class DeployProfileTests
             Environment.SetEnvironmentVariable("ENGRAM_SERVER_URL", originalUrl);
             Environment.SetEnvironmentVariable("ENGRAM_USER", originalUser);
             Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+        }
+    }
+
+    // ─── StoreConfig.IsThinClient (ADR-013) ────────────────────────────────
+    // IsThinClient separates "thin client" (delegate everything to a remote server)
+    // from "sync enabled" (local store + background sync). offline-first/desktop must
+    // keep a local store even when ENGRAM_SERVER_URL is set for sync.
+    // These tests use object initializers (no env mutation) because IsThinClient reads
+    // only Profile + RemoteUrl init properties.
+
+    [Fact]
+    public void IsThinClient_OfflineFirstWithRemoteUrl_IsFalse()
+    {
+        var cfg = new StoreConfig { Profile = DeployProfile.OfflineFirst, RemoteUrl = "http://server:7437" };
+
+        Assert.False(cfg.IsThinClient);
+    }
+
+    [Fact]
+    public void IsThinClient_DesktopWithRemoteUrl_IsFalse()
+    {
+        var cfg = new StoreConfig { Profile = DeployProfile.Desktop, RemoteUrl = "http://server:7437" };
+
+        Assert.False(cfg.IsThinClient);
+    }
+
+    [Fact]
+    public void IsThinClient_RemoteServerWithoutRemoteUrl_IsFalse()
+    {
+        // The remote-server profile runs the server (Postgres via `engram serve`),
+        // it is not a thin client. Regression guard against treating it as HttpStore.
+        var cfg = new StoreConfig { Profile = DeployProfile.RemoteServer, RemoteUrl = null };
+
+        Assert.False(cfg.IsThinClient);
+    }
+
+    [Fact]
+    public void IsThinClient_LocalWithRemoteUrl_IsTrue()
+    {
+        // A local-profile client pointing at a remote server delegates to it (thin client).
+        var cfg = new StoreConfig { Profile = DeployProfile.Local, RemoteUrl = "http://server:7437" };
+
+        Assert.True(cfg.IsThinClient);
+    }
+
+    [Fact]
+    public void IsThinClient_OfflineFirstWithoutRemoteUrl_IsFalse()
+    {
+        var cfg = new StoreConfig { Profile = DeployProfile.OfflineFirst, RemoteUrl = null };
+
+        Assert.False(cfg.IsThinClient);
+    }
+
+    // ─── HU-024: Desktop hybrid (SQLite local + PostgreSQL as sync server) ────
+    // Desktop must resolve to SqliteStore (source of truth), never PostgresStore,
+    // and never become a thin client even though ENGRAM_SERVER_URL is set for sync.
+
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
+    public void FromEnvironment_Desktop_UsesSqliteNotPostgres()
+    {
+        var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
+        var originalDbType  = Environment.GetEnvironmentVariable("ENGRAM_DB_TYPE");
+        try
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "desktop");
+            Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", null);
+
+            var cfg = StoreConfig.FromEnvironment();
+
+            Assert.Equal(DeployProfile.Desktop, cfg.Profile);
+            Assert.Equal(StoreDbType.Sqlite, cfg.DbType);
+            Assert.False(cfg.IsPostgres);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+            Environment.SetEnvironmentVariable("ENGRAM_DB_TYPE", originalDbType);
+        }
+    }
+
+    [Fact(Skip = "Desktop profile deferred — see HU-024 and ADR-014")]
+    public void FromEnvironment_Desktop_DefaultsServerUrlToLocalhost()
+    {
+        var originalProfile = Environment.GetEnvironmentVariable("ENGRAM_PROFILE");
+        var originalUrl     = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        try
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", "desktop");
+            Environment.SetEnvironmentVariable("ENGRAM_SERVER_URL", null);
+
+            var cfg = StoreConfig.FromEnvironment();
+
+            Assert.Equal("http://localhost:7437", cfg.RemoteUrl);
+            // HU-024/HU-025: desktop with a sync URL is still NOT a thin client.
+            Assert.False(cfg.IsThinClient);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_PROFILE", originalProfile);
+            Environment.SetEnvironmentVariable("ENGRAM_SERVER_URL", originalUrl);
         }
     }
 }

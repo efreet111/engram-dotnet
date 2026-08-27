@@ -47,14 +47,14 @@ for your use case:
 | `local` (default) | SQLite | ❌ | *(none)* | Solo developer |
 | `remote-server` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Small team, shared DB |
 | `offline-first` | SQLite (local) + PostgreSQL (server) | ✅ | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | Large team, offline-first |
-| `desktop` | PostgreSQL | ❌ | `ENGRAM_PG_CONNECTION`, `ENGRAM_USER` | Personal/shared workstation |
+| `desktop` | SQLite (local) | ✅ | `ENGRAM_SERVER_URL`, `ENGRAM_USER` | Personal PC with local sync hub |
 
 Profile defaults (applied when the var is not explicitly set):
 
 | Key | `local` | `remote-server` | `offline-first` | `desktop` |
 |-----|---------|----------------|-----------------|-----------|
-| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `postgres` |
-| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `false` |
+| `ENGRAM_DB_TYPE` | `sqlite` | `postgres` | `sqlite` | `sqlite` |
+| `ENGRAM_SYNC_ENABLED` | `false` | `false` | `true` | `true` |
 | `ENGRAM_SYNC_POLL_SECONDS` | — | — | `30` | — |
 | `ENGRAM_SYNC_TARGET` | — | — | `cloud` | — |
 
@@ -72,8 +72,8 @@ connects to an external instance:
 | `external` (default) | PostgreSQL is on the host or network — pass `ENGRAM_PG_CONNECTION` with host/port |
 | `embedded` | Docker Compose starts a `postgres` service alongside Engram — no manual PG setup |
 
-`ENGRAM_DB_MODE` is only meaningful with `ENGRAM_PROFILE=remote-server` or `desktop`
-(both require PostgreSQL). With `local` or `offline-first`, the mode is ignored —
+`ENGRAM_DB_MODE` is only meaningful with `ENGRAM_PROFILE=remote-server`
+(which requires PostgreSQL). With `local`, `offline-first` or `desktop`, the mode is ignored —
 SQLite has no external dependency.
 
 ```bash
@@ -169,7 +169,7 @@ curl -fsS http://localhost:7437/health
 # → {"status":"healthy",...}
 ```
 
-### 3.3 Run (PostgreSQL, remote-server or desktop)
+### 3.3 Run (PostgreSQL, remote-server)
 
 ```bash
 # With explicit vars (backward compatible):
@@ -489,7 +489,7 @@ docker run -d --name engram \
 | `ENGRAM_PORT` | `7437` | HTTP port for MCP server | `8080` |
 | `ENGRAM_DB_TYPE` | (profile default) | Backend: `sqlite` or `postgres`. Auto-set by `ENGRAM_PROFILE`. | `postgres` |
 | `ENGRAM_DB_MODE` | `external` | PostgreSQL mode: `external` (host/network) or `embedded` (compose service) | `embedded` |
-| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required for `remote-server`/`desktop` profiles) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
+| `ENGRAM_PG_CONNECTION` | — | PostgreSQL connection string (required for `remote-server` profile) | `Host=db;Port=5432;Database=engram;Username=engram;Password=secret` |
 | `ENGRAM_SERVER_URL` | `http://localhost:7437` | Engram server URL (required for `offline-first` profile) | `http://your-server:7437` |
 | `ENGRAM_SYNC_ENABLED` | (profile default) | Enable sync. Auto-set by `ENGRAM_PROFILE`. | `true` |
 | `ENGRAM_USER` | — | User identity (required for `remote-server`, `offline-first`, `desktop` profiles) | `user@example.com` |

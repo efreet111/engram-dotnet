@@ -6,6 +6,7 @@ using Engram.MdGeneration;
 using Engram.Verification;
 using Engram.Diagnostics;
 using Engram.Sync;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
 namespace Engram.Mcp;
@@ -50,7 +51,7 @@ public sealed class McpConfig
 /// IStore, McpConfig, WriteQueue, SessionActivity, IVerifier, CycleTracker, and IDiagnosticService are injected via DI constructor.
 /// </summary>
 [McpServerToolType]
-public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null, ISyncOnDemandPusher? syncPusher = null)
+public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQueue, SessionActivity activity, IVerifier verifier, CycleTracker cycleTracker, PromotionService promotionService, Verification.TraceRepository traceRepo, Verification.LineageBuilder lineageBuilder, IDiagnosticService diagnosticService, Verification.MemoryRelationRepository memRelRepo, Verification.MemoryLineageBuilder memLineageBuilder, ISyncStatusProvider? syncStatusProvider = null, ISyncOnDemandPusher? syncPusher = null, ILogger<EngramTools>? logger = null, ILocalSyncStore? localSyncStore = null)
 {
     private readonly SessionActivity _activity = activity;
     private readonly PromotionService _promotionService = promotionService;
@@ -60,6 +61,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     private readonly Verification.MemoryRelationRepository _memRelRepo = memRelRepo;
     private readonly Verification.MemoryLineageBuilder _memLineageBuilder = memLineageBuilder;
     private readonly ISyncOnDemandPusher? _syncPusher = syncPusher;
+    private readonly ILogger<EngramTools>? _logger = logger;
+    private readonly ILocalSyncStore? _localSyncStore = localSyncStore;
     
     /// <summary>
     /// Field initializer with side-effect: emits sync warning to stderr on construction.
@@ -86,12 +89,12 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     /// from MCP write tools (MemSave, MemUpdate, MemDelete).
     /// Never throws — failures are logged at debug level.
     /// </summary>
-    private async Task TriggerOnDemandPushInBackground()
+    private async Task TriggerOnDemandPushInBackground(string? project = null)
     {
         if (_syncPusher is null) return;
         try
         {
-            await _syncPusher.TriggerPushAsync();
+            await _syncPusher.TriggerPushAsync(project);
         }
         catch (Exception ex)
         {
@@ -201,7 +204,8 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("Session ID to associate with (default: manual-save-{project})")] string? session_id = null,
         [Description("Project name")] string? project = null,
         [Description("Scope for this observation: team (shared with all devs) or personal (private). Auto-classified from type when omitted.")] string? scope = null,
-        [Description("Optional topic identifier for upserts (e.g. architecture/auth-model). Reuses and updates the latest observation in same project+scope.")] string? topic_key = null)
+        [Description("Optional topic identifier for upserts (e.g. architecture/auth-model). Reuses and updates the latest observation in same project+scope.")] string? topic_key = null,
+        [Description("When true, trigger sync push only for this project (fire-and-forget). Default false = global push.")] bool sync_project = false)
     {
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
@@ -251,6 +255,24 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 }
             }
 
+            // ── Enrollment warning: warn if project is not enrolled for sync (HU-013 Phase 5) ──
+            string? enrollmentWarning = null;
+            if (!string.IsNullOrEmpty(normalizedProject) && _localSyncStore is not null)
+            {
+                try
+                {
+                    var behavior = await _localSyncStore.GetProjectBehaviorAsync(normalizedProject);
+                    if (behavior is null)
+                    {
+                        enrollmentWarning = $"\n⚠️ Proyecto '{normalizedProject}' no está enrolado para sync. Ejecutá 'engram sync enroll --interactive' para activarlo.";
+                    }
+                }
+                catch
+                {
+                    // Enrollment check is best-effort — don't fail the save
+                }
+            }
+
             await store.CreateSessionAsync(session_id, project, "");
             await store.AddObservationAsync(new AddObservationParams
             {
@@ -266,7 +288,15 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             _activity.RecordSave(session_id);
 
             // ENG-476 FR-001: Fire-and-forget push after save
-            _ = TriggerOnDemandPushInBackground();
+            // HU-014 R4: When sync_project=true, push only this project
+            if (sync_project && !string.IsNullOrEmpty(normalizedProject))
+            {
+                _ = TriggerOnDemandPushInBackground(normalizedProject);
+            }
+            else
+            {
+                _ = TriggerOnDemandPushInBackground();
+            }
 
             var msg = $"Memory saved: \"{title}\" ({type})";
             if (string.IsNullOrEmpty(topic_key) && !string.IsNullOrEmpty(suggestedKey))
@@ -279,17 +309,22 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 msg += $"\n{normWarning}";
             if (!string.IsNullOrEmpty(similarWarning))
                 msg += $"\n{similarWarning}";
+            if (!string.IsNullOrEmpty(enrollmentWarning))
+                msg += enrollmentWarning;
 
             // ENG-476 FR-003: Snapshot feedback of pending mutations at save time.
             // The count is captured AFTER triggering the fire-and-forget push (FR-001),
             // so it may include mutations already being pushed in background.
             // This is a best-effort snapshot — the actual pending count may decrease
             // shortly after due to the concurrent background push.
+            // HU-014 R4: When sync_project=true, show per-project pending count.
             if (_syncPusher is { IsEnabled: true })
             {
                 try
                 {
-                    var pendingCount = await _syncPusher.CountPendingMutationsAsync(ct);
+                    var pendingCount = sync_project && !string.IsNullOrEmpty(normalizedProject)
+                        ? await _syncPusher.CountPendingMutationsByProjectAsync(normalizedProject, ct)
+                        : await _syncPusher.CountPendingMutationsAsync(ct);
                     if (pendingCount > 0)
                         msg += $"\n⚠️ {pendingCount} mutation(s) pending sync";
                 }

@@ -1,6 +1,6 @@
 # HU-001: Backend Configuration Switch
 
-**Status**: 🟡 In Progress
+**Status**: ✅ Done
 **Owner**: @owner
 **Created**: 2026-06-01
 **Priority**: Medium

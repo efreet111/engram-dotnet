@@ -24,7 +24,9 @@ public sealed class DiagnosticServiceTests : IDisposable
         _storeMock = new Mock<IStore>();
         _httpHandler = new MockHttpMessageHandler();
         _httpClient = new HttpClient(_httpHandler);
-        _diagnosticService = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000");
+        // Desktop runs every check — existing tests exercise http_server/sync_health.
+        _diagnosticService = new DiagnosticService(
+            _storeMock.Object, _httpClient, "http://localhost:5000", profile: DeployProfile.Desktop);
     }
 
     public void Dispose()
@@ -135,7 +137,7 @@ public sealed class DiagnosticServiceTests : IDisposable
     public async Task CheckHttpServer_NoServerUrl_ReturnsUnhealthyComponent()
     {
         // Arrange
-        var serviceNoUrl = new DiagnosticService(_storeMock.Object, _httpClient, serverUrl: null);
+        var serviceNoUrl = new DiagnosticService(_storeMock.Object, _httpClient, serverUrl: null, profile: DeployProfile.Desktop);
         _storeMock.Setup(s => s.StatsAsync()).ReturnsAsync(new Stats());
         _storeMock.Setup(s => s.BackendName).Returns("sqlite");
 
@@ -230,7 +232,8 @@ public sealed class DiagnosticServiceTests : IDisposable
             _storeMock.Object,
             _httpClient,
             "http://localhost:5000",
-            syncStatusProvider: null);
+            syncStatusProvider: null,
+            profile: DeployProfile.Desktop);
 
         var result = await service.RunDiagnosticsAsync();
         var syncHealth = result.Components["sync_health"];
@@ -245,7 +248,7 @@ public sealed class DiagnosticServiceTests : IDisposable
     {
         ConfigureHealthyDependencies();
         var provider = CreateSyncProvider(SyncPhase.Healthy, 0, null);
-        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object, profile: DeployProfile.Desktop);
 
         var result = await service.RunDiagnosticsAsync();
         var syncHealth = result.Components["sync_health"];
@@ -260,7 +263,7 @@ public sealed class DiagnosticServiceTests : IDisposable
     {
         ConfigureHealthyDependencies();
         var provider = CreateSyncProvider(SyncPhase.Disabled, 10, "relay unavailable");
-        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object, profile: DeployProfile.Desktop);
 
         var result = await service.RunDiagnosticsAsync();
         var syncHealth = result.Components["sync_health"];
@@ -275,7 +278,7 @@ public sealed class DiagnosticServiceTests : IDisposable
     {
         ConfigureHealthyDependencies();
         var provider = CreateSyncProvider(SyncPhase.Backoff, 5, "connection refused");
-        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object);
+        var service = new DiagnosticService(_storeMock.Object, _httpClient, "http://localhost:5000", provider.Object, profile: DeployProfile.Desktop);
 
         var result = await service.RunDiagnosticsAsync();
         var syncHealth = result.Components["sync_health"];
@@ -439,6 +442,83 @@ public sealed class DiagnosticServiceTests : IDisposable
 
         // Assert
         Assert.NotNull(service);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Profile-Aware Skip Tests (HU-020)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(DeployProfile.Local)]
+    [InlineData(DeployProfile.RemoteServer)]
+    public async Task RunDiagnostics_ServerlessProfiles_SkipHttpServerAndSyncHealth(DeployProfile profile)
+    {
+        // Arrange
+        ConfigureHealthyDependencies();
+        var service = new DiagnosticService(
+            _storeMock.Object, _httpClient, "http://localhost:5000", profile: profile);
+
+        // Act
+        var result = await service.RunDiagnosticsAsync();
+
+        // Assert — http_server and sync_health are skipped, rest still run
+        Assert.True(result.Components["http_server"].IsSkipped);
+        Assert.True(result.Components["sync_health"].IsSkipped);
+        Assert.False(result.Components["database"].IsSkipped);
+        Assert.False(result.Components["mcp_server"].IsSkipped);
+        Assert.False(result.Components["project_identity"].IsSkipped);
+    }
+
+    [Theory]
+    [InlineData(DeployProfile.OfflineFirst)]
+    [InlineData(DeployProfile.Desktop)]
+    public async Task RunDiagnostics_ServerProfiles_RunAllChecks(DeployProfile profile)
+    {
+        // Arrange
+        ConfigureHealthyDependencies();
+        var service = new DiagnosticService(
+            _storeMock.Object, _httpClient, "http://localhost:5000", profile: profile);
+
+        // Act
+        var result = await service.RunDiagnosticsAsync();
+
+        // Assert — no check is skipped; all five components are present and run
+        Assert.Equal(5, result.Components.Count);
+        Assert.All(result.Components.Values, c => Assert.False(c.IsSkipped));
+    }
+
+    [Fact]
+    public async Task RunDiagnostics_LocalProfile_SkippedMessageNamesProfile()
+    {
+        // Arrange
+        ConfigureHealthyDependencies();
+        var service = new DiagnosticService(
+            _storeMock.Object, _httpClient, "http://localhost:5000", profile: DeployProfile.Local);
+
+        // Act
+        var result = await service.RunDiagnosticsAsync();
+
+        // Assert
+        Assert.Contains(
+            "not applicable for profile 'local'",
+            result.Components["http_server"].Message,
+            StringComparison.Ordinal);
+        Assert.True(result.Components["http_server"].IsHealthy);
+    }
+
+    [Fact]
+    public async Task RunDiagnostics_LocalProfile_OverallHealthUnaffectedBySkips()
+    {
+        // Arrange — database and mcp healthy, http/sync skipped for local
+        ConfigureHealthyDependencies();
+        var service = new DiagnosticService(
+            _storeMock.Object, _httpClient, "http://localhost:5000", profile: DeployProfile.Local);
+
+        // Act
+        var result = await service.RunDiagnosticsAsync();
+
+        // Assert — skipped checks don't drag the overall result down
+        Assert.True(result.IsHealthy);
     }
 
     private void ConfigureHealthyDependencies()

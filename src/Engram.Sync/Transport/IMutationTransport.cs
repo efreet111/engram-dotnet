@@ -26,11 +26,15 @@ public interface IMutationTransport
     /// <param name="sinceSeq">Sequence number to pull since (exclusive)</param>
     /// <param name="limit">Maximum mutations to return (default 100)</param>
     /// <param name="ct">Cancellation token</param>
+    /// <param name="serverId">Optional server identifier for multi-server pull (RFC-006).
+    /// When provided, the transport MAY use it for routing or logging.
+    /// When null, the default configured server URL is used.</param>
     /// <returns>Pull result with mutations, has_more flag, and latest seq</returns>
     Task<PullResult> PullMutationsAsync(
         long sinceSeq,
         int limit = 100,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? serverId = null);
 }
 
 /// <summary>

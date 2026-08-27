@@ -56,6 +56,10 @@ dist-cli/
 # Engram MCP local memory (per-user runtime state, not project source)
 /.engram/
 
+# Build artifact: local binary passed to docker build for Dockerfile.allinone
+# Created by install_build and by 'docker build --build-arg ENGRAM_BINARY=local'
+engram-local
+
 # FlowForge rework tickets live in .ai-work/{slug}/, not at repo root
 /rework_ticket.md
 
@@ -68,3 +72,11 @@ scripts/sync-test.sh
 docs/architecture/adr/ADR-002-sync-mutation-application.md
 docs/architecture/adr/ADR-003-xml-doc-comment-policy.md
 .directory
+
+# Manual testing checklists (per-user, not committed)
+docs/manual-test/
+openspec/engram-install-new/spec.md
+openspec/engram-install-new/proposal.md
+docker/sync-test.yml
+docker run --rm ghcr.io/efreet111/libe_sqlite3.so
+docker run --rm ghcr.io/efreet111/engram-dotnet:latest engram

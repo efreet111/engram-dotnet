@@ -1,6 +1,6 @@
 # Roadmap — engram-dotnet
 
-> **Last updated**: 2026-08-12  
+> **Last updated**: 2026-08-27  
 > **Current version**: `main` (post deployment profile system)
 
 **Orden de trabajo (qué hacer ahora):** [BACKLOG.md](BACKLOG.md) — cola única con IDs `ENG-xxx`.  
@@ -41,6 +41,9 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | ENG-478 | `0aa35ed` | Docker vanilla build — fix NuGet version error (`dev` not valid SemVer) + `Dockerfile.debian` alternative for servers without `mcr.microsoft.com` access. |
 | ENG-479 | `159e26e` | Docker runtime permissions — `entrypoint.sh` + `gosu` for SQLite volume permissions. Full env var documentation. |
 | Deploy Profiles | `20b5e53` | Deployment profile system (Crhistian Mendoza) — 4 profiles: `local`, `remote-server`, `offline-first`, `desktop`. `DeployProfile.cs`, `deploy.sh` script, `DEPLOYMENT.md` guide. HU-010/011/012, ADR-011/012. |
+| Multi-Project Sync (HU-013) | `config-sync-by-proyect` | Per-project sync management: `silent-skip`/`fail-loud` behavior, YAML config `~/.engram/sync-projects.dotnet.yml`, CLI interactive selector, MCP suggestion-only protocol. ENG-488. |
+| Smart Sync Triggers (HU-014) | `config-sync-by-proyect` | Project-specific sync triggers: poll 30s only for modified projects, `engram sync push --project`, MCP `mem_save(sync_project=true)`. ENG-489. |
+| Multi-Server Dedup (RFC-006) | `config-sync-by-proyect` | Strategy for pull deduplication from multiple servers: cursor per server, last-write-wins by `occurred_at`, tiebreaker by `server_id`. ENG-490. |
 
 ---
 
@@ -221,6 +224,23 @@ Dev: mem_save / engram save  →  SQLite local (instantáneo, offline OK)
 ---
 
 ## 🟠 Future Ideas
+
+### Rate Limiting por Proyecto
+
+> **HU**: ✅ HU-013 Done (2026-08-11)
+> **Related**: HU-013 (multi-project sync)
+
+Agregar throttling/batching por proyecto para evitar enviar miles de mutations de un solo proyecto saturando el sync.
+
+| # | Feature | Description |
+|---|---------|-------------|
+| 1 | Token bucket / sliding window | Rate limiter por proyecto (server-side o client-side) |
+| 2 | Batching adaptativo | Batch size dinámico según volumen de mutations del proyecto |
+| 3 | Configurabilidad | `ENGRAM_SYNC_RATE_LIMIT_PER_PROJECT` o config YAML |
+
+**Estado actual**: SyncManager tiene batch cap de 100 y exponential backoff global. No hay throttle por proyecto.
+
+---
 
 ### Obsidian Export — Phase B (with AI)
 
