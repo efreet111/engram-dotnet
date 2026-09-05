@@ -794,9 +794,162 @@ public class EngramToolsTests : IDisposable
         public SyncPhase Phase { get; init; }
         public bool IsEnabled => true;
         public int ConsecutiveFailures { get; init; }
-        public DateTime? BackoffUntil => null;
+        public DateTime? BackoffUntil { get; init; }
         public SyncMetrics Metrics { get; } = new();
         public string? LastError { get; init; }
+    }
+
+    // ─── ENG-412: mem_update with status (T-022) ─────────────────────────────
+
+    [Fact]
+    public async Task MemUpdate_WithValidStatus_ChangesStatus()
+    {
+        await SeedSession();
+        var id = await SeedObservation("Old decision", "old content");
+
+        var result = await _tools.MemUpdate(id, status: "deprecated");
+
+        Assert.Contains("status: deprecated", result);
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal("deprecated", obs.Status);
+    }
+
+    [Fact]
+    public async Task MemUpdate_WithInvalidStatus_ReturnsValidationError()
+    {
+        await SeedSession();
+        var id = await SeedObservation("Test", "content");
+
+        var result = await _tools.MemUpdate(id, status: "archived");
+
+        Assert.Contains("validation_error", result);
+        Assert.Contains("invalid status", result);
+        Assert.Contains("active, deprecated, deleted", result);
+    }
+
+    [Fact]
+    public async Task MemUpdate_WithStatusActive_RestoresObservation()
+    {
+        await SeedSession();
+        var id = await SeedObservation("Test", "content");
+        await _store.UpdateObservationAsync(id, new UpdateObservationParams { Status = "deprecated" });
+
+        var result = await _tools.MemUpdate(id, status: "active");
+
+        Assert.Contains("status: active", result);
+        var obs = await _store.GetObservationAsync(id);
+        Assert.NotNull(obs);
+        Assert.Equal("active", obs.Status);
+    }
+
+    // ─── ENG-412: mem_search with new params (T-023) ─────────────────────────
+
+    [Fact]
+    public async Task MemSearch_Default_ReturnsOnlyActive()
+    {
+        await SeedSession();
+        await SeedObservation("Active decision", "cliente auth module");
+        var id2 = await SeedObservation("Deprecated decision", "cliente old module");
+        await _store.UpdateObservationAsync(id2, new UpdateObservationParams { Status = "deprecated" });
+
+        var result = await _tools.MemSearch("cliente", project: "test-proj");
+
+        Assert.Contains("Found 1 memories", result);
+        Assert.Contains("Active decision", result);
+        Assert.DoesNotContain("Deprecated decision", result);
+    }
+
+    [Fact]
+    public async Task MemSearch_IncludeDeprecated_ReturnsAll()
+    {
+        await SeedSession();
+        await SeedObservation("Active decision", "cliente auth module");
+        var id2 = await SeedObservation("Deprecated decision", "cliente old module");
+        await _store.UpdateObservationAsync(id2, new UpdateObservationParams { Status = "deprecated" });
+
+        var result = await _tools.MemSearch("cliente", project: "test-proj", include_deprecated: true);
+
+        Assert.Contains("Found 2 memories", result);
+        Assert.Contains("[deprecated]", result);
+    }
+
+    [Fact]
+    public async Task MemSearch_Grouped_CollapsesByTopicKey()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "Rev 1", Content = "cliente rev1",
+            Type = "decision", Project = "test-proj", TopicKey = "decision/cliente",
+        });
+        var id2 = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "Rev 2", Content = "cliente rev2",
+            Type = "decision", Project = "test-proj", TopicKey = "decision/cliente",
+        });
+        await _store.UpdateObservationAsync(id2, new UpdateObservationParams { Status = "deprecated" });
+
+        var result = await _tools.MemSearch("cliente", project: "test-proj", include_deprecated: true, grouped: true);
+
+        Assert.Contains("grouped into 1 topic", result);
+        Assert.Contains("decision/cliente", result);
+    }
+
+    // ─── ENG-412: mem_decision_tree (T-024) ──────────────────────────────────
+
+    [Fact]
+    public async Task MemDecisionTree_ReturnsGroupedPanorama()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "Auth approach", Content = "JWT auth",
+            Type = "decision", Project = "test-proj", TopicKey = "decision/auth",
+        });
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "API design", Content = "REST API",
+            Type = "architecture", Project = "test-proj", TopicKey = "architecture/api",
+        });
+
+        var result = await _tools.MemDecisionTree(project: "test-proj");
+
+        Assert.Contains("Decision tree", result);
+        Assert.Contains("decision/auth", result);
+        Assert.Contains("architecture/api", result);
+    }
+
+    [Fact]
+    public async Task MemDecisionTree_EmptyProject_ReturnsFriendlyMessage()
+    {
+        var result = await _tools.MemDecisionTree(project: "nonexistent-project");
+
+        Assert.Contains("No decision/architecture observations found", result);
+    }
+
+    [Fact]
+    public async Task MemDecisionTree_ShowsDeprecatedChain()
+    {
+        await SeedSession();
+        var id1 = await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "Old auth", Content = "old approach",
+            Type = "decision", Project = "test-proj", TopicKey = "decision/auth",
+        });
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId, Title = "New auth", Content = "new approach",
+            Type = "decision", Project = "test-proj", TopicKey = "decision/auth",
+        });
+        await _store.UpdateObservationAsync(id1, new UpdateObservationParams { Status = "deprecated" });
+
+        var result = await _tools.MemDecisionTree(project: "test-proj");
+
+        // The decision tree should show the topic
+        Assert.Contains("Decision tree", result);
+        Assert.Contains("decision/auth", result);
+        Assert.Contains("New auth", result); // The active (head) observation
     }
 }
 
@@ -1101,6 +1254,7 @@ public class VerifierFactoryTests
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", original);
         }
     }
+
 }
 
 /// <summary>

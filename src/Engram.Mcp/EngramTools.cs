@@ -106,13 +106,36 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     // ─── mem_search ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_search", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
-    [Description("Search your persistent memory across all sessions. Use this to find past decisions, bugs fixed, patterns used, files changed, or any context from previous coding sessions.")]
+    [Description("""
+        Search your persistent memory across all sessions. Use this to find past decisions, bugs fixed, patterns used, files changed, or any context from previous coding sessions.
+
+        LIFECYCLE FILTERING:
+        - By default, only returns observations with status = 'active'.
+        - Set include_deprecated: true to also see deprecated/deleted observations (labeled with their status).
+        - Set status: "deprecated" to see ONLY deprecated observations.
+
+        GROUPING:
+        - Set grouped: true to collapse results by topic_key, showing the most recent observation per group.
+        - Useful for understanding the current state of evolving decisions without seeing every revision.
+
+        EXAMPLES:
+          mem_search("cliente")                          → only active matches
+          mem_search("cliente", include_deprecated: true) → active + deprecated, each labeled
+          mem_search("cliente", grouped: true)            → grouped by topic_key, most recent per group
+          mem_search("cliente", status: "deprecated")     → only deprecated matches
+
+        DECISION PANORAMA:
+        For a full overview of all decisions in a project, use mem_decision_tree instead.
+        """)]
     public async Task<string> MemSearch(
         [Description("Search query — natural language or keywords")] string query,
         [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
         [Description("Filter by project name")] string? project = null,
         [Description("Filter by scope: team, personal. Omit to search both.")] string? scope = null,
-        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+        [Description("Max results (default: 10, max: 20)")] int limit = 10,
+        [Description("Override default status filter. Default: only 'active'. Set to 'deprecated' or 'deleted' to filter by that status.")] string? status = null,
+        [Description("When true, include deprecated and deleted observations in results (labeled with their status). Default: false.")] bool include_deprecated = false,
+        [Description("When true, group results by topic_key showing the most recent observation per group. Default: false.")] bool grouped = false)
     {
         var clampedLimit = Math.Clamp(limit, 1, 20);
         var activityScope = scope ?? Engram.Store.Scopes.Personal;
@@ -130,8 +153,11 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
             results = await store.SearchAsync(query, searchProjects, new SearchOptions
             {
-                Type  = type,
-                Limit = clampedLimit,
+                Type              = type,
+                Limit             = clampedLimit,
+                Status            = status,
+                IncludeDeprecated = include_deprecated,
+                Grouped           = grouped,
             });
         }
         else
@@ -142,10 +168,13 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
             results = await store.SearchAsync(query, new SearchOptions
             {
-                Type    = type,
-                Project = resolvedProject,
-                Scope   = scope,   // pass through to filter by scope column if explicit
-                Limit   = clampedLimit,
+                Type              = type,
+                Project           = resolvedProject,
+                Scope             = scope,   // pass through to filter by scope column if explicit
+                Limit             = clampedLimit,
+                Status            = status,
+                IncludeDeprecated = include_deprecated,
+                Grouped           = grouped,
             });
         }
 
@@ -153,26 +182,143 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             return AppendActivityNudge($"No memories found for: \"{query}\"", activitySessionId);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"Found {results.Count} memories:");
+
+        // ENG-412: grouped display mode
+        if (grouped)
+        {
+            var groupHeads = TopicKeyGrouper.GetGroupHeads(results.Select(r => r.Observation));
+            sb.AppendLine($"Found {results.Count} memories grouped into {groupHeads.Count} topic(s):");
+            sb.AppendLine();
+
+            bool anyTruncated = false;
+            for (int i = 0; i < groupHeads.Count; i++)
+            {
+                var (head, depCount, totalCount) = groupHeads[i];
+                var projectDisplay = head.Project is not null ? $" | project: {head.Project}" : "";
+                var preview = Truncate(head.Content, 300);
+                if (head.Content.Length > 300) { anyTruncated = true; preview += " [preview]"; }
+                var statusLabel = head.Status != "active" ? $" [{head.Status}]" : "";
+                var groupInfo = totalCount > 1 ? $" ({totalCount} revisions, {depCount} deprecated)" : "";
+                sb.AppendLine($"[{i + 1}] #{head.Id} ({head.Type}){statusLabel} — {head.Title}{groupInfo}");
+                sb.AppendLine($"    {preview}");
+                sb.AppendLine($"    topic_key: {head.TopicKey ?? "(none)"} | {head.CreatedAt}{projectDisplay} | scope: {head.Scope}");
+                sb.AppendLine();
+            }
+
+            if (anyTruncated)
+                sb.AppendLine("---\nResults above are previews (300 chars). To read the full content of a specific memory, call mem_get_observation(id: <ID>).");
+        }
+        else
+        {
+            sb.AppendLine($"Found {results.Count} memories:");
+            sb.AppendLine();
+
+            bool anyTruncated = false;
+            for (int i = 0; i < results.Count; i++)
+            {
+                var r = results[i].Observation;
+                var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
+                var preview = Truncate(r.Content, 300);
+                if (r.Content.Length > 300) { anyTruncated = true; preview += " [preview]"; }
+                // ENG-412: show status label when not active (or when include_deprecated is true)
+                var statusLabel = (include_deprecated || status is not null) && r.Status != "active"
+                    ? $" [{r.Status}]" : "";
+                sb.AppendLine($"[{i + 1}] #{r.Id} ({r.Type}){statusLabel} — {r.Title}");
+                sb.AppendLine($"    {preview}");
+                sb.AppendLine($"    {r.CreatedAt}{projectDisplay} | scope: {r.Scope}");
+                sb.AppendLine();
+            }
+
+            if (anyTruncated)
+                sb.AppendLine("---\nResults above are previews (300 chars). To read the full content of a specific memory, call mem_get_observation(id: <ID>).");
+        }
+
+        return AppendActivityNudge(sb.ToString().TrimEnd(), activitySessionId);
+    }
+
+    // ─── mem_decision_tree ────────────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_decision_tree", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Show a decision panorama for a project: all decision/architecture observations grouped by topic_key,
+        showing the active (current) decision and any deprecated predecessors for each topic.
+
+        WHEN to use:
+        - Onboarding to a project: understand the CURRENT state of all architectural decisions.
+        - Before making a new decision: check what decisions already exist and their status.
+        - Periodic review: see which decisions have been superseded and need cleanup.
+
+        OUTPUT: one entry per topic_key, showing the most recent (active) decision and how many deprecated
+        predecessors exist. Use mem_search(include_deprecated: true) to see the full chain for a specific topic.
+
+        TOPIC_KEY CONVENTIONS:
+        - Decisions that EVOLVE (same topic, incremental changes): use the SAME topic_key → upsert.
+        - Decisions that SUPERSEDE (complete replacement): create NEW observation with NEW topic_key, then
+          mem_update(old_id, status: "deprecated") on the old one.
+        - Use mem_suggest_topic_key when unsure about the key format.
+        """)]
+    public async Task<string> MemDecisionTree(
+        [Description("Project name to show decisions for")] string? project = null,
+        [Description("Filter by type (comma-separated, default: decision,architecture)")] string? type = null)
+    {
+        var resolvedScope = Engram.Store.Scopes.Personal;
+        var resolvedProject = ResolveProject(project, resolvedScope);
+
+        // Default type filter: decision,architecture
+        var typeFilter = type ?? "decision,architecture";
+        var types = typeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Query for each type and merge results.
+        // Use RecentObservationsAsync (no FTS) and filter by type in memory,
+        // since SearchAsync requires a non-empty FTS query.
+        var allObservations = new List<Observation>();
+        var recentObs = await store.RecentObservationsAsync(resolvedProject, null, 200);
+        foreach (var obs in recentObs)
+        {
+            if (types.Contains(obs.Type, StringComparer.OrdinalIgnoreCase))
+                allObservations.Add(obs);
+        }
+
+        if (allObservations.Count == 0)
+            return $"No decision/architecture observations found for project \"{resolvedProject}\". " +
+                   $"Use mem_save to record decisions with type: \"decision\" or \"architecture\".";
+
+        // Group by topic_key
+        var groups = TopicKeyGrouper.GroupByTopicKey(allObservations);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Decision tree for project \"{resolvedProject}\" ({groups.Count} topic(s)):");
         sb.AppendLine();
 
-        bool anyTruncated = false;
-        for (int i = 0; i < results.Count; i++)
+        int idx = 0;
+        foreach (var (topicKey, obsList) in groups.OrderBy(g => g.Key))
         {
-            var r = results[i].Observation;
-            var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
-            var preview        = Truncate(r.Content, 300);
-            if (r.Content.Length > 300) { anyTruncated = true; preview += " [preview]"; }
-            sb.AppendLine($"[{i + 1}] #{r.Id} ({r.Type}) — {r.Title}");
-            sb.AppendLine($"    {preview}");
-            sb.AppendLine($"    {r.CreatedAt}{projectDisplay} | scope: {r.Scope}");
+            idx++;
+            var head = obsList.First(); // most recent (sorted DESC by CreatedAt)
+            var deprecatedCount = obsList.Count(o => o.Status == "deprecated");
+            var statusLabel = head.Status != "active" ? $" [{head.Status}]" : "";
+            var historyNote = obsList.Count > 1
+                ? $" — {obsList.Count} revisions ({deprecatedCount} deprecated)"
+                : "";
+
+            sb.AppendLine($"[{idx}] {topicKey}");
+            sb.AppendLine($"    #{head.Id} ({head.Type}){statusLabel} — {head.Title}{historyNote}");
+            sb.AppendLine($"    {Truncate(head.Content, 200)}");
+            sb.AppendLine($"    {head.CreatedAt} | scope: {head.Scope}");
+
+            // Show deprecated chain if any
+            if (deprecatedCount > 0)
+            {
+                var deprecated = obsList.Where(o => o.Status == "deprecated").ToList();
+                foreach (var dep in deprecated)
+                {
+                    sb.AppendLine($"      └─ #{dep.Id} [deprecated] — {dep.Title} ({dep.CreatedAt})");
+                }
+            }
             sb.AppendLine();
         }
 
-        if (anyTruncated)
-            sb.AppendLine("---\nResults above are previews (300 chars). To read the full content of a specific memory, call mem_get_observation(id: <ID>).");
-
-        return AppendActivityNudge(sb.ToString().TrimEnd(), activitySessionId);
+        return sb.ToString().TrimEnd();
     }
 
     // ─── mem_save ────────────────────────────────────────────────────────────
@@ -196,6 +342,13 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
           **Learned**: [any gotchas, edge cases, or decisions made — omit if none]
 
         TITLE should be short and searchable, like: "JWT auth middleware", "FTS5 query sanitization", "Fixed N+1 in user list"
+
+        TOPIC_KEY — controls evolve-vs-supersede behavior:
+        - Same topic_key → UPSERT: updates the existing observation (revision_count +1). Use for incremental evolution.
+        - New topic_key → NEW observation: creates a separate entry. Use when a decision is COMPLETELY REPLACED.
+          Then mark the old one as deprecated: mem_update(old_id, status: "deprecated").
+        - Use mem_suggest_topic_key when unsure about the key format.
+        - Convention: "category/short-name" (e.g., "decision/auth-model", "architecture/api-gateway").
         """)]
     public async Task<string> MemSave(
         [Description("Short, searchable title (e.g. 'JWT auth middleware', 'Fixed N+1 query')")] string title,
@@ -341,7 +494,22 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
     // ─── mem_update ──────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_update", ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = false)]
-    [Description("Update an existing observation by ID. Only provided fields are changed.")]
+    [Description("""
+        Update an existing observation by ID. Only provided fields are changed.
+
+        LIFECYCLE WORKFLOW (status parameter):
+        Observations have a lifecycle status: active → deprecated → deleted.
+        - Use status: "deprecated" when a decision is REPLACED by a new one (superseded).
+        - Use status: "deleted" to hide an observation (also sets deleted_at).
+        - Use status: "active" to restore a deprecated observation.
+
+        EXAMPLE — deprecate an old decision:
+          1. mem_save(title: "New approach", topic_key: "decision/cliente-v2") → creates #85
+          2. mem_update(id: 42, status: "deprecated") → marks old decision as superseded
+          3. mem_relations(observation_id: 85, action: "add", target_observation_id: 42, type: "supersedes")
+
+        ALLOWED status values: active, deprecated, deleted. Any other value returns a validation_error.
+        """)]
     public async Task<string> MemUpdate(
         [Description("Observation ID to update")] long id,
         [Description("New title")] string? title = null,
@@ -349,17 +517,25 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         [Description("New type/category")] string? type = null,
         [Description("New project value")] string? project = null,
         [Description("New scope: project or personal")] string? scope = null,
-        [Description("New topic key (normalized internally)")] string? topic_key = null)
+        [Description("New topic key (normalized internally)")] string? topic_key = null,
+        [Description("Lifecycle status: active, deprecated, deleted. Use 'deprecated' when a decision is superseded.")] string? status = null)
     {
         if (id == 0) return McpErrors.Structured(
             "validation_error",
             "id is required",
             hint: "Pass a non-zero observation ID");
-        if (title is null && content is null && type is null && project is null && scope is null && topic_key is null)
+        if (title is null && content is null && type is null && project is null && scope is null && topic_key is null && status is null)
             return McpErrors.Structured(
                 "validation_error",
                 "provide at least one field to update",
-                hint: "Pass at least one of: title, content, type, project, scope, topic_key");
+                hint: "Pass at least one of: title, content, type, project, scope, topic_key, status");
+
+        // ENG-412: validate status against closed enum
+        if (status is not null && !StatusValidator.IsValid(status))
+            return McpErrors.Structured(
+                "validation_error",
+                $"invalid status '{status}'. Allowed: {StatusValidator.ValidValuesDisplay}",
+                hint: "Status must be one of: active, deprecated, deleted");
 
         return await writeQueue.EnqueueAsync<string>(async ct =>
         {
@@ -371,6 +547,7 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
                 Project  = project,
                 Scope    = scope,
                 TopicKey = topic_key,
+                Status   = status,
             });
 
             if (!ok) return McpErrors.Structured(
@@ -386,6 +563,9 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             _ = TriggerOnDemandPushInBackground();
 
             var msg = $"Memory updated: #{obs.Id} \"{obs.Title}\" ({obs.Type}, scope={obs.Scope})";
+            // ENG-412: show status when it was changed or is relevant
+            if (status is not null)
+                msg += $" — status: {obs.Status}";
 
             // 5K soft warning — additive, does NOT truncate
             if (content is not null && content.Length > 5_000)

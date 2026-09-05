@@ -137,11 +137,14 @@ public sealed class HttpStore : IStore
     public async Task<IList<SearchResult>> SearchAsync(string query, SearchOptions opts)
     {
         var qs = BuildQuery(
-            ("q",       query),
-            ("type",    opts.Type),
-            ("project", opts.Project),
-            ("scope",   opts.Scope),
-            ("limit",   opts.Limit.ToString()));
+            ("q",                  query),
+            ("type",               opts.Type),
+            ("project",            opts.Project),
+            ("scope",              opts.Scope),
+            ("limit",              opts.Limit.ToString()),
+            ("status",             opts.Status),
+            ("include_deprecated", opts.IncludeDeprecated ? "true" : null),
+            ("grouped",            opts.Grouped ? "true" : null));
 
         var resp = await Get($"search{qs}");
         await EnsureSuccess(resp, "Search");

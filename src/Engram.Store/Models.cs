@@ -62,6 +62,8 @@ public class Observation
     [JsonPropertyName("embedding_model")]   public string? EmbeddingModel   { get; set; }
     [JsonPropertyName("embedding_created_at")] public string? EmbeddingCreatedAt { get; set; }
     [JsonPropertyName("md_path")]             public string? MdPath            { get; set; }
+    // ENG-412: observation lifecycle status (active | deprecated | deleted)
+    [JsonPropertyName("status")]              public string  Status            { get; set; } = "active";
 }
 
 public class TimelineEntry
@@ -196,6 +198,8 @@ public record UpdateObservationParams
     [JsonPropertyName("scope")]     public string? Scope    { get; init; }
     [JsonPropertyName("topic_key")] public string? TopicKey { get; init; }
     [JsonPropertyName("md_path")]   public string? MdPath   { get; init; }
+    // ENG-412: lifecycle status transition (active | deprecated | deleted)
+    [JsonPropertyName("status")]    public string? Status   { get; init; }
 }
 
 public record SearchOptions
@@ -204,6 +208,10 @@ public record SearchOptions
     [JsonPropertyName("project")] public string? Project { get; init; }
     [JsonPropertyName("scope")]   public string? Scope   { get; init; }
     [JsonPropertyName("limit")]   public int     Limit   { get; init; } = 10;
+    // ENG-412: lifecycle status filter and grouping
+    [JsonPropertyName("status")]             public string? Status            { get; init; }
+    [JsonPropertyName("include_deprecated")] public bool    IncludeDeprecated { get; init; }
+    [JsonPropertyName("grouped")]            public bool    Grouped           { get; init; }
 }
 
 public record AddPromptParams

@@ -274,6 +274,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             Exec("ALTER TABLE observations ADD COLUMN embedding_created_at TEXT");
         if (!ColumnExists("observations", "md_path"))
             Exec("ALTER TABLE observations ADD COLUMN md_path TEXT");
+        // ENG-412: observation lifecycle status (active | deprecated | deleted)
+        if (!ColumnExists("observations", "status"))
+            Exec("ALTER TABLE observations ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+        // ENG-412: composite index for status-filtered grouping (created AFTER column)
+        Exec("CREATE INDEX IF NOT EXISTS idx_obs_topic_status ON observations(topic_key, status)");
         if (!ColumnExists("user_prompts", "deleted_at"))
             Exec("ALTER TABLE user_prompts ADD COLUMN deleted_at TIMESTAMPTZ");
         if (!ColumnExists("user_prompts", "created_by"))
@@ -686,7 +691,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at
+                   o.created_at, o.updated_at, o.deleted_at, o.status
             FROM observations o
             WHERE o.topic_key = @topic AND o.project = @project AND o.scope = @scope AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@topic", topicKey);
@@ -702,7 +707,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at
+                   o.created_at, o.updated_at, o.deleted_at, o.status
             FROM observations o WHERE o.id = @id AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
@@ -714,7 +719,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var sql = new StringBuilder(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at
+                   o.created_at, o.updated_at, o.deleted_at, o.status
             FROM observations o WHERE o.deleted_at IS NULL");
         var parms = new List<NpgsqlParameter>();
         if (!string.IsNullOrEmpty(project))
@@ -761,6 +766,18 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         if (p.Project != null) { sql.Append(", project = @project"); parms.Add(new NpgsqlParameter("@project", p.Project)); }
         if (p.Scope != null) { sql.Append(", scope = @scope"); parms.Add(new NpgsqlParameter("@scope", p.Scope)); }
         if (p.TopicKey != null) { sql.Append(", topic_key = @topic"); parms.Add(new NpgsqlParameter("@topic", (object?)p.TopicKey ?? DBNull.Value)); }
+        // ENG-412: status update
+        if (p.Status != null)
+        {
+            sql.Append(", status = @status");
+            parms.Add(new NpgsqlParameter("@status", p.Status));
+            // ENG-412 OQ-2: when status is "deleted", also set deleted_at
+            if (p.Status == "deleted")
+            {
+                sql.Append(", deleted_at = @now");
+                parms.Add(new NpgsqlParameter("@now", now));
+            }
+        }
 
         sql.Append(" WHERE id = @id AND deleted_at IS NULL");
 
@@ -795,7 +812,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         sql.Append(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status,
                    10000.0 as rank
             FROM observations o
             WHERE o.topic_key = @query AND o.deleted_at IS NULL");
@@ -806,7 +823,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             UNION ALL
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status,
                    ts_rank(o.search_vector, plainto_tsquery('simple', @q2)) as rank
             FROM observations o
             WHERE o.search_vector @@ plainto_tsquery('simple', @q2) AND o.deleted_at IS NULL");
@@ -833,7 +850,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         sql.Append(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status,
                    -1000.0 as rank
             FROM observations o
             WHERE o.topic_key = @query AND o.deleted_at IS NULL");
@@ -844,7 +861,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             UNION ALL
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status,
                    ts_rank(o.search_vector, plainto_tsquery('simple', @q2)) as rank
             FROM observations o
             WHERE o.search_vector @@ plainto_tsquery('simple', @q2) AND o.deleted_at IS NULL");
@@ -869,7 +886,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var beforeEntries = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at
+                     o.created_at, o.updated_at, o.deleted_at, o.status
               FROM observations o
               WHERE o.session_id = @sid AND o.created_at < @created AND o.deleted_at IS NULL
               ORDER BY o.created_at DESC LIMIT @limit",
@@ -884,7 +901,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var afterEntries = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at
+                     o.created_at, o.updated_at, o.deleted_at, o.status
               FROM observations o
               WHERE o.session_id = @sid AND o.created_at > @created AND o.deleted_at IS NULL
               ORDER BY o.created_at ASC LIMIT @limit",
@@ -1280,7 +1297,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var observations = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at
+                     o.created_at, o.updated_at, o.deleted_at, o.status
               FROM observations o WHERE o.deleted_at IS NULL ORDER BY o.created_at",
             Array.Empty<NpgsqlParameter>());
 
@@ -1328,7 +1345,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         data.Observations = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at
+                     o.created_at, o.updated_at, o.deleted_at, o.status
               FROM observations o WHERE o.deleted_at IS NULL AND o.project = @proj ORDER BY o.id",
             [new NpgsqlParameter("@proj", project)]);
 
@@ -1356,7 +1373,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var obsSql = @"
             SELECT id, COALESCE(sync_id,''), session_id, type, title, content, COALESCE(tool_name,''), COALESCE(project,''),
                    COALESCE(scope,'project'), COALESCE(topic_key,''), revision_count, duplicate_count, COALESCE(last_seen_at,''),
-                   created_at, updated_at, COALESCE(deleted_at,'')
+                   created_at, updated_at, COALESCE(deleted_at,''), COALESCE(status,'active')
             FROM observations
             WHERE id > @afterSeq";
         
@@ -1474,10 +1491,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project, scope,
                      topic_key, normalized_hash, revision_count, duplicate_count, last_seen_at,
-                     created_at, updated_at, deleted_at)
+                     created_at, updated_at, deleted_at, status)
                 VALUES
                     (@sync_id, @session_id, @type, @title, @content, @tool, @project, @scope,
-                     @topic, @hash, @rev, @dup, @last_seen, @created, @updated, @deleted)";
+                     @topic, @hash, @rev, @dup, @last_seen, @created, @updated, @deleted, @status)";
             cmd.Parameters.AddWithValue("@sync_id", (object?)o.SyncId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@session_id", o.SessionId);
             cmd.Parameters.AddWithValue("@type", o.Type);
@@ -1494,6 +1511,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             cmd.Parameters.AddWithValue("@created", o.CreatedAt);
             cmd.Parameters.AddWithValue("@updated", o.UpdatedAt);
             cmd.Parameters.AddWithValue("@deleted", (object?)o.DeletedAt ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@status", string.IsNullOrEmpty(o.Status) ? "active" : o.Status);
             cmd.ExecuteNonQuery();
             observationsImported++;
         }
@@ -1588,7 +1606,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content,
                    o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
                    o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at,
-                   o.deleted_at, o.md_path
+                   o.deleted_at, o.status, o.md_path
             FROM observations o
             WHERE o.md_path IS NOT NULL AND o.md_path != '' AND o.deleted_at IS NULL
             ORDER BY o.created_at DESC";
@@ -1597,7 +1615,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         while (r.Read())
         {
             var obs = ReadObservation(r);
-            obs.MdPath = r.IsDBNull(16) ? null : r.GetString(16);
+            obs.MdPath = r.IsDBNull(17) ? null : r.GetString(17);
             list.Add(obs);
         }
 
@@ -2419,6 +2437,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         CreatedAt = r.GetString(13),
         UpdatedAt = r.GetString(14),
         DeletedAt = r.IsDBNull(15) ? null : r.GetString(15),
+        Status = r.FieldCount > 16 && !r.IsDBNull(16) ? r.GetString(16) : "active",
     };
 
     private static TimelineEntry ToTimelineEntry(Observation o) => new()
@@ -2488,7 +2507,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             seen.Add(id);
 
             var obs = ReadObservation(r);
-            var rank = r.GetDouble(16);
+            var rank = r.GetDouble(17);
             list.Add(new SearchResult { Observation = obs, Rank = rank });
         }
         return list;
@@ -2500,7 +2519,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at
+                   o.created_at, o.updated_at, o.deleted_at, o.status
             FROM observations o WHERE o.id = @id AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
@@ -2533,6 +2552,21 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             sql.Append(" AND o.scope = @scope");
             parms.Add(new NpgsqlParameter("@scope", opts.Scope));
         }
+
+        // ENG-412: status filter logic
+        // - Default: status = 'active' (only active observations)
+        // - If opts.IncludeDeprecated is true: no status filter (show all)
+        // - If opts.Status is explicitly set: use that value
+        if (!opts.IncludeDeprecated && string.IsNullOrEmpty(opts.Status))
+        {
+            sql.Append(" AND o.status = 'active'");
+        }
+        else if (!string.IsNullOrEmpty(opts.Status))
+        {
+            sql.Append(" AND o.status = @status");
+            parms.Add(new NpgsqlParameter("@status", opts.Status));
+        }
+        // If IncludeDeprecated is true and no explicit status: no filter added (all statuses shown)
     }
 
     private static void AppendProjectInClause(StringBuilder sql, List<NpgsqlParameter> parms, IList<string> projects)
