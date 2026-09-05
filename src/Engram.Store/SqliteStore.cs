@@ -225,6 +225,8 @@ CREATE TABLE IF NOT EXISTS observations (
         AddColumnIfNotExists("observations", "md_path",               "TEXT");
         // HU-016: created_by for schema parity with user_prompts and cloud_mutations.
         AddColumnIfNotExists("observations", "created_by",            "TEXT");
+        // ENG-412: observation lifecycle status (active | deprecated | deleted)
+        AddColumnIfNotExists("observations", "status",                "TEXT NOT NULL DEFAULT 'active'");
         AddColumnIfNotExists("user_prompts", "sync_id",         "TEXT");
         AddColumnIfNotExists("user_prompts", "deleted_at",      "TEXT");
         AddColumnIfNotExists("user_prompts", "created_by",      "TEXT");
@@ -233,6 +235,7 @@ CREATE TABLE IF NOT EXISTS observations (
             CREATE INDEX IF NOT EXISTS idx_obs_scope         ON observations(scope);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_obs_sync_id ON observations(sync_id);
             CREATE INDEX IF NOT EXISTS idx_obs_topic         ON observations(topic_key, project, scope, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_obs_topic_status  ON observations(topic_key, status);
             CREATE INDEX IF NOT EXISTS idx_obs_deleted       ON observations(deleted_at);
             -- ENG-475: removed `title` from dedup index for consistency with PostgresStore.
             -- SQLite tolerates larger index rows but we keep parity for dedup logic.
@@ -793,12 +796,17 @@ CREATE TABLE IF NOT EXISTS observations (
             var project  = p.Project  != null ? Normalizers.NormalizeProject(p.Project) : (obs.Project ?? "");
             var scope    = p.Scope    != null ? NormalizeScope(p.Scope) : obs.Scope;
             var topicKey = p.TopicKey != null ? Normalizers.NormalizeTopicKey(p.TopicKey) : (obs.TopicKey ?? "");
+            var status   = p.Status  ?? obs.Status;
+
+            // ENG-412 OQ-2: when status is "deleted", also set deleted_at
+            var deletedAt = status == "deleted" ? "datetime('now')" : "deleted_at";
 
             Exec(tx,
-                @"UPDATE observations
+                $@"UPDATE observations
                   SET type = @type, title = @title, content = @content,
                       project = @proj, scope = @scope, topic_key = @tk,
-                      normalized_hash = @hash,
+                      normalized_hash = @hash, status = @status,
+                      deleted_at = {deletedAt},
                       revision_count = revision_count + 1,
                       updated_at = datetime('now')
                   WHERE id = @id AND deleted_at IS NULL",
@@ -809,6 +817,7 @@ CREATE TABLE IF NOT EXISTS observations (
                 Param("@scope",   scope),
                 Param("@tk",      NullableString(topicKey)),
                 Param("@hash",    Normalizers.HashNormalized(content)),
+                Param("@status",  status),
                 Param("@id",      id));
 
             var fresh = GetObservationTx(tx, id);
@@ -861,11 +870,11 @@ CREATE TABLE IF NOT EXISTS observations (
         if (query.Contains('/'))
         {
             var tkSql   = new StringBuilder(@"
-                SELECT id, ifnull(sync_id,'') as sync_id, session_id, type, title, content, tool_name, project,
-                       scope, topic_key, revision_count, duplicate_count, last_seen_at, created_at, updated_at, deleted_at,
-                       md_path
-                FROM observations
-                WHERE topic_key = @tk AND deleted_at IS NULL");
+                SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                       o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                       o.md_path, ifnull(o.status,'active') as status
+                FROM observations o
+                WHERE o.topic_key = @tk AND o.deleted_at IS NULL");
             var tkParms = new List<SqliteParameter> { Param("@tk", query) };
 
             AppendFilter(tkSql, tkParms, opts);
@@ -889,7 +898,7 @@ CREATE TABLE IF NOT EXISTS observations (
         var ftsSql   = new StringBuilder(@"
             SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                   o.md_path, fts.rank
+                   o.md_path, ifnull(o.status,'active') as status, fts.rank
             FROM observations_fts fts
             JOIN observations o ON o.id = fts.rowid
             WHERE observations_fts MATCH @fts AND o.deleted_at IS NULL");
@@ -907,7 +916,7 @@ CREATE TABLE IF NOT EXISTS observations (
         while (ftsR.Read())
         {
             var obs  = ReadObservation(ftsR);
-            var rank = ftsR.GetDouble(17);
+            var rank = ftsR.GetDouble(18);
             if (!seen.Contains(obs.Id))
                 results.Add(new SearchResult { Observation = obs, Rank = rank });
         }
@@ -1460,7 +1469,8 @@ CREATE TABLE IF NOT EXISTS observations (
                        ifnull(o.scope,'project') as scope, ifnull(o.topic_key,'') as topic_key,
                        o.revision_count, o.duplicate_count, ifnull(o.last_seen_at,'') as last_seen_at,
                        o.created_at, o.updated_at, ifnull(o.deleted_at,'') as deleted_at,
-                       ifnull(o.md_path,'') as md_path
+                       ifnull(o.md_path,'') as md_path,
+                       ifnull(o.status,'active') as status
                 FROM observations o
                 WHERE o.project = @proj AND o.deleted_at IS NULL
                 ORDER BY o.id";
@@ -1490,14 +1500,15 @@ CREATE TABLE IF NOT EXISTS observations (
         var data = new ExportData { Version = "1.1.0", ExportedAt = UtcNow() };
 
         // Query observations with id > afterSeq (filtered by project if provided)
-        // Must include all 17 columns to match ReadObservation
+        // Must include all 18 columns to match ReadObservation
         var obsSql = @"
             SELECT id, ifnull(sync_id,'') as sync_id, session_id, type, title, content,
                    ifnull(tool_name,'') as tool_name, ifnull(project,'') as project,
                    ifnull(scope,'project') as scope, ifnull(topic_key,'') as topic_key,
                    revision_count, duplicate_count, ifnull(last_seen_at,'') as last_seen_at,
                    created_at, updated_at, ifnull(deleted_at,'') as deleted_at,
-                   ifnull(md_path,'') as md_path
+                   ifnull(md_path,'') as md_path,
+                   ifnull(status,'active') as status
             FROM observations
             WHERE id > @afterSeq";
         
@@ -1605,8 +1616,8 @@ CREATE TABLE IF NOT EXISTS observations (
                 var rows = ExecRows(tx,
                     @"INSERT OR IGNORE INTO observations
                         (sync_id, session_id, type, title, content, tool_name, project, scope, topic_key,
-                         normalized_hash, revision_count, duplicate_count, last_seen_at, created_at, updated_at, deleted_at)
-                      VALUES (@sid,@sess,@type,@title,@content,@tool,@proj,@scope,@tk,@hash,@rc,@dc,@lsa,@cat,@uat,@dat)",
+                         normalized_hash, revision_count, duplicate_count, last_seen_at, created_at, updated_at, deleted_at, status)
+                      VALUES (@sid,@sess,@type,@title,@content,@tool,@proj,@scope,@tk,@hash,@rc,@dc,@lsa,@cat,@uat,@dat,@status)",
                     Param("@sid",   NormalizeExistingSyncId(obs.SyncId, "obs")),
                     Param("@sess",  obs.SessionId),
                     Param("@type",  obs.Type),
@@ -1622,7 +1633,8 @@ CREATE TABLE IF NOT EXISTS observations (
                     Param("@lsa",   (object?)obs.LastSeenAt ?? DBNull.Value),
                     Param("@cat",   obs.CreatedAt),
                     Param("@uat",   obs.UpdatedAt),
-                    Param("@dat",   (object?)obs.DeletedAt ?? DBNull.Value));
+                    Param("@dat",   (object?)obs.DeletedAt ?? DBNull.Value),
+                    Param("@status", string.IsNullOrEmpty(obs.Status) ? "active" : obs.Status));
                 result.ObservationsImported += (int)rows;
             }
 
@@ -1706,7 +1718,7 @@ CREATE TABLE IF NOT EXISTS observations (
             SELECT o.id, ifnull(o.sync_id,''), o.session_id, o.type, o.title, o.content,
                    o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
                    o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at,
-                   o.deleted_at, o.md_path
+                   o.deleted_at, o.md_path, ifnull(o.status,'active')
             FROM observations o
             WHERE o.md_path IS NOT NULL AND o.md_path != '' AND o.deleted_at IS NULL
             ORDER BY o.created_at DESC";
@@ -2896,7 +2908,7 @@ CREATE TABLE IF NOT EXISTS observations (
     private const string ObsSelect = @"
         SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-               o.md_path
+               o.md_path, o.status
         FROM observations o";
 
     private const string TimelineEntrySelect = @"
@@ -2925,6 +2937,7 @@ CREATE TABLE IF NOT EXISTS observations (
         UpdatedAt      = r.GetString(14),
         DeletedAt      = r.IsDBNull(15) ? null : r.GetString(15),
         MdPath         = r.IsDBNull(16) ? null : r.GetString(16),
+        Status         = r.FieldCount > 17 && !r.IsDBNull(17) ? r.GetString(17) : "active",
     };
 
     private static TimelineEntry ReadTimelineEntry(SqliteDataReader r) => new()
@@ -3050,6 +3063,21 @@ CREATE TABLE IF NOT EXISTS observations (
             sql.Append(" AND o.scope = @scope");
             parms.Add(Param("@scope", NormalizeScope(opts.Scope)));
         }
+
+        // ENG-412: status filter logic
+        // - Default: status = 'active' (only active observations)
+        // - If opts.IncludeDeprecated is true: no status filter (show all)
+        // - If opts.Status is explicitly set: use that value
+        if (!opts.IncludeDeprecated && string.IsNullOrEmpty(opts.Status))
+        {
+            sql.Append(" AND o.status = 'active'");
+        }
+        else if (!string.IsNullOrEmpty(opts.Status))
+        {
+            sql.Append(" AND o.status = @status");
+            parms.Add(Param("@status", opts.Status));
+        }
+        // If IncludeDeprecated is true and no explicit status: no filter added (all statuses shown)
     }
 
     // ─── Exec helpers ──────────────────────────────────────────────────────────

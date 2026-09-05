@@ -71,6 +71,31 @@ Seguir [`docs/GIT-WORKFLOW.md`](docs/GIT-WORKFLOW.md) y actualizar, según apliq
 
 ---
 
+## 3.5 Memory Lifecycle Status (ENG-412)
+
+El sistema de memoria soporta lifecycle status para decisiones arquitectónicas:
+
+| Status | Significado | Cuándo usar |
+|--------|-------------|-------------|
+| `active` | Decisión vigente (default) | Nueva decisión o decisión en uso |
+| `deprecated` | Decisión obsoleta | Cuando una nueva decisión reemplaza la anterior |
+| `deleted` | Soft-delete | Cuando la decisión ya no es relevante |
+
+**Herramientas MCP relacionadas:**
+- `mem_update(id, status="deprecated")` — Marcar decisión como obsoleta
+- `mem_search(grouped=true)` — Agrupar resultados por `topic_key`
+- `mem_search(include_deprecated=true)` — Incluir decisiones obsoletas en búsqueda
+- `mem_decision_tree(project)` — Ver panorama de decisiones agrupadas por componente
+
+**Convenciones de `topic_key`:**
+- Evolución (mismo tema): usar mismo `topic_key` → upsert
+- Reemplazo (decisión nueva): nuevo `topic_key` + deprecar antiguo
+
+**Guía completa:** [`docs/FLOWFORGE-INTEGRATION.md`](docs/FLOWFORGE-INTEGRATION.md)  
+**ADR:** [`docs/architecture/adr/ADR-015-memory-taxonomy-lifecycle.md`](docs/architecture/adr/ADR-015-memory-taxonomy-lifecycle.md)
+
+---
+
 ## 4. Convenciones de trabajo
 
 ### 4.1 Git y ramas

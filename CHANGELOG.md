@@ -7,6 +7,7 @@
 
 ### Added
 
+- **ENG-412**: Memory Taxonomy & Lifecycle — new `status` lifecycle field (`active`/`deprecated`/`deleted`) on `observations` (SQLite + PostgreSQL, idempotent migration `AddColumnIfNotExists`, backward compatible with `DEFAULT 'active'`). `mem_update` accepts `status` with closed-enum validation (`StatusValidator`); `mem_search` filters to `active` by default with new `status`, `include_deprecated`, and `grouped` params; new read-only `mem_decision_tree` tool for decision panorama. Shared `TopicKeyGrouper` helper powers both grouping interfaces. Tool descriptions document the `active → deprecated → deleted` workflow for external agents (FR-007). 1062 tests passing (991 SQLite + 71 PostgreSQL, 12 ENG-412-specific on PG). See `.ai-work/eng-412-memory-taxonomy-lifecycle/summary.md`.
 - **Deployment Profile System**: New `ENGRAM_PROFILE` environment variable with 4 pre-configured profiles:
   - `local` — SQLite, sync off (solo development)
   - `remote-server` — PostgreSQL, sync off (small team with shared DB)

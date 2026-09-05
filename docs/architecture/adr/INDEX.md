@@ -20,6 +20,7 @@
 | [ADR-012](./ADR-012-remote-server-localhost-blocking.md) | Bloqueo de conexiones localhost en perfil `remote-server` | Accepted | 2026-08-06 | victor |
 | [ADR-013](./ADR-013-sync-enabled-vs-thin-client-separation.md) | Separación `IsSyncEnabled` vs `IsRemote`/`IsThinClient` | Accepted | 2026-08-19 | victor |
 | [ADR-014](./ADR-014-desktop-hybrid-sync-architecture.md) | Desktop hybrid profile sync requires dedicated engram server instance | Accepted | 2026-08-19 | — |
+| [ADR-015](./ADR-015-memory-taxonomy-lifecycle.md) | Memory taxonomy & lifecycle status (active/deprecated/deleted) | Accepted | 2026-09-04 | victor, kaito |
 
 ---
 
@@ -49,4 +50,4 @@
 
 ---
 
-*Última actualización: 2026-08-19*
+*Última actualización: 2026-09-04*
