@@ -60,6 +60,10 @@ dist-cli/
 # Created by install_build and by 'docker build --build-arg ENGRAM_BINARY=local'
 engram-local
 
+# FlowForge temporary artifacts (context maps, specs, plans, verify reports)
+# These are working documents for AI agents, not project source code
+.ai-work/
+
 # FlowForge rework tickets live in .ai-work/{slug}/, not at repo root
 /rework_ticket.md
 
