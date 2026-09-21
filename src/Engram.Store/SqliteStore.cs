@@ -339,6 +339,10 @@ CREATE TABLE IF NOT EXISTS observations (
         Exec("UPDATE user_prompts SET sync_id = 'prompt-' || lower(hex(randomblob(16))) WHERE sync_id IS NULL OR sync_id = ''");
         Exec("INSERT OR IGNORE INTO sync_state (target_key, lifecycle, server_id, updated_at) VALUES ('cloud', 'idle', 'cloud', datetime('now'))");
 
+        // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+        EnsureSchemaMigrationsLedger();
+        ApplyPendingMigrations();
+
         // FTS triggers (idempotent check)
         if (!TriggerExists("obs_fts_insert"))
         {
@@ -634,6 +638,11 @@ CREATE TABLE IF NOT EXISTS observations (
         var normHash = Normalizers.HashNormalized(content);
         var topicKey = Normalizers.NormalizeTopicKey(p.TopicKey);
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(p.FilePath, nameof(p.FilePath));
+        ValidateMetadataLength(p.Symbol, nameof(p.Symbol));
+        ValidateMetadataLength(p.Namespace, nameof(p.Namespace));
+
         long observationId = 0;
 
         WithTx(tx =>
@@ -721,10 +730,11 @@ CREATE TABLE IF NOT EXISTS observations (
                 @"INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project,
                      scope, topic_key, normalized_hash, revision_count, duplicate_count,
-                     last_seen_at, updated_at)
+                     last_seen_at, updated_at, file_path, symbol, namespace)
                   VALUES
                     (@sid, @sess, @type, @title, @content, @tool, @proj,
-                     @scope, @tk, @hash, 1, 1, datetime('now'), datetime('now'))",
+                     @scope, @tk, @hash, 1, 1, datetime('now'), datetime('now'),
+                     @file_path, @symbol, @namespace)",
                 Param("@sid",     syncId),
                 Param("@sess",    p.SessionId),
                 Param("@type",    p.Type),
@@ -734,7 +744,10 @@ CREATE TABLE IF NOT EXISTS observations (
                 Param("@proj",    NullableString(p.Project)),
                 Param("@scope",   scope),
                 Param("@tk",      NullableString(topicKey)),
-                Param("@hash",    normHash));
+                Param("@hash",    normHash),
+                Param("@file_path", NullableString(p.FilePath)),
+                Param("@symbol",    NullableString(p.Symbol)),
+                Param("@namespace", NullableString(p.Namespace)));
 
             observationId = LastInsertRowId(tx);
             var newObs = GetObservationTx(tx, observationId)!;
@@ -872,7 +885,7 @@ CREATE TABLE IF NOT EXISTS observations (
             var tkSql   = new StringBuilder(@"
                 SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                        o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                       o.md_path, ifnull(o.status,'active') as status
+                       o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
                 FROM observations o
                 WHERE o.topic_key = @tk AND o.deleted_at IS NULL");
             var tkParms = new List<SqliteParameter> { Param("@tk", query) };
@@ -898,7 +911,7 @@ CREATE TABLE IF NOT EXISTS observations (
         var ftsSql   = new StringBuilder(@"
             SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                   o.md_path, ifnull(o.status,'active') as status, fts.rank
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace, fts.rank
             FROM observations_fts fts
             JOIN observations o ON o.id = fts.rowid
             WHERE observations_fts MATCH @fts AND o.deleted_at IS NULL");
@@ -916,7 +929,7 @@ CREATE TABLE IF NOT EXISTS observations (
         while (ftsR.Read())
         {
             var obs  = ReadObservation(ftsR);
-            var rank = ftsR.GetDouble(18);
+            var rank = ftsR.GetDouble(21);
             if (!seen.Contains(obs.Id))
                 results.Add(new SearchResult { Observation = obs, Rank = rank });
         }
@@ -1470,7 +1483,8 @@ CREATE TABLE IF NOT EXISTS observations (
                        o.revision_count, o.duplicate_count, ifnull(o.last_seen_at,'') as last_seen_at,
                        o.created_at, o.updated_at, ifnull(o.deleted_at,'') as deleted_at,
                        ifnull(o.md_path,'') as md_path,
-                       ifnull(o.status,'active') as status
+                       ifnull(o.status,'active') as status,
+                       o.file_path, o.symbol, o.namespace
                 FROM observations o
                 WHERE o.project = @proj AND o.deleted_at IS NULL
                 ORDER BY o.id";
@@ -1508,7 +1522,8 @@ CREATE TABLE IF NOT EXISTS observations (
                    revision_count, duplicate_count, ifnull(last_seen_at,'') as last_seen_at,
                    created_at, updated_at, ifnull(deleted_at,'') as deleted_at,
                    ifnull(md_path,'') as md_path,
-                   ifnull(status,'active') as status
+                   ifnull(status,'active') as status,
+                   file_path, symbol, namespace
             FROM observations
             WHERE id > @afterSeq";
         
@@ -2549,6 +2564,11 @@ CREATE TABLE IF NOT EXISTS observations (
             return;
         }
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(payload.FilePath, "file_path");
+        ValidateMetadataLength(payload.Symbol, "symbol");
+        ValidateMetadataLength(payload.Namespace, "namespace");
+
         WithTx(tx =>
         {
             try
@@ -2584,10 +2604,11 @@ CREATE TABLE IF NOT EXISTS observations (
                         @"INSERT INTO observations
                             (sync_id, session_id, type, title, content, tool_name, project,
                              scope, topic_key, normalized_hash, revision_count, duplicate_count,
-                             last_seen_at, updated_at, created_at)
+                             last_seen_at, updated_at, created_at, file_path, symbol, namespace)
                           VALUES
                             (@syncId, @sessionId, @type, @title, @content, @toolName, @project,
-                             @scope, @topicKey, @hash, 1, 1, datetime('now'), datetime('now'), COALESCE(@occurredAt, datetime('now')))",
+                             @scope, @topicKey, @hash, 1, 1, datetime('now'), datetime('now'), COALESCE(@occurredAt, datetime('now')),
+                             @file_path, @symbol, @namespace)",
                         Param("@syncId",   mutation.EntityKey),
                         Param("@sessionId", payload.SessionId ?? ""),
                         Param("@type",     payload.Type ?? ""),
@@ -2598,7 +2619,10 @@ CREATE TABLE IF NOT EXISTS observations (
                         Param("@scope",   payload.Scope ?? "project"),
                         Param("@topicKey",  payload.TopicKey ?? ""),
                         Param("@hash",     hash),
-                        Param("@occurredAt", payload.OccurredAt));
+                        Param("@occurredAt", payload.OccurredAt),
+                        Param("@file_path", payload.FilePath is not null ? (object)payload.FilePath : DBNull.Value),
+                        Param("@symbol",    payload.Symbol is not null ? (object)payload.Symbol : DBNull.Value),
+                        Param("@namespace", payload.Namespace is not null ? (object)payload.Namespace : DBNull.Value));
                 }
             }
             catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT (FK)
@@ -2745,7 +2769,7 @@ CREATE TABLE IF NOT EXISTS observations (
 
     // Payload records for deserialization
     private record SessionPullPayload(string Id, string? Project, string? Directory, string? EndedAt, string? Summary, string? StartedAt);
-    private record ObservationPullPayload(string SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt);
+    private record ObservationPullPayload(string SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt, string? FilePath, string? Symbol, string? Namespace);
     private record ObservationDeletePayload(string SyncId);
     private record PromptPullPayload(string SyncId, string? SessionId, string? Content, string? Project, string? OccurredAt);
     private record PromptDeletePayload(string SyncId);
@@ -2908,7 +2932,7 @@ CREATE TABLE IF NOT EXISTS observations (
     private const string ObsSelect = @"
         SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-               o.md_path, o.status
+               o.md_path, o.status, o.file_path, o.symbol, o.namespace
         FROM observations o";
 
     private const string TimelineEntrySelect = @"
@@ -2938,6 +2962,9 @@ CREATE TABLE IF NOT EXISTS observations (
         DeletedAt      = r.IsDBNull(15) ? null : r.GetString(15),
         MdPath         = r.IsDBNull(16) ? null : r.GetString(16),
         Status         = r.FieldCount > 17 && !r.IsDBNull(17) ? r.GetString(17) : "active",
+        FilePath       = r.FieldCount > 18 && !r.IsDBNull(18) ? r.GetString(18) : null,
+        Symbol         = r.FieldCount > 19 && !r.IsDBNull(19) ? r.GetString(19) : null,
+        Namespace      = r.FieldCount > 20 && !r.IsDBNull(20) ? r.GetString(20) : null,
     };
 
     private static TimelineEntry ReadTimelineEntry(SqliteDataReader r) => new()
@@ -3186,6 +3213,9 @@ CREATE TABLE IF NOT EXISTS observations (
         project    = obs.Project,
         scope      = obs.Scope,
         topic_key  = obs.TopicKey,
+        file_path  = obs.FilePath,
+        symbol     = obs.Symbol,
+        @namespace = obs.Namespace,
     };
 
     // ─── Migration helpers ─────────────────────────────────────────────────────
@@ -3202,6 +3232,79 @@ CREATE TABLE IF NOT EXISTS observations (
         using var alter = _db.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
         alter.ExecuteNonQuery();
+    }
+
+    // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+
+    private void EnsureSchemaMigrationsLedger()
+    {
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version    INTEGER PRIMARY KEY,
+                name       TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ");
+        // Baseline 0000: registers the pre-ENG-416 idempotent block
+        Exec(@"
+            INSERT OR IGNORE INTO schema_migrations (version, name)
+            VALUES (0, 'baseline_pre_eng416')
+        ");
+    }
+
+    private void ApplyPendingMigrations()
+    {
+        // Version 1: ENG-416 code metadata
+        if (!MigrationApplied(1))
+        {
+            MigrateCodeMetadata();
+        }
+        // Future migrations: add else-if chain or loop here
+    }
+
+    private bool MigrationApplied(int version)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = @v";
+        cmd.Parameters.AddWithValue("@v", version);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+    }
+
+    /// <summary>
+    /// ENG-416: Add file_path, symbol, namespace columns + indexes to observations.
+    /// Runs in a single transaction with its ledger INSERT (NFR-002).
+    /// </summary>
+    private void MigrateCodeMetadata()
+    {
+        // HU-016 rule: columns BEFORE indexes
+        AddColumnIfNotExists("observations", "file_path", "TEXT");
+        AddColumnIfNotExists("observations", "symbol",    "TEXT");
+        AddColumnIfNotExists("observations", "namespace", "TEXT");
+
+        // Indexes AFTER columns (HU-016: creating index before column breaks legacy DBs)
+        Exec(@"
+            CREATE INDEX IF NOT EXISTS idx_obs_file_path  ON observations(file_path);
+            CREATE INDEX IF NOT EXISTS idx_obs_symbol     ON observations(symbol);
+            CREATE INDEX IF NOT EXISTS idx_obs_namespace  ON observations(namespace);
+        ");
+
+        // Register in ledger (atomic with above via caller transaction)
+        Exec(@"
+            INSERT INTO schema_migrations (version, name)
+            VALUES (1, 'eng416_code_metadata')
+        ");
+
+        _logger?.LogInformation("Applied migration 1: eng416_code_metadata");
+    }
+
+    // ─── ENG-416: metadata length guard (FR-005) ──────────────────────────────
+
+    private void ValidateMetadataLength(string? value, string fieldName)
+    {
+        if (value is not null && value.Length > _cfg.MaxMetadataLength)
+            throw new ArgumentException(
+                $"{fieldName} exceeds maximum length of {_cfg.MaxMetadataLength} chars (got {value.Length}). " +
+                "This limit prevents PostgreSQL B-tree index overflow (2704 bytes).");
     }
 
     private bool TriggerExists(string name)

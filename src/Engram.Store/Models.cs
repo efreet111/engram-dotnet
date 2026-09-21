@@ -64,6 +64,10 @@ public class Observation
     [JsonPropertyName("md_path")]             public string? MdPath            { get; set; }
     // ENG-412: observation lifecycle status (active | deprecated | deleted)
     [JsonPropertyName("status")]              public string  Status            { get; set; } = "active";
+    // ENG-416: code metadata fields (HU-054 prerequisite)
+    [JsonPropertyName("file_path")]  public string? FilePath  { get; set; }
+    [JsonPropertyName("symbol")]     public string? Symbol     { get; set; }
+    [JsonPropertyName("namespace")]  public string? Namespace  { get; set; }
 }
 
 public class TimelineEntry
@@ -187,6 +191,9 @@ public record AddObservationParams
     [JsonPropertyName("scope")]      public string? Scope     { get; init; }
     [JsonPropertyName("topic_key")]  public string? TopicKey  { get; init; }
     [JsonPropertyName("md_path")]    public string? MdPath    { get; init; }
+    [JsonPropertyName("file_path")]  public string? FilePath  { get; init; }
+    [JsonPropertyName("symbol")]     public string? Symbol     { get; init; }
+    [JsonPropertyName("namespace")]  public string? Namespace  { get; init; }
 }
 
 public record UpdateObservationParams
