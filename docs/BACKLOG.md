@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-08-27  
+**Última actualización:** 2026-09-21  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -103,6 +103,11 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 15 | HU-024 | P1 | Feature | Redefinir perfil Desktop como híbrido: SQLite local + PostgreSQL Docker self-serving para múltiples equipos. Resiliencia ante caída de Docker. | ✅ Done | L | caso de uso power user 2026-08-19 | `docs/tasks/HU-001-HU-099/HU-024-desktop-hybrid-profile.md` — DeployProfile.Desktop = sqlite + sync, Docker Compose para PG como sync server, offline-first client para otros equipos |
 | 16 | HU-025 | P0 | Bug | offline-first usa HttpStore (thin client) en vez de SqliteStore: IsRemote mezcla thin-client con sync-enabled. offline-first no tiene store local — si el server está caído no puede leer ni escribir. | ✅ Done | M | validación PC nueva offline-first 2026-08-19 | `docs/tasks/HU-001-HU-099/HU-025-fix-offline-first-remote-bug.md` — IsRemote → IsThinClient (solo remote-server), OpenStore usa IsThinClient, offline-first usa SqliteStore |
 | 17 | HU-026 | P0 | Bug | System.CommandLine 2.0.0-beta4.22272.1 → 2.0.11: API cambió, causa CS1061 al compilar. El binary pre-built tiene bug de runtime en middleware. | ✅ Done | M | error install 2026-08-20 | `docs/tasks/HU-001-HU-099/HU-026-system-commandline-migration.md` — Program.cs migrado a API 2.0.11 (SetHandler→SetAction, AddCommand→Subcommands.Add), 7 archivos de tests migrados, 121/121 tests pasan, CHANGELOG actualizado |
+| — | **Code-Aware Memory (2026-09-21)** |
+| 18 | HU-059 | P1 | Feature | **Code-Aware Dev Agent**: query memories by code context (file, module, symbol) before/after edits. Requiere ENG-416 (schema) + ENG-484 (query tools). | Ready | L | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-059-code-aware-dev-agent.md` — `mem_recall_for_file/module/symbol` + pre/post-edit hooks |
+| 19 | HU-060 | P2 | Feature | **Code-Aware Capture (Parte B)**: captura decisiones con metadata code-aware (file_path, symbol, namespace). Extiende HU-030 (Parte A). | Ready | L | ← requirements/FlowForge + HU-030 | `docs/tasks/HU-001-HU-099/HU-060-code-aware-capture-parte-b.md` — `engram watch` + metadata extraction |
+| 20 | HU-061 | P1 | Feature | **Code-Context Arch Agent**: query past architectural decisions for a module before designing. Comparte ENG-416/484 con HU-059. | Ready | M | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-061-code-context-arch-agent.md` — `mem_decisions_for_module` + contradiction warnings |
+| 21 | HU-062 | P2 | Feature | **Contradiction Detection**: detectar memorias conflictivas y resolverlas. Requiere ENG-412 (taxonomy) + ENG-414 (contradiction logic). | Ready | L | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-062-contradiction-detection.md` — `mem_check_contradictions` + resolution workflow |
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
@@ -1080,6 +1085,7 @@ Items en P2 / Icebox con descripción breve. No para release de junio; referenci
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-09-21 | **HU-059..062 Code-Aware Memory agregadas**: Code-Aware Dev Agent (HU-059), Code-Aware Capture Parte B (HU-060), Code-Context Arch Agent (HU-061), Contradiction Detection (HU-062). Dependientes de ENG-412, ENG-416, ENG-483, ENG-484. Originado de requirements document `docs/requirements/01-engram-dotnet-dependencies-report.md`. |
 | 2026-08-27 | **ENG-415 cerrado**: Problema original resuelto por sync actual (single-server + last-write-wins). Multi-server es escenario hipotético, no prioridad actual. |
 | 2026-08-27 | **Revisión de pendientes post-HU-013/014**: ENG-302 → Done (cubierto por HU-017), ENG-401 → Done (cubierto por HU-023), ENG-415 → Strategy defined (RFC-006), ENG-424 → 7 tools sin cobertura (eran 11, se cubrieron 4 con SyncTriggerMcpTests). |
 | 2026-08-27 | **ENG-488/489/490/491 agregados**: Multi-Project Sync (HU-013), Smart Sync Triggers (HU-014), Multi-Server Dedup (RFC-006), Observations Schema Migration (RFC-007/HU-016). Documentación actualizada: ROADMAP.md, BACKLOG.md, 01-QUICK-START.md, INSTALL.md. Fix: shellcheck workflow action (ludwanpierre → ludeeus/action-shellcheck). |
