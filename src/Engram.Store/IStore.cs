@@ -34,6 +34,7 @@ public interface IStore : IDisposable
     Task<string> FormatContextAsync(string? project, string? scope);
     Task<string> FormatContextAsync(IList<string> projects, string? scope);
     Task<Stats> StatsAsync();
+    Task<DetailedStats> GetDetailedStatsAsync();
 
     // Export / Import
     Task<ExportData> ExportAsync();

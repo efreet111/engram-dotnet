@@ -449,26 +449,93 @@ contextCmd.SetAction(async (ParseResult parseResult) =>
 
 // ─── stats ────────────────────────────────────────────────────────────────────
 
-var statsCmd = new Command("stats", "Show memory system statistics");
-statsCmd.SetAction(async (ParseResult _) =>
+var statsCmd = new Command("stats", "Show detailed memory system statistics");
+var statsJsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)" };
+statsCmd.Options.Add(statsJsonOpt);
+
+statsCmd.SetAction(async (ParseResult parseResult) =>
 {
     var cfg = StoreConfig.FromEnvironment();
     using var store = OpenStore(cfg);
-    var s = await store.StatsAsync();
-    var projects = s.Projects.Count > 0 ? string.Join(", ", s.Projects) : "none yet";
+    var stats = await store.GetDetailedStatsAsync();
+
+    if (parseResult.GetValue(statsJsonOpt))
+    {
+        Console.WriteLine(JsonSerializer.Serialize(stats, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            WriteIndented = true,
+        }));
+        return;
+    }
+
     var dbLabel = cfg.IsPostgres
         ? $"PostgreSQL ({cfg.PgConnectionString?.Split(';').FirstOrDefault(p => p.StartsWith("Host=", StringComparison.OrdinalIgnoreCase))?.Split('=').LastOrDefault() ?? "unknown"})"
         : cfg.IsThinClient
             ? $"HTTP Remote ({cfg.RemoteUrl})"
             : $"{cfg.DataDir}/engram.db";
-    Console.WriteLine($"""
-        Engram Memory Stats
-          Sessions:     {s.TotalSessions}
-          Observations: {s.TotalObservations}
-          Prompts:      {s.TotalPrompts}
-          Projects:     {projects}
-          Database:     {dbLabel}
-        """);
+
+    var projectsStr = stats.Overview.Projects.Count > 0
+        ? string.Join(", ", stats.Overview.Projects)
+        : "none yet";
+
+    var sizeMb = stats.Storage.SizeBytes / (1024.0 * 1024.0);
+    var sizeStr = sizeMb >= 1
+        ? $"{sizeMb:F1} MB"
+        : $"{stats.Storage.SizeBytes / 1024.0:F1} KB";
+
+    Console.WriteLine("Engram Memory Stats");
+    Console.WriteLine("\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796");
+
+    Console.WriteLine("\n\ud83d\udcca Overview");
+    Console.WriteLine($"  Total observations: {stats.Overview.Observations}");
+    Console.WriteLine($"  Total sessions:      {stats.Overview.Sessions}");
+    Console.WriteLine($"  Total prompts:       {stats.Overview.Prompts}");
+    Console.WriteLine($"  Projects:            {stats.Overview.Projects.Count} ({projectsStr})");
+    Console.WriteLine($"  Database:            {dbLabel} ({sizeStr})");
+
+    Console.WriteLine("\n\ud83d\udcdd By Type");
+    if (stats.ByType.Count == 0)
+    {
+        Console.WriteLine("  No memories yet");
+    }
+    else
+    {
+        var total = stats.Overview.Observations;
+        foreach (var (type, count) in stats.ByType.OrderByDescending(x => x.Value))
+        {
+            var pct = total > 0 ? (count * 100.0 / total) : 0;
+            Console.WriteLine($"  {type,-15} {count,5} ({pct:F1}%)");
+        }
+    }
+
+    Console.WriteLine("\n\ud83d\udd50 Recent Activity (last 30 days)");
+    if (stats.Recent30Days.Created == 0)
+    {
+        Console.WriteLine("  No memories created in the last 30 days");
+    }
+    else
+    {
+        Console.WriteLine($"  Created: {stats.Recent30Days.Created} memories");
+        if (!string.IsNullOrEmpty(stats.Recent30Days.MostActiveProject))
+            Console.WriteLine($"  Most active project: {stats.Recent30Days.MostActiveProject}");
+        if (!string.IsNullOrEmpty(stats.Recent30Days.MostActiveType))
+            Console.WriteLine($"  Most active type: {stats.Recent30Days.MostActiveType}");
+    }
+
+    Console.WriteLine("\n\ud83e\udd06 Oldest Memories (90+ days)");
+    if (stats.Oldest90Days.Count == 0)
+    {
+        Console.WriteLine("  No memories older than 90 days");
+    }
+    else
+    {
+        Console.WriteLine($"  {stats.Oldest90Days.Count} memories not updated in 90+ days");
+        Console.WriteLine("  Run `engram stats --json` for details");
+    }
+
+    Console.WriteLine("\n\ud83d\udcbe Storage");
+    Console.WriteLine($"  Database size: {sizeStr}");
 });
 
 // ─── export ───────────────────────────────────────────────────────────────────

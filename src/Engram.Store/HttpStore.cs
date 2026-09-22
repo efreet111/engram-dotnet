@@ -306,6 +306,13 @@ public sealed class HttpStore : IStore
         return await Deserialize<Stats>(resp) ?? new Stats();
     }
 
+    public async Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var resp = await Get("stats/detailed");
+        await EnsureSuccess(resp, "GetDetailedStats");
+        return await Deserialize<DetailedStats>(resp) ?? new DetailedStats();
+    }
+
     // ─── Retention ─────────────────────────────────────────────────────
 
     public async Task<RetentionStats> GetRetentionStatsAsync()

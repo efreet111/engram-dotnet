@@ -245,6 +245,47 @@ public sealed record RetentionStats
     [JsonPropertyName("without_topic_key_90d")] public int WithoutTopicKey90d { get; set; }
 }
 
+public sealed record DetailedStats
+{
+    [JsonPropertyName("overview")]
+    public OverviewStats Overview { get; set; } = new();
+    [JsonPropertyName("by_type")]
+    public Dictionary<string, int> ByType { get; set; } = new();
+    [JsonPropertyName("recent_30d")]
+    public RecentActivityStats Recent30Days { get; set; } = new();
+    [JsonPropertyName("oldest_90d")]
+    public OldestMemoriesStats Oldest90Days { get; set; } = new();
+    [JsonPropertyName("storage")]
+    public StorageStats Storage { get; set; } = new();
+}
+
+public sealed record OverviewStats
+{
+    [JsonPropertyName("observations")] public int Observations { get; set; }
+    [JsonPropertyName("sessions")] public int Sessions { get; set; }
+    [JsonPropertyName("prompts")] public int Prompts { get; set; }
+    [JsonPropertyName("projects")] public List<string> Projects { get; set; } = new();
+    [JsonPropertyName("database_size_bytes")] public long DatabaseSizeBytes { get; set; }
+}
+
+public sealed record RecentActivityStats
+{
+    [JsonPropertyName("created")] public int Created { get; set; }
+    [JsonPropertyName("most_active_project")] public string? MostActiveProject { get; set; }
+    [JsonPropertyName("most_active_type")] public string? MostActiveType { get; set; }
+}
+
+public sealed record OldestMemoriesStats
+{
+    [JsonPropertyName("count")] public int Count { get; set; }
+}
+
+public sealed record StorageStats
+{
+    [JsonPropertyName("size_bytes")] public long SizeBytes { get; set; }
+    [JsonPropertyName("size_mb")] public double SizeMb => SizeBytes / (1024.0 * 1024.0);
+}
+
 public sealed record AgeBucket
 {
     [JsonPropertyName("label")] public string Label { get; set; } = "";
