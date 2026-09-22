@@ -1,10 +1,15 @@
+---
+flowforge_slug: hu-051-git-hooks-integration
+status: done
+---
+
 # HU-051 — Git hooks integration (`engram init`)
 
 **ENG:** ENG-481  
 **Tipo:** Feature  
 **Prioridad:** P1  
 **Esfuerzo:** S-M (1 día)  
-**Estado:** Idea  
+**Estado:** En progreso  
 **Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-005)
 
 ---
@@ -65,11 +70,11 @@ fi
 
 ## Criterios de aceptación
 
-- [ ] `engram init` en un git repo:
-  - [ ] Detecta `.git/` y crea hooks en `.git/hooks/`
-  - [ ] Crea `post-commit` hook que captura cada commit
-  - [ ] Crea `prepare-commit-msg` hook (opcional, con flag `--interactive`)
-  - [ ] Output confirma:
+- [x] `engram init` en un git repo:
+  - [x] Detecta `.git/` y crea hooks en `.git/hooks/` (PM-1)
+  - [x] Crea `post-commit` hook que captura cada commit (PM-1)
+  - [x] Crea `prepare-commit-msg` hook (opcional, con flag `--interactive`) (PM-3)
+  - [x] Output confirma:
     ```
     ✓ Git hooks installed:
       - post-commit (auto-capture every commit)
@@ -77,23 +82,23 @@ fi
     
     Disable with: rm .git/hooks/post-commit .git/hooks/prepare-commit-msg
     ```
-- [ ] Si ya existen hooks:
-  - [ ] Backup a `.git/hooks/post-commit.engram-backup`
-  - [ ] Warning: "Existing hooks backed up to *.engram-backup"
-- [ ] Si NO es git repo:
-  - [ ] Error claro: "Not a git repository. Run `git init` first."
-- [ ] Hooks funcionan:
-  - [ ] Cada commit genera una memoria con `type=commit`
-  - [ ] Memoria incluye: commit message, changed files, project ID
-  - [ ] Memoria es searcheable: `engram search "commit: fix auth"`
-- [ ] Tests:
-  - [ ] `engram init` crea hooks correctamente
-  - [ ] `post-commit` hook captura commit
-  - [ ] Backup de hooks existentes
-  - [ ] Error si no es git repo
-- [ ] Documentación:
-  - [ ] `docs/01-QUICK-START.md` — sección "Auto-capture with git hooks"
-  - [ ] `README.md` — mención de `engram init`
+- [x] Si ya existen hooks:
+  - [x] Backup a `.git/hooks/post-commit.engram-backup` (PM-2)
+  - [x] Warning: "Existing hooks backed up to *.engram-backup" (PM-2)
+- [x] Si NO es git repo:
+  - [x] Error claro: "Not a git repository. Run `git init` first." (PM-2)
+- [x] Hooks funcionan:
+  - [x] Cada commit genera una memoria con `type=commit` (PM-1)
+  - [x] Memoria incluye: commit message, changed files, project ID (PM-1)
+  - [x] Memoria es searcheable: `engram search "commit: fix auth"` (PM-1)
+- [x] Tests:
+  - [x] `engram init` crea hooks correctamente (GitInitTests 9/9)
+  - [x] `post-commit` hook captura commit (HookExecution_CapturesCommit)
+  - [x] Backup de hooks existentes (GitInit_BackupsForeignHook)
+  - [x] Error si no es git repo (GitInit_NotARepo_FailsLoud)
+- [x] Documentación:
+  - [x] `docs/01-QUICK-START.md` — sección "Auto-capture with git hooks"
+  - [x] `README.md` — mención de `engram init`
 
 ---
 

@@ -2072,6 +2072,8 @@ static string GenerateQuickCaptureTitle(string content)
 
 // ─── Assemble ────────────────────────────────────────────────────────────────
 
+var initCmd = GitInitCommand.CreateCommand();
+
 root.Subcommands.Add(serveCmd);
 root.Subcommands.Add(mcpCmd);
 root.Subcommands.Add(searchCmd);
@@ -2092,6 +2094,7 @@ root.Subcommands.Add(profileCmd);
 root.Subcommands.Add(relationsCmd);
 root.Subcommands.Add(lineageCmd);
 root.Subcommands.Add(interactiveCmd);
+root.Subcommands.Add(initCmd);
 
 return await root.Parse(args).InvokeAsync();
 

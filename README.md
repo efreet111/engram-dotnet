@@ -93,6 +93,8 @@ dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
 > **Tip:** Quick-capture a memory from anywhere: `engram "your insight here"` — no flags needed.
 
+> **Tip:** Install git hooks to auto-capture every commit as a memory: `engram init` (see [Auto-capture with git hooks](docs/01-QUICK-START.md#auto-capture-with-git-hooks)).
+
 ### 👥 Team Leader (2-5 people)
 [➜ Quick start for shared server team](docs/01-QUICK-START.md#-team-leader)
 
@@ -167,6 +169,12 @@ Export observations to an Obsidian vault.
 | `--since <date>` | Filter by creation date: ISO 8601 (`2025-01-01`) or relative (`30d`, `7d`, `24h`) |
 | `--watch` | Run as a daemon, exporting continuously |
 | `--interval <duration>` | Watch interval: `30s`, `5m`, `1h` (default `60s`) |
+
+### engram init
+
+```bash
+engram init                # Install git hooks to auto-capture commits as memories
+```
 
 ### engram sync status
 

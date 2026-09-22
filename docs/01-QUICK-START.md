@@ -89,6 +89,21 @@ engram -t insight "pattern: usamos Result<T> para errores"
 # ✓ Memory saved: #43 "pattern: usamos Result<T> para errores" (insight) [project: engram-dotnet]
 ```
 
+### Auto-capture with git hooks
+
+Run `engram init` in any git repository to install a `post-commit` hook that captures every commit as a searchable memory.
+
+```bash
+cd your-project/
+engram init                     # auto-capture every commit
+engram init --interactive       # prompt before each capture
+engram init --project my-app    # override project name
+```
+
+**Disable:** `rm .git/hooks/post-commit .git/hooks/prepare-commit-msg`
+
+> **Windows:** Requires Git Bash or WSL. Native Windows shells are not supported.
+
 ---
 
 ## 👥 Team Leader (2-5 people)
