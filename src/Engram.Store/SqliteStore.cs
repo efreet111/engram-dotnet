@@ -1409,6 +1409,88 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(stats);
     }
 
+    public Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var result = new DetailedStats();
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
+            result.Overview.Observations = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sessions";
+            result.Overview.Sessions = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
+            result.Overview.Prompts = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT project FROM observations WHERE project IS NOT NULL AND deleted_at IS NULL GROUP BY project ORDER BY MAX(created_at) DESC";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result.Overview.Projects.Add(r.GetString(0));
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COALESCE(type, 'unknown'), COUNT(*) FROM observations WHERE deleted_at IS NULL GROUP BY type";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result.ByType[r.GetString(0)] = r.GetInt32(1);
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL";
+            result.Recent30Days.Created = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        if (result.Recent30Days.Created > 0)
+        {
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT project, COUNT(*) as cnt FROM observations
+                    WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL
+                    GROUP BY project ORDER BY cnt DESC, project ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (r.Read()) result.Recent30Days.MostActiveProject = r.GetString(0);
+            }
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT COALESCE(type, 'unknown'), COUNT(*) as cnt FROM observations
+                    WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL
+                    GROUP BY type ORDER BY cnt DESC, COALESCE(type, 'unknown') ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (r.Read()) result.Recent30Days.MostActiveType = r.GetString(0);
+            }
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE updated_at < datetime('now', '-90 days') AND deleted_at IS NULL";
+            result.Oldest90Days.Count = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA page_count";
+            var pageCount = Convert.ToInt64(cmd.ExecuteScalar());
+            cmd.CommandText = "PRAGMA page_size";
+            var pageSize = Convert.ToInt64(cmd.ExecuteScalar());
+            result.Storage.SizeBytes = pageCount * pageSize;
+        }
+
+        return Task.FromResult(result);
+    }
+
     // ─── Retention ─────────────────────────────────────────────────────
 
     public Task<RetentionStats> GetRetentionStatsAsync()

@@ -1327,6 +1327,81 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         };
     }
 
+    public async Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var result = new DetailedStats();
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
+            result.Overview.Observations = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sessions";
+            result.Overview.Sessions = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
+            result.Overview.Prompts = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        var names = await ListProjectNamesAsync();
+        result.Overview.Projects = names.ToList();
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COALESCE(type, 'unknown'), COUNT(*) FROM observations WHERE deleted_at IS NULL GROUP BY type";
+            using var r = cmd.ExecuteReader();
+            while (await r.ReadAsync()) result.ByType[r.GetString(0)] = r.GetInt32(1);
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL";
+            result.Recent30Days.Created = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        if (result.Recent30Days.Created > 0)
+        {
+            using (var cmd = _dataSource.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT project, COUNT(*) as cnt FROM observations
+                    WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
+                    GROUP BY project ORDER BY cnt DESC, project ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (await r.ReadAsync()) result.Recent30Days.MostActiveProject = r.GetString(0);
+            }
+            using (var cmd = _dataSource.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT COALESCE(type, 'unknown'), COUNT(*) as cnt FROM observations
+                    WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
+                    GROUP BY type ORDER BY cnt DESC, COALESCE(type, 'unknown') ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (await r.ReadAsync()) result.Recent30Days.MostActiveType = r.GetString(0);
+            }
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE updated_at::timestamptz < NOW() - INTERVAL '90 days' AND deleted_at IS NULL";
+            result.Oldest90Days.Count = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT pg_database_size(current_database())";
+            result.Storage.SizeBytes = Convert.ToInt64(cmd.ExecuteScalar());
+        }
+
+        return result;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Retention
     // ═══════════════════════════════════════════════════════════════════════════

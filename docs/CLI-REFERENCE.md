@@ -219,17 +219,27 @@ engram context --scope team
 
 ### engram stats
 
-**Description**: Show memory system statistics.
+**Description**: Show detailed memory system statistics including breakdown by type, recent activity, oldest memories, and storage size.
 
-**Syntax**: `engram stats`
+**Syntax**: `engram stats [--json]`
+
+**Options**:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--json` | flag | Output as JSON (machine-readable) |
 
 **Examples**:
 
 ```bash
+# Human-readable output with sections
 engram stats
+
+# JSON output for scripting
+engram stats --json
 ```
 
-**Output includes**: Total sessions, observations, prompts, projects, and database type/location.
+**Output includes**: Overview (totals), By Type (breakdown with percentages), Recent Activity (last 30 days), Oldest Memories (90+ days), and Storage size.
 
 ---
 

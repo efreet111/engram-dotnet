@@ -215,6 +215,7 @@ public static class EngramServer
         app.MapPost("/md/sync",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleSyncMd(ctx, store)));
         app.MapPost("/md/index",                    (Func<HttpContext, Task<IResult>>)((ctx) => HandleGenerateIndex(ctx, store)));
         app.MapGet("/retention/stats",              (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionStats(ctx, store)));
+        app.MapGet("/stats/detailed",          (Func<HttpContext, Task<IResult>>)((ctx) => HandleDetailedStats(ctx, store)));
         app.MapPost("/retention/prune",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleRetentionPrune(ctx, store)));
         app.MapGet("/projects/migrations",          (Func<HttpContext, Task<IResult>>)((ctx) => HandleProjectMigrations(ctx, store)));
 
@@ -647,6 +648,12 @@ public static class EngramServer
     private static async Task<IResult> HandleRetentionStats(HttpContext ctx, IStore store)
     {
         var stats = await store.GetRetentionStatsAsync();
+        return Json(stats);
+    }
+
+    private static async Task<IResult> HandleDetailedStats(HttpContext ctx, IStore store)
+    {
+        var stats = await store.GetDetailedStatsAsync();
         return Json(stats);
     }
 
