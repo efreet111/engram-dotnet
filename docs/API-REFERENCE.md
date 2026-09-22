@@ -390,6 +390,42 @@ engram doctor --server http://localhost:7437
 
 ---
 
+### engram search — with code-context filters (HU-064)
+
+```bash
+# Standard text search
+engram search "JWT decision"
+
+# Query by file path (exact or prefix)
+engram search "" --file-path src/Auth/JwtBearer.cs
+engram search "" --file-path src/Auth/   # prefix match
+
+# Query by symbol (exact match)
+engram search "" --symbol IStore
+
+# Query by namespace/module (prefix match)
+engram search "" --namespace Engram.Store
+
+# Combine with filters
+engram search "" --file-path src/Auth/ --type decision --limit 5
+```
+
+---
+
+### engram save — with code-context metadata (HU-064)
+
+```bash
+# Save a memory with file/symbol/namespace context
+engram save "JWT decision" "We use RS256 algorithm" \
+  --type decision \
+  --project team/mi-api \
+  --file-path src/Auth/JwtBearer.cs \
+  --symbol JwtBearerHandler \
+  --namespace Engram.Auth
+```
+
+---
+
 ## 📊 MD Promotion & Index
 
 | Method | Endpoint | Description |

@@ -17,7 +17,9 @@
 //   engram version          Print version
 
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
+using System.Linq;
 using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
@@ -289,11 +291,17 @@ var searchTypeOpt  = new Option<string?>("--type") { Description = "Filter by ty
 var searchProjOpt  = new Option<string?>("--project") { Description = "Filter by project" };
 var searchScopeOpt = new Option<string?>("--scope") { Description = "Filter by scope: team or personal (omit for both)" };
 var searchLimitOpt = new Option<int>("--limit") { Description = "Max results", DefaultValueFactory = _ => 10 };
+var searchFilePathOpt = new Option<string?>("--file-path") { Description = "Query memories by file path (exact or prefix match)" };
+var searchSymbolOpt   = new Option<string?>("--symbol") { Description = "Query memories by exact symbol name" };
+var searchNamespaceOpt = new Option<string?>("--namespace") { Description = "Query memories by namespace/module prefix" };
 searchCmd.Arguments.Add(searchQueryArg);
 searchCmd.Options.Add(searchTypeOpt);
 searchCmd.Options.Add(searchProjOpt);
 searchCmd.Options.Add(searchScopeOpt);
 searchCmd.Options.Add(searchLimitOpt);
+searchCmd.Options.Add(searchFilePathOpt);
+searchCmd.Options.Add(searchSymbolOpt);
+searchCmd.Options.Add(searchNamespaceOpt);
 searchCmd.SetAction(async (ParseResult parseResult) =>
 {
     string query = parseResult.GetValue(searchQueryArg)!;
@@ -301,9 +309,34 @@ searchCmd.SetAction(async (ParseResult parseResult) =>
     string? proj = parseResult.GetValue(searchProjOpt);
     string? scope = parseResult.GetValue(searchScopeOpt);
     int limit = parseResult.GetValue(searchLimitOpt);
+    string? filePath = parseResult.GetValue(searchFilePathOpt);
+    string? symbol = parseResult.GetValue(searchSymbolOpt);
+    string? ns = parseResult.GetValue(searchNamespaceOpt);
 
     using var store = OpenStore();
-    var results = await store.SearchAsync(query, new SearchOptions
+
+    // Code-context query paths (HU-064)
+    if (!string.IsNullOrEmpty(filePath))
+    {
+        var results = await store.GetMemoriesByFilePathAsync(filePath, proj, type, limit);
+        PrintSearchResults(results, $"file path \"{filePath}\"");
+        return;
+    }
+    if (!string.IsNullOrEmpty(symbol))
+    {
+        var results = await store.GetMemoriesBySymbolAsync(symbol, proj, limit);
+        PrintSearchResults(results, $"symbol \"{symbol}\"");
+        return;
+    }
+    if (!string.IsNullOrEmpty(ns))
+    {
+        var results = await store.GetMemoriesByModuleAsync(ns, proj, type, limit);
+        PrintSearchResults(results, $"module \"{ns}\"");
+        return;
+    }
+
+    // Standard FTS search
+    var ftsResults = await store.SearchAsync(query, new SearchOptions
     {
         Type    = type,
         Project = proj,
@@ -311,12 +344,12 @@ searchCmd.SetAction(async (ParseResult parseResult) =>
         Limit   = limit,
     });
 
-    if (results.Count == 0) { Console.WriteLine($"No memories found for: \"{query}\""); return; }
+    if (ftsResults.Count == 0) { Console.WriteLine($"No memories found for: \"{query}\""); return; }
 
-    Console.WriteLine($"Found {results.Count} memories:\n");
-    for (int i = 0; i < results.Count; i++)
+    Console.WriteLine($"Found {ftsResults.Count} memories:\n");
+    for (int i = 0; i < ftsResults.Count; i++)
     {
-        var r = results[i].Observation;
+        var r = ftsResults[i].Observation;
         var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
         Console.WriteLine($"[{i+1}] #{r.Id} ({r.Type}) — {r.Title}");
         Console.WriteLine($"    {Truncate(r.Content, 300)}");
@@ -333,12 +366,18 @@ var saveTypeOpt   = new Option<string>("--type") { Description = "Type", Default
 var saveProjOpt   = new Option<string?>("--project") { Description = "Project name" };
 var saveScopeOpt  = new Option<string?>("--scope") { Description = "Scope: team (shared with all devs) or personal (private). Default: auto-classified from --type" };
 var saveTopicOpt  = new Option<string?>("--topic") { Description = "Topic key for upsert" };
+var saveFilePathOpt = new Option<string?>("--file-path") { Description = "File path associated with this memory (code-context)" };
+var saveSymbolOpt   = new Option<string?>("--symbol") { Description = "Symbol name associated with this memory (code-context)" };
+var saveNamespaceOpt = new Option<string?>("--namespace") { Description = "Namespace/module associated with this memory (code-context)" };
 saveCmd.Arguments.Add(saveTitleArg);
 saveCmd.Arguments.Add(saveContentArg);
 saveCmd.Options.Add(saveTypeOpt);
 saveCmd.Options.Add(saveProjOpt);
 saveCmd.Options.Add(saveScopeOpt);
 saveCmd.Options.Add(saveTopicOpt);
+saveCmd.Options.Add(saveFilePathOpt);
+saveCmd.Options.Add(saveSymbolOpt);
+saveCmd.Options.Add(saveNamespaceOpt);
 saveCmd.SetAction(async (ParseResult parseResult) =>
 {
     string title = parseResult.GetValue(saveTitleArg)!;
@@ -347,6 +386,9 @@ saveCmd.SetAction(async (ParseResult parseResult) =>
     string? proj = parseResult.GetValue(saveProjOpt);
     string? scope = parseResult.GetValue(saveScopeOpt);
     string? topic = parseResult.GetValue(saveTopicOpt);
+    string? filePath = parseResult.GetValue(saveFilePathOpt);
+    string? symbol = parseResult.GetValue(saveSymbolOpt);
+    string? ns = parseResult.GetValue(saveNamespaceOpt);
 
     using var store = OpenStore();
     var sessionId = string.IsNullOrEmpty(proj) ? "manual-save" : $"manual-save-{proj}";
@@ -360,6 +402,9 @@ saveCmd.SetAction(async (ParseResult parseResult) =>
         Project   = proj,
         Scope     = scope,
         TopicKey  = topic,
+        FilePath  = filePath,
+        Symbol    = symbol,
+        Namespace = ns,
     });
     Console.WriteLine($"Memory saved: #{id} \"{title}\" ({type})");
 });
@@ -2434,6 +2479,26 @@ static string? ParseConnStringParam(string? connString, string key)
 
 static string Truncate(string s, int max)
     => s.Length <= max ? s : s[..max] + "...";
+
+static void PrintSearchResults(IList<SearchResult> results, string context)
+{
+    if (results.Count == 0) { Console.WriteLine($"No memories found for {context}"); return; }
+
+    Console.WriteLine($"Found {results.Count} memories for {context}:\n");
+    for (int i = 0; i < results.Count; i++)
+    {
+        var r = results[i].Observation;
+        var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
+        var codeMeta = new List<string>();
+        if (!string.IsNullOrEmpty(r.FilePath)) codeMeta.Add($"file: {r.FilePath}");
+        if (!string.IsNullOrEmpty(r.Symbol)) codeMeta.Add($"symbol: {r.Symbol}");
+        if (!string.IsNullOrEmpty(r.Namespace)) codeMeta.Add($"namespace: {r.Namespace}");
+        var metaStr = codeMeta.Count > 0 ? " | " + string.Join(" | ", codeMeta) : "";
+        Console.WriteLine($"[{i + 1}] #{r.Id} ({r.Type}) — {r.Title}");
+        Console.WriteLine($"    {Truncate(r.Content, 300)}");
+        Console.WriteLine($"    {r.CreatedAt}{projectDisplay} | scope: {r.Scope}{metaStr}\n");
+    }
+}
 
 public static class SyncStatusFormatter
 {

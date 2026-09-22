@@ -967,6 +967,101 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
     }
 
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var normalizedPath = filePath.TrimEnd('/');
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND (o.file_path = @fp OR o.file_path LIKE @fp_prefix)");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@fp", normalizedPath),
+            new("@fp_prefix", normalizedPath + "/%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(new NpgsqlParameter("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.namespace LIKE @ns_prefix");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@ns_prefix", module + "%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(new NpgsqlParameter("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.symbol = @symbol");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@symbol", symbol)
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         var focus = GetObservationDirect(observationId);

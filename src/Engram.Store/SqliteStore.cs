@@ -978,6 +978,125 @@ CREATE TABLE IF NOT EXISTS observations (
         return merged;
     }
 
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var normalizedPath = filePath.TrimEnd('/');
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND (o.file_path = @fp OR o.file_path LIKE @fp_prefix)");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@fp", normalizedPath),
+            Param("@fp_prefix", normalizedPath + "/%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(Param("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.namespace LIKE @ns_prefix");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@ns_prefix", module + "%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(Param("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.symbol = @symbol");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@symbol", symbol)
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         if (before <= 0) before = 5;

@@ -236,6 +236,95 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return AppendActivityNudge(sb.ToString().TrimEnd(), activitySessionId);
     }
 
+    // ─── mem_recall_for_file (HU-064) ────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_file", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a specific file path.
+
+        Returns observations where file_path equals the given path OR file_path starts with the given path (prefix match).
+        Useful for understanding what decisions, context, or notes exist for a particular file.
+
+        EXAMPLES:
+          mem_recall_for_file("src/Auth/JwtBearer.cs")
+          mem_recall_for_file("src/Services/", limit: 5, type: "decision")
+        """)]
+    public async Task<string> MemRecallForFile(
+        [Description("The file path to query (e.g. 'src/Auth/JwtBearer.cs' or 'src/Auth/')")] string path,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesByFilePathAsync(path, resolvedProject, type, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for file path: \"{path}\"";
+
+        return FormatSearchResults(results, "file", path);
+    }
+
+    // ─── mem_recall_for_module (HU-064) ─────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_module", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a namespace/module.
+
+        Returns observations where namespace matches the given module prefix.
+        Useful for understanding what decisions or context exist for a module/package.
+
+        EXAMPLES:
+          mem_recall_for_module("Engram.Auth")
+          mem_recall_for_module("Engram.Store", type: "architecture")
+        """)]
+    public async Task<string> MemRecallForModule(
+        [Description("The namespace or module prefix to query (e.g. 'Engram.Auth' or 'Engram')")] string module,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesByModuleAsync(module, resolvedProject, type, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for module: \"{module}\"";
+
+        return FormatSearchResults(results, "module", module);
+    }
+
+    // ─── mem_recall_for_symbol (HU-064) ──────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_symbol", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a specific symbol (function, class, interface, etc.).
+
+        Returns observations where symbol exactly matches the given name.
+        Useful for understanding what decisions or context exist for a specific code symbol.
+
+        EXAMPLES:
+          mem_recall_for_symbol("JwtBearerHandler")
+          mem_recall_for_symbol("IStore")
+        """)]
+    public async Task<string> MemRecallForSymbol(
+        [Description("The exact symbol name to query (e.g. 'JwtBearerHandler' or 'IStore')")] string symbol,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesBySymbolAsync(symbol, resolvedProject, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for symbol: \"{symbol}\"";
+
+        return FormatSearchResults(results, "symbol", symbol);
+    }
+
     // ─── mem_decision_tree ────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_decision_tree", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -1521,6 +1610,34 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";
+
+    private static string FormatSearchResults(IList<SearchResult> results, string contextType, string contextValue)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {results.Count} memories for {contextType} \"{contextValue}\":");
+        sb.AppendLine();
+
+        for (int i = 0; i < results.Count; i++)
+        {
+            var r = results[i].Observation;
+            var preview = Truncate(r.Content, 300);
+            if (r.Content.Length > 300) preview += " [preview]";
+            var codeMeta = new List<string>();
+            if (!string.IsNullOrEmpty(r.FilePath)) codeMeta.Add($"file: {r.FilePath}");
+            if (!string.IsNullOrEmpty(r.Symbol)) codeMeta.Add($"symbol: {r.Symbol}");
+            if (!string.IsNullOrEmpty(r.Namespace)) codeMeta.Add($"namespace: {r.Namespace}");
+            var metaStr = codeMeta.Count > 0 ? " | " + string.Join(" | ", codeMeta) : "";
+            sb.AppendLine($"[{i + 1}] #{r.Id} ({r.Type}) — {r.Title}");
+            sb.AppendLine($"    {preview}");
+            sb.AppendLine($"    {r.CreatedAt} | scope: {r.Scope}{metaStr}");
+            sb.AppendLine();
+        }
+
+        if (results.Any(r => r.Observation.Content.Length > 300))
+            sb.AppendLine("---\nResults above are previews (300 chars). To read the full content, call mem_get_observation(id: <ID>).");
+
+        return sb.ToString().TrimEnd();
+    }
 
     private string AppendActivityNudge(string baseResponse, string sessionId)
     {

@@ -19,6 +19,11 @@ public interface IStore : IDisposable
     Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts);
     Task<TimelineResult?> TimelineAsync(long observationId, int before, int after);
 
+    // Code-context queries (HU-064)
+    Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit);
+    Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit);
+    Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit);
+
     // Prompts
     Task<long> AddPromptAsync(AddPromptParams p);
     Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit);
