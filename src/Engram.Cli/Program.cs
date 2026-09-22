@@ -1,5 +1,6 @@
 // Engram — Persistent memory for AI coding agents (C# port)
 // Usage:
+//   engram "<text>"           Quick-capture a memory
 //   engram serve [port]     Start HTTP + MCP server
 //   engram mcp              Start MCP server only (stdio transport)
 //   engram search <query>   Search memories from CLI
@@ -19,6 +20,7 @@
 using System;
 using System.Collections.Generic;
 using System.CommandLine;
+using System.CommandLine.Help;
 using System.Linq;
 using System.Text.Json;
 using Engram.Cli;
@@ -39,6 +41,25 @@ const string Version = "1.3.0";
 // ─── Root command ────────────────────────────────────────────────────────────
 
 var root = new RootCommand("Engram — persistent memory for AI coding agents");
+
+// ─── Quick-capture (HU-050) ─────────────────────────────────────────────────
+var quickCaptureArg = new Argument<string>("content")
+{
+    Description = "Quick-capture: save a memory with this text (e.g. engram \"my insight\")",
+    Arity = ArgumentArity.ZeroOrOne,  // critical: allows subcommands to still route
+};
+var qcTypeOpt = new Option<string>("--type", "-t")
+{
+    Description = "Memory type (default: note)",
+    DefaultValueFactory = _ => "note",
+};
+var qcProjOpt = new Option<string?>("--project", "-p")
+{
+    Description = "Project name (default: auto-detected)",
+};
+root.Arguments.Add(quickCaptureArg);
+root.Options.Add(qcTypeOpt);
+root.Options.Add(qcProjOpt);
 
 // ─── serve ───────────────────────────────────────────────────────────────────
 
@@ -1969,6 +1990,85 @@ interactiveCmd.SetAction(parseResult =>
     using var store = OpenStore();
     return InteractiveMenu.Run(store, Console.In, Console.Out);
 });
+
+// ─── Quick-capture handler (HU-050) ─────────────────────────────────────────
+root.SetAction(async (ParseResult parseResult) =>
+{
+    var content = parseResult.GetValue(quickCaptureArg);
+    if (string.IsNullOrWhiteSpace(content))
+    {
+        // Content explicitly provided but empty/whitespace → error (exit ≠ 0)
+        if (parseResult.GetResult(quickCaptureArg) is not null)
+        {
+            await Console.Error.WriteLineAsync("Memory content cannot be empty");
+            return 1;
+        }
+        // No args at all → show help (System.CommandLine default)
+        new HelpAction().Invoke(parseResult);
+        return 0;
+    }
+
+    // Project detection chain (paridad con mcp handler, lines 142-145)
+    var storeCfg = StoreConfig.FromEnvironment();
+    var project = parseResult.GetValue(qcProjOpt)
+        ?? storeCfg.Project
+        ?? ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
+    project = Normalizers.NormalizeProject(project);
+
+    // Title generation (FR-002)
+    var title = GenerateQuickCaptureTitle(content);
+
+    // Session ID (FR-005)
+    var sessionId = $"quick-capture-{DateTime.Now:yyyyMMddTHHmmss}";
+
+    // Persist via IStore contract (FR-001, NFR-003)
+    using var store = OpenStore();
+    await store.CreateSessionAsync(sessionId, project, "");
+    var id = await store.AddObservationAsync(new AddObservationParams
+    {
+        SessionId = sessionId,
+        Type      = parseResult.GetValue(qcTypeOpt)!,
+        Title     = title,
+        Content   = content,
+        Project   = project,
+    });
+
+    // Confirmation output (FR-007)
+    Console.WriteLine($"✓ Memory saved: #{id} \"{title}\" ({parseResult.GetValue(qcTypeOpt)}) [project: {project}]");
+    return 0;
+});
+
+static string GenerateQuickCaptureTitle(string content)
+{
+    // Split by whitespace (includes \n, \r, \t — FR-006)
+    var words = content.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    if (words.Length == 0) return content.Trim();
+
+    // Content fits in 50 chars → title = content (trimmed)
+    var trimmed = content.Trim();
+    if (trimmed.Length <= 50) return trimmed;
+
+    // Accumulate words: ≤7 words AND ≤50 chars
+    var accumulated = new System.Text.StringBuilder();
+    var count = 0;
+    foreach (var word in words)
+    {
+        if (count >= 7) break;
+        var addition = count == 0 ? word : " " + word;
+        if (accumulated.Length + addition.Length > 50) break;
+        accumulated.Append(addition);
+        count++;
+    }
+
+    // Single word > 50 chars → truncate to 47 + "…"
+    if (accumulated.Length == 0 && words.Length > 0)
+    {
+        var first = words[0];
+        return first.Length > 50 ? first[..47] + "…" : first;
+    }
+
+    return accumulated.ToString();
+}
 
 // ─── Assemble ────────────────────────────────────────────────────────────────
 

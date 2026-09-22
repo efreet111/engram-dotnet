@@ -77,6 +77,18 @@ Or see [SETUP-WIZARD.md](SETUP-WIZARD.md) and [MCP-CONFIG.md](MCP-CONFIG.md).
 
 Your AI agent can now use `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`, etc.
 
+### Quick capture from CLI
+
+Capture a memory instantly without flags:
+
+```bash
+engram "decisión: elegimos PostgreSQL por JSONB"
+# ✓ Memory saved: #42 "decisión: elegimos PostgreSQL por" (note) [project: engram-dotnet]
+
+engram -t insight "pattern: usamos Result<T> para errores"
+# ✓ Memory saved: #43 "pattern: usamos Result<T> para errores" (insight) [project: engram-dotnet]
+```
+
 ---
 
 ## 👥 Team Leader (2-5 people)

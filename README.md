@@ -91,6 +91,8 @@ dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
 > **Result**: Local SQLite server, ready to connect your agent.
 
+> **Tip:** Quick-capture a memory from anywhere: `engram "your insight here"` — no flags needed.
+
 ### 👥 Team Leader (2-5 people)
 [➜ Quick start for shared server team](docs/01-QUICK-START.md#-team-leader)
 
