@@ -194,6 +194,9 @@ public static class EngramServer
         app.MapPatch("/observations/{id:long}",     (Func<HttpContext, Task<IResult>>)((ctx) => HandleUpdateObservation(ctx, store)));
         app.MapDelete("/observations/{id:long}",    (Func<HttpContext, Task<IResult>>)((ctx) => HandleDeleteObservation(ctx, store)));
         app.MapGet("/search",                       (Func<HttpContext, Task<IResult>>)((ctx) => HandleSearch(ctx, store)));
+        app.MapGet("/search/by-file",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleSearchByFile(ctx, store)));
+        app.MapGet("/search/by-module",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleSearchByModule(ctx, store)));
+        app.MapGet("/search/by-symbol",             (Func<HttpContext, Task<IResult>>)((ctx) => HandleSearchBySymbol(ctx, store)));
         app.MapGet("/timeline",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleTimeline(ctx, store)));
         app.MapPost("/prompts",                     (Func<HttpContext, Task<IResult>>)((ctx) => HandleAddPrompt(ctx, store)));
         app.MapGet("/prompts/recent",               (Func<HttpContext, Task<IResult>>)((ctx) => HandleRecentPrompts(ctx, store)));
@@ -404,6 +407,50 @@ public static class EngramServer
             if (found.Count > 0)
                 return Json(new { results, redirects = found });
         }
+
+        return Json(results);
+    }
+
+    // ─── Code-context search (HU-064) ─────────────────────────────────────────
+
+    private static async Task<IResult> HandleSearchByFile(HttpContext ctx, IStore store)
+    {
+        var path    = ctx.Request.Query["path"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(path)) return Error("path parameter is required");
+
+        var userId  = GetUserId(ctx);
+        var results = await store.GetMemoriesByFilePathAsync(
+            path,
+            ctx.Request.Query["project"].FirstOrDefault(),
+            ctx.Request.Query["type"].FirstOrDefault(),
+            QueryInt(ctx, "limit", 10));
+
+        return Json(results);
+    }
+
+    private static async Task<IResult> HandleSearchByModule(HttpContext ctx, IStore store)
+    {
+        var module  = ctx.Request.Query["module"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(module)) return Error("module parameter is required");
+
+        var results = await store.GetMemoriesByModuleAsync(
+            module,
+            ctx.Request.Query["project"].FirstOrDefault(),
+            ctx.Request.Query["type"].FirstOrDefault(),
+            QueryInt(ctx, "limit", 10));
+
+        return Json(results);
+    }
+
+    private static async Task<IResult> HandleSearchBySymbol(HttpContext ctx, IStore store)
+    {
+        var symbol  = ctx.Request.Query["symbol"].FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(symbol)) return Error("symbol parameter is required");
+
+        var results = await store.GetMemoriesBySymbolAsync(
+            symbol,
+            ctx.Request.Query["project"].FirstOrDefault(),
+            QueryInt(ctx, "limit", 10));
 
         return Json(results);
     }

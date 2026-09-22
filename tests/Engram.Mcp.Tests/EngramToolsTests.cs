@@ -951,6 +951,151 @@ public class EngramToolsTests : IDisposable
         Assert.Contains("decision/auth", result);
         Assert.Contains("New auth", result); // The active (head) observation
     }
+
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task MemRecallForFile_ReturnsMatching_WhenExactPathExists()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "JWT decision",
+            Content   = "We use RS256 for JWT",
+            Type      = "decision",
+            Project   = "test-proj",
+            FilePath  = "src/Auth/JwtBearer.cs",
+        });
+
+        var result = await _tools.MemRecallForFile("src/Auth/JwtBearer.cs", project: "test-proj");
+
+        Assert.Contains("JWT decision", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForFile_ReturnsAll_WhenPrefixPath()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Auth decision 1",
+            Content   = "Content 1",
+            Type      = "decision",
+            Project   = "test-proj",
+            FilePath  = "src/Auth/JwtBearer.cs",
+        });
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Auth decision 2",
+            Content   = "Content 2",
+            Type      = "decision",
+            Project   = "test-proj",
+            FilePath  = "src/Auth/Claims/ClaimsProcessor.cs",
+        });
+
+        var result = await _tools.MemRecallForFile("src/Auth/", project: "test-proj");
+
+        Assert.Contains("Auth decision 1", result);
+        Assert.Contains("Auth decision 2", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForFile_ReturnsNotFound_WhenNoMatch()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Some decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-proj",
+            FilePath  = "src/Other/File.cs",
+        });
+
+        var result = await _tools.MemRecallForFile("src/Auth/JwtBearer.cs", project: "test-proj");
+
+        Assert.Contains("No memories found", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForModule_ReturnsMatching_WhenNamespaceExists()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Store decision",
+            Content   = "Use repository pattern",
+            Type      = "architecture",
+            Project   = "test-proj",
+            Namespace = "Engram.Store",
+        });
+
+        var result = await _tools.MemRecallForModule("Engram.Store", project: "test-proj");
+
+        Assert.Contains("Store decision", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForModule_ReturnsNotFound_WhenNoMatch()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Some decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-proj",
+            Namespace = "Other.Module",
+        });
+
+        var result = await _tools.MemRecallForModule("Engram.Store", project: "test-proj");
+
+        Assert.Contains("No memories found", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForSymbol_ReturnsMatching_WhenSymbolExists()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "IStore interface decision",
+            Content   = "Use IStore abstraction",
+            Type      = "architecture",
+            Project   = "test-proj",
+            Symbol    = "IStore",
+        });
+
+        var result = await _tools.MemRecallForSymbol("IStore", project: "test-proj");
+
+        Assert.Contains("IStore interface decision", result);
+    }
+
+    [Fact]
+    public async Task MemRecallForSymbol_ReturnsNotFound_WhenNoMatch()
+    {
+        await SeedSession();
+        await _store.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = SessionId,
+            Title     = "Some decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-proj",
+            Symbol    = "SomeSymbol",
+        });
+
+        var result = await _tools.MemRecallForSymbol("NonExistentSymbol", project: "test-proj");
+
+        Assert.Contains("No memories found", result);
+    }
 }
 
 // ─── McpConfig — user/project namespace tests ─────────────────────────────────
