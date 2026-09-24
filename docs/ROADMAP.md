@@ -165,7 +165,7 @@ Quick wins (P1):
 Future features (P2):
 - **ENG-483**: Code-aware memory capture (`engram watch`) — L effort
 - **ENG-484**: ✅ Code-context query tools (`mem_recall_for_file/module/symbol`) — L effort — **Done (HU-064)**
-- **ENG-485**: Onboarding flow for teams (`engram onboard`) — L effort
+- **ENG-485**: ✅ Onboarding flow for teams (`engram onboard`) — L effort — **Done (HU-055)**
 
 Visionary (Deferred):
 - **ENG-486**: MCP registry (npm-like for memories) — XL effort

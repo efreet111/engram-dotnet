@@ -237,6 +237,23 @@ public sealed class HttpStore : IStore
         return await Deserialize<List<SearchResult>>(resp) ?? [];
     }
 
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
     // ─── Prompts ──────────────────────────────────────────────────────────────
 
     public async Task<long> AddPromptAsync(AddPromptParams p)

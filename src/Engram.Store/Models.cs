@@ -314,6 +314,55 @@ public sealed record ProjectMigration
     [JsonPropertyName("migrated_at")] public string MigratedAt { get; init; } = "";
 }
 
+// ─── Onboarding (HU-055) ─────────────────────────────────────────────────────
+
+/// <summary>
+/// Top-level onboarding report returned by the onboard command.
+/// </summary>
+public sealed record OnboardingReport
+{
+    [JsonPropertyName("user")]           public string              User           { get; init; } = "";
+    [JsonPropertyName("generated_at")]   public string              GeneratedAt    { get; init; } = "";
+    [JsonPropertyName("total_memories")] public int                TotalMemories  { get; init; }
+    [JsonPropertyName("sections")]        public OnboardingSections  Sections       { get; init; } = new();
+}
+
+/// <summary>
+/// All sections of the onboarding report.
+/// </summary>
+public sealed record OnboardingSections
+{
+    [JsonPropertyName("decisions")]      public List<OnboardingItem> Decisions     { get; init; } = [];
+    [JsonPropertyName("conventions")]     public List<OnboardingItem> Conventions    { get; init; } = [];
+    [JsonPropertyName("blockers")]        public List<OnboardingItem> Blockers       { get; init; } = [];
+    [JsonPropertyName("insights")]       public List<OnboardingItem> Insights       { get; init; } = [];
+    [JsonPropertyName("where_to_start")] public List<ConceptRef>     WhereToStart  { get; init; } = [];
+}
+
+/// <summary>
+/// A single memory item in an onboarding section.
+/// </summary>
+public sealed record OnboardingItem
+{
+    [JsonPropertyName("id")]          public long    Id         { get; init; }
+    [JsonPropertyName("type")]        public string  Type       { get; init; } = "";
+    [JsonPropertyName("title")]       public string  Title      { get; init; } = "";
+    [JsonPropertyName("content")]     public string  Content    { get; init; } = "";
+    [JsonPropertyName("created_at")]  public string  CreatedAt  { get; init; } = "";
+    [JsonPropertyName("project")]     public string? Project    { get; init; }
+    [JsonPropertyName("importance")]  public double  Importance { get; init; }
+}
+
+/// <summary>
+/// A referenced concept (file_path, symbol, or namespace) with its reference count.
+/// </summary>
+public sealed record ConceptRef
+{
+    [JsonPropertyName("concept")]    public string Concept   { get; init; } = "";
+    [JsonPropertyName("type")]       public string Type      { get; init; } = ""; // "file_path" | "symbol" | "namespace"
+    [JsonPropertyName("ref_count")]  public int    RefCount  { get; init; }
+}
+
 // ─── Domain exceptions ────────────────────────────────────────────────────────
 
 public sealed class SessionNotFoundException : Exception

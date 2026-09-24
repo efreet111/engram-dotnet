@@ -4,7 +4,8 @@
 **Tipo:** Feature  
 **Prioridad:** P2  
 **Esfuerzo:** L (1-2 días)  
-**Estado:** Idea  
+**Estado:** Done  
+**flowforge_slug:** hu-055-onboarding-flow  
 **Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-004)
 
 ---
@@ -71,30 +72,30 @@ Last updated: 2026-08-12
 
 ## Criterios de aceptación
 
-- [ ] `engram onboard --user <handle>`:
-  - [ ] Genera resumen markdown con secciones:
-    - [ ] **Top 10 Architectural Decisions**: memorias de `type = decision`, ordenadas por "importancia" (recencia + referencias)
-    - [ ] **Active Conventions**: memorias de `type = convention`, ordenadas por recencia
-    - [ ] **Known Blockers / Gotchas**: memorias de `type = blocker` o `gotcha`
-    - [ ] **Recent Insights**: memorias de últimos 30 días, todos los tipos
-    - [ ] **Where to Start**: archivos/conceptos más referenciados en memorias
-  - [ ] Output formateado en markdown (piped a file o stdout)
-  - [ ] Flag `--format markdown|json` para output machine-readable
-  - [ ] Flag `--days <N>` para customizar ventana de "recent" (default: 30)
-  - [ ] Flag `--output <file>` para guardar a archivo (default: stdout)
+- [x] `engram onboard --user <handle>`:
+  - [x] Genera resumen markdown con secciones:
+    - [x] **Top 10 Architectural Decisions**: memorias de `type = decision`, ordenadas por "importancia" (recencia + referencias)
+    - [x] **Active Conventions**: memorias de `type = convention`, ordenadas por recencia
+    - [x] **Known Blockers / Gotchas**: memorias de `type = blocker` o `gotcha`
+    - [x] **Recent Insights**: memorias de últimos 30 días, todos los tipos
+    - [x] **Where to Start**: archivos/conceptos más referenciados en memorias
+  - [x] Output formateado en markdown (piped a file o stdout)
+  - [x] Flag `--format markdown|json` para output machine-readable
+  - [x] Flag `--days <N>` para customizar ventana de "recent" (default: 30)
+  - [x] Flag `--output <file>` para guardar a archivo (default: stdout)
 
-- [ ] **Memory importance signal** (heuristic simple):
-  - [ ] Recencia: memorias de últimos 90 días pesan más
-  - [ ] Type weight: `decision` > `insight` > `note` > `blocker`
-  - [ ] Reference count: memorias referenciadas por otras memorias (via `mem_relations`) pesan más
+- [x] **Memory importance signal** (heuristic simple):
+  - [x] Recencia: memorias de últimos 90 días pesan más
+  - [x] Type weight: `decision` > `insight` > `note` > `blocker`
+  - [x] Reference count: memorias referenciadas por otras memorias (via `mem_relations`) pesan más
   - [ ] Access count (future, requiere ENG-482 v2): memorias más leídas pesan más
 
-- [ ] **Tests**:
-  - [ ] Onboarding con SQLite (in-memory)
+- [x] **Tests**:
+  - [x] Onboarding con SQLite (in-memory)
   - [ ] Onboarding con Postgres (Testcontainers)
-  - [ ] Output markdown válido
-  - [ ] Output JSON válido
-  - [ ] Edge case: equipo sin memorias (0 memories)
+  - [x] Output markdown válido
+  - [x] Output JSON válido
+  - [x] Edge case: equipo sin memorias (0 memories)
   - [ ] Edge case: equipo con pocas memorias (<10)
 
 - [ ] **Documentación**:
@@ -219,5 +220,5 @@ dotnet test tests/Engram.Cli.Tests/ --filter "Onboard"
 
 ## Referencias
 
-- [ENGRAM-IDEA-004](/mnt/86FC44B0FC449BF5/Proyectos/Desarrollo/engram-feature-ideas.md#engram-idea-004--onboarding-flow-for-new-team-members-engram-onboard) — idea original
+- [ENGRAM-IDEA-004](https://github.com/efreet111/engram-feature-ideas) — idea original (external)
 - [ENG-485 en BACKLOG](../../BACKLOG.md#eng-485)

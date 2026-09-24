@@ -2141,6 +2141,7 @@ static string GenerateQuickCaptureTitle(string content)
 
 var initCmd = GitInitCommand.CreateCommand();
 var watchCmd = WatchCommand.CreateCommand();
+var onboardCmd = OnboardCommand.CreateCommand();
 
 root.Subcommands.Add(serveCmd);
 root.Subcommands.Add(mcpCmd);
@@ -2164,6 +2165,7 @@ root.Subcommands.Add(lineageCmd);
 root.Subcommands.Add(interactiveCmd);
 root.Subcommands.Add(initCmd);
 root.Subcommands.Add(watchCmd);
+root.Subcommands.Add(onboardCmd);
 
 return await root.Parse(args).InvokeAsync();
 

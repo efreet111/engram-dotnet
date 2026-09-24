@@ -1097,6 +1097,282 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult<IList<SearchResult>>(results);
     }
 
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    private const double TypeWeightDecision = 3.0;
+    private const double TypeWeightInsight = 2.0;
+    private const double TypeWeightConvention = 2.0;
+    private const double TypeWeightBlocker = 1.5;
+    private const double TypeWeightGotcha = 1.5;
+    private const double TypeWeightManual = 1.0;
+
+    private static double GetTypeWeight(string type) => type.ToLowerInvariant() switch
+    {
+        "decision" => TypeWeightDecision,
+        "insight" => TypeWeightInsight,
+        "convention" => TypeWeightConvention,
+        "blocker" => TypeWeightBlocker,
+        "gotcha" => TypeWeightGotcha,
+        _ => TypeWeightManual,
+    };
+
+    private static double GetRecencyScore(string createdAt, int days)
+    {
+        if (!DateTime.TryParse(createdAt, out var created))
+            return 0.2;
+        var age = DateTime.UtcNow - created;
+        if (age.TotalDays < 30) return 1.0;
+        if (age.TotalDays < 60) return 0.7;
+        if (age.TotalDays < 90) return 0.4;
+        return 0.2;
+    }
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = $@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace,
+                   {TypeWeightDecision} * (
+                       CASE WHEN o.created_at >= @cutoff THEN 1.0
+                            WHEN o.created_at >= date(@cutoff,'-30 days') THEN 0.7
+                            WHEN o.created_at >= date(@cutoff,'-60 days') THEN 0.4
+                            ELSE 0.2 END
+                   ) as importance_score
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'decision'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY importance_score DESC, o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = Convert.ToDouble(r["importance_score"]) });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'convention'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+    {
+        project = Normalizers.NormalizeProject(project);
+
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type IN ('blocker', 'gotcha')";
+
+        var parms = new List<SqliteParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC";
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type != 'memory_relation'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        // Step 1: collect target observation IDs from all memory_relation observations
+        var refCounts = new Dictionary<string, (string type, int count)>();
+
+        using (var cmdRel = _db.CreateCommand())
+        {
+            cmdRel.CommandText = @"
+                SELECT content FROM observations
+                WHERE deleted_at IS NULL AND status = 'active' AND type = 'memory_relation'";
+            if (!string.IsNullOrEmpty(project))
+            {
+                cmdRel.CommandText += " AND project = @proj";
+                cmdRel.Parameters.Add(Param("@proj", project));
+            }
+            using var r = cmdRel.ExecuteReader();
+            while (r.Read())
+            {
+                var content = r.GetString(0);
+                if (string.IsNullOrWhiteSpace(content)) continue;
+                try
+                {
+                    // Inline JSON structure to avoid cross-project reference
+                    // Expected: { "observation_id": 123, "relations": [{ "type": "depends_on", "target_observation_id": 456 }] }
+                    using var doc = System.Text.Json.JsonDocument.Parse(content);
+                    var relations = doc.RootElement.GetProperty("relations");
+                    foreach (var rel in relations.EnumerateArray())
+                    {
+                        var targetId = rel.GetProperty("target_observation_id").GetInt64();
+                        var key = $"obs:{targetId}";
+                        if (refCounts.TryGetValue(key, out var existing))
+                            refCounts[key] = (existing.type, existing.count + 1);
+                        else
+                            refCounts[key] = ("observation", 1);
+                    }
+                }
+                catch { /* skip malformed JSON */ }
+            }
+        }
+
+        if (refCounts.Count == 0)
+            return Task.FromResult<IList<ConceptRef>>(new List<ConceptRef>());
+
+        // Step 2: look up the observations that were referenced and collect their concepts
+        var conceptCounts = new Dictionary<string, (string type, int count)>();
+        foreach (var kvp in refCounts)
+        {
+            var obsId = long.Parse(kvp.Key.Replace("obs:", ""));
+            using var cmdObs = _db.CreateCommand();
+            cmdObs.CommandText = @"
+                SELECT file_path, symbol, namespace FROM observations
+                WHERE id = @id AND deleted_at IS NULL";
+            cmdObs.Parameters.Add(Param("@id", obsId));
+            using var r = cmdObs.ExecuteReader();
+            if (r.Read())
+            {
+                var fp = r.IsDBNull(0) ? null : r.GetString(0);
+                var sym = r.IsDBNull(1) ? null : r.GetString(1);
+                var ns = r.IsDBNull(2) ? null : r.GetString(2);
+
+                if (!string.IsNullOrEmpty(fp))
+                {
+                    var key = $"file_path:{fp}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("file_path", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(sym))
+                {
+                    var key = $"symbol:{sym}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("symbol", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(ns))
+                {
+                    var key = $"namespace:{ns}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("namespace", kvp.Value.count);
+                }
+            }
+        }
+
+        var sorted = conceptCounts
+            .OrderByDescending(x => x.Value.count)
+            .Take(limit)
+            .Select(x => new ConceptRef
+            {
+                Concept = x.Key.Split(':', 2)[1],
+                Type = x.Value.type,
+                RefCount = x.Value.count,
+            })
+            .ToList();
+
+        return Task.FromResult<IList<ConceptRef>>(sorted);
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         if (before <= 0) before = 5;

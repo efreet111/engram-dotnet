@@ -1062,6 +1062,230 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
     }
 
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    private const double PgTypeWeightDecision = 3.0;
+    private const double PgTypeWeightInsight = 2.0;
+    private const double PgTypeWeightConvention = 2.0;
+    private const double PgTypeWeightBlocker = 1.5;
+    private const double PgTypeWeightGotcha = 1.5;
+    private const double PgTypeWeightManual = 1.0;
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+    {
+        if (limit <= 0) limit = 10;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = $@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
+                   {PgTypeWeightDecision} * (
+                       CASE WHEN o.created_at >= @cutoff THEN 1.0
+                            WHEN o.created_at >= @cutoff::timestamp - INTERVAL '30 days' THEN 0.7
+                            WHEN o.created_at >= @cutoff::timestamp - INTERVAL '60 days' THEN 0.4
+                            ELSE 0.2 END
+                   ) as importance_score
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'decision'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY importance_score DESC, o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+    {
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'convention'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+    {
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type IN ('blocker', 'gotcha')";
+
+        var parms = new List<NpgsqlParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC";
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+    {
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type != 'memory_relation'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public async Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+    {
+        if (limit <= 0) limit = 10;
+
+        // Step 1: collect target observation IDs from memory_relation observations
+        var refCounts = new Dictionary<string, (string type, int count)>();
+
+        await using var conn1 = _dataSource.OpenConnection();
+        var relSql = @"
+            SELECT content FROM observations
+            WHERE deleted_at IS NULL AND status = 'active' AND type = 'memory_relation'";
+        var relParms = new List<NpgsqlParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            relSql += " AND project = @proj";
+            relParms.Add(new NpgsqlParameter("@proj", project));
+        }
+
+        await using (var cmdRel = new NpgsqlCommand(relSql, conn1))
+        {
+            foreach (var p in relParms) cmdRel.Parameters.Add(p);
+            await using var r = await cmdRel.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+            {
+                var content = r.GetString(0);
+                if (string.IsNullOrWhiteSpace(content)) continue;
+                try
+                {
+                    // Inline JSON structure to avoid cross-project reference
+                    using var doc = System.Text.Json.JsonDocument.Parse(content);
+                    var relations = doc.RootElement.GetProperty("relations");
+                    foreach (var rel in relations.EnumerateArray())
+                    {
+                        var targetId = rel.GetProperty("target_observation_id").GetInt64();
+                        var key = $"obs:{targetId}";
+                        if (refCounts.TryGetValue(key, out var existing))
+                            refCounts[key] = (existing.type, existing.count + 1);
+                        else
+                            refCounts[key] = ("observation", 1);
+                    }
+                }
+                catch { /* skip malformed JSON */ }
+            }
+        }
+
+        if (refCounts.Count == 0)
+            return new List<ConceptRef>();
+
+        // Step 2: look up referenced observations and extract concepts
+        var conceptCounts = new Dictionary<string, (string type, int count)>();
+        foreach (var kvp in refCounts)
+        {
+            var obsId = long.Parse(kvp.Key.Replace("obs:", ""));
+            await using var conn2 = _dataSource.OpenConnection();
+            await using var cmdObs = new NpgsqlCommand(
+                @"SELECT file_path, symbol, namespace FROM observations
+                  WHERE id = @id AND deleted_at IS NULL", conn2);
+            cmdObs.Parameters.Add(new NpgsqlParameter("@id", obsId));
+            await using var r2 = await cmdObs.ExecuteReaderAsync();
+            if (await r2.ReadAsync())
+            {
+                var fp = r2.IsDBNull(0) ? null : r2.GetString(0);
+                var sym = r2.IsDBNull(1) ? null : r2.GetString(1);
+                var ns = r2.IsDBNull(2) ? null : r2.GetString(2);
+
+                if (!string.IsNullOrEmpty(fp))
+                {
+                    var key = $"file_path:{fp}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("file_path", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(sym))
+                {
+                    var key = $"symbol:{sym}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("symbol", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(ns))
+                {
+                    var key = $"namespace:{ns}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("namespace", kvp.Value.count);
+                }
+            }
+        }
+
+        var sorted = conceptCounts
+            .OrderByDescending(x => x.Value.count)
+            .Take(limit)
+            .Select(x => new ConceptRef
+            {
+                Concept = x.Key.Split(':', 2)[1],
+                Type = x.Value.type,
+                RefCount = x.Value.count,
+            })
+            .ToList();
+
+        return sorted;
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         var focus = GetObservationDirect(observationId);

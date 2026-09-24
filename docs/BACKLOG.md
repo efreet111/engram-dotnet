@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-09-21  
+**Última actualización:** 2026-09-24  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -110,6 +110,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | 19 | HU-060 | P2 | Feature | **Code-Aware Capture (Parte B)**: captura decisiones con metadata code-aware (file_path, symbol, namespace). Extiende HU-030 (Parte A). | Ready | L | ← requirements/FlowForge + HU-030 | `docs/tasks/HU-001-HU-099/HU-060-code-aware-capture-parte-b.md` — `engram watch` + metadata extraction |
 | 20 | HU-061 | P1 | Feature | **Code-Context Arch Agent**: query past architectural decisions for a module before designing. Comparte ENG-416/484 con HU-059. | Ready | M | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-061-code-context-arch-agent.md` — `mem_decisions_for_module` + contradiction warnings |
 | 21 | HU-062 | P2 | Feature | **Contradiction Detection**: detectar memorias conflictivas y resolverlas. Requiere ENG-412 (taxonomy) + ENG-414 (contradiction logic). | Ready | L | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-062-contradiction-detection.md` — `mem_check_contradictions` + resolution workflow |
+| 22 | HU-055 | P2 | Feature | **Onboarding Flow**: `engram onboard` genera resumen de onboarding para nuevos devs a partir de memorias del equipo. | ✅ Done | L | ← ENGRAM-IDEA-004 | `docs/tasks/HU-001-HU-099/HU-055-onboarding-flow.md` — comando `engram onboard` con 5 secciones, filtros --days/--project/--format/--output, 7 tests |
 | — | **Estabilidad inmediata (v1.0.0)** |
 | 10 | ENG-410 | P1 | Feature | Project identity fingerprint (.engram-id UUID v5 determinista) | Done | M | ← PRD memoria semántica | `00e340cd` generado. RFC-001. |
 | 11 | ENG-411 | P1 | Chore | SQLite WAL mode + Polly retry para SQLITE_BUSY | Done | S | ← PRD memoria semántica punto #5 | WAL ya existía (ApplyPragmas). +Polly 8.7 retry pipeline (3 retries, exp backoff) en `86db473` |
@@ -1009,7 +1010,7 @@ curl http://servidor:7437/observations/recent?project=team/mi-api
 | — | **Developer Experience — Code-aware & Team features (future)** |
 | 63 | ENG-483 | P2 | Feature | **Code-aware memory capture**: `engram watch <file>` + file watching para captura automática de memorias desde cambios de código. Complementa ENG-481 (git hooks). | ✅ Done | L | ← feature ideas 2026-08 (IDEA-001) | HU-053: FlowForge CKP-0→CKP-4 completo. `WatchCommand.cs` + `FileWatchLoop.cs` + `FileWatchTests.cs` (18 tests). Docs: CLI-REFERENCE, QUICK-START, README actualizados. PM-1..PM-5 pending. |
 | 64 | ENG-484 | P2 | Feature | **Code-context query tools**: familia de MCP tools code-aware (`mem_recall_for_file`, `mem_recall_for_symbol`, etc.). Requiere schema evolution (ENG-416) para code metadata. | ✅ Done | L | ← feature ideas 2026-08 (IDEA-002) | HU-064: `docs/tasks/HU-001-HU-099/HU-064-code-context-query-tools.md` — 3 MCP tools + CLI flags + 14 tests + HttpStore integration + REST endpoints `/search/by-file|module|symbol`. Ver [HU-054](./docs/tasks/HU-001-HU-099/HU-054-code-context-queries.md) para spec detallada. |
-| 65 | ENG-485 | P2 | Feature | **Onboarding flow para teams**: `engram onboard --user <handle>` genera resumen de conocimiento del equipo (top decisions, conventions, blockers, recent insights). Killer feature para team adoption. | Idea | L | ← feature ideas 2026-08 (IDEA-004) | Ver [HU-055](../docs/tasks/HU-001-HU-099/HU-055-onboarding-flow.md). Requiere que teams tengan memories (ENG-480/481 primero). |
+| 65 | ENG-485 | P2 | Feature | **Onboarding flow para teams**: `engram onboard --user <handle>` genera resumen de conocimiento del equipo (top decisions, conventions, blockers, recent insights). Killer feature para team adoption. | ✅ Done | L | ← feature ideas 2026-08 (IDEA-004) | Ver [HU-055](../docs/tasks/HU-001-HU-099/HU-055-onboarding-flow.md). Implementado: `OnboardCommand.cs` + 5 métodos en IStore + tests (7 tests). |
 | — | **Visionary — largo plazo (revisar en 6-12 meses)** |
 | 66 | ENG-486 | P2 | Feature | **MCP registry (visionario)**: registry público de memory packages (como npm para memorias). Developers publican patrones/anti-patrones, otros los importan. Multi-meses de trabajo. | Deferred | XL | ← feature ideas 2026-08 (IDEA-007) | Ver [HU-056](../docs/tasks/HU-001-HU-099/HU-056-mcp-registry.md). Revisar cuando engram tenga >1K usuarios activos. |
 | 67 | ENG-487 | P2 | Feature | **Cross-functional team memory (visionario)**: namespace support para que dev/product/design compartan memorias en mismo store pero visibles por función. | Deferred | L-XL | ← feature ideas 2026-08 (IDEA-008) | Ver [HU-057](../docs/tasks/HU-001-HU-099/HU-057-cross-functional-memory.md). Solo importa a escala (equipos 10+ personas). |
