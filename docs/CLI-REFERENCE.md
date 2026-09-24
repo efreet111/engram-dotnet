@@ -33,6 +33,7 @@
 | `engram retention check` | Show retention statistics |
 | `engram retention prune` | Prune old observations |
 | `engram obsidian-export` | Export to Obsidian vault |
+| `engram watch <path>` | Watch files and auto-capture code changes |
 | `engram relations` | Manage observation relations |
 | `engram lineage` | Build lineage tree |
 | `engram version` | Print version |
@@ -284,6 +285,56 @@ engram export backup-2024-01-15.json
 ```bash
 engram import engram-export.json
 ```
+
+---
+
+### engram watch
+
+**Description**: Watch files and automatically capture code changes as memories (`type=code_change`). Each significant change (>= threshold lines) becomes a memory with `file_path`, `topic_key=code-change:{path}`, and a shared `session_id` per invocation.
+
+**Syntax**: `engram watch <path> [path...] [--threshold <lines>] [--ignore-pattern <glob>] [--project <name>]`
+
+**Arguments**:
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `path` | string[] (1+) | File, directory (non-recursive), or simple glob (`*`/`?`) to watch |
+
+**Options**:
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--threshold` | int | `10` | Minimum changed lines to capture (comparison `>=`) |
+| `--ignore-pattern` | string[] | `[]` | Glob pattern to exclude (repeatable; matches filename or relative path) |
+| `--project` | string | auto-detected | Override detected project name |
+
+**Project Detection Chain**: `--project` → `ENGRAM_PROJECT` → git remote → git root → cwd basename
+
+**Examples**:
+
+```bash
+# Watch a single file
+engram watch src/Auth/JwtBearer.cs
+
+# Watch a directory (non-recursive) with custom threshold
+engram watch src/ --threshold 20
+
+# Exclude files with a glob pattern (repeatable)
+engram watch src/ --ignore-pattern "*.log" --ignore-pattern "*.tmp"
+
+# Watch a glob (quote it to prevent shell expansion)
+engram watch "src/Auth/*.cs"
+```
+
+**Error messages**:
+
+| Condition | Message (stderr) | Exit |
+|-----------|------------------|------|
+| Path does not exist | `error: File not found: {path}` | 1 |
+| Invalid threshold | `error: --threshold must be a positive integer` | 1 |
+| All targets filtered out | `error: No files to watch` | 1 |
+
+Press `Ctrl+C` to stop watching gracefully (`✓ Watch stopped. {n} memories captured.`).
 
 ---
 

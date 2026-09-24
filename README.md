@@ -148,6 +148,7 @@ Profiles define sensible defaults; override individual variables as needed. See 
 | **TTL Configurable** | ✅ Archived | — |
 | **Doctor Diagnostic** | ✅ Archived | — |
 | **Obsidian Export** | ✅ Complete | — |
+| **Code-Aware Watch** | ✅ Complete | [CLI Reference](docs/CLI-REFERENCE.md) |
 
 ---
 
@@ -175,6 +176,20 @@ Export observations to an Obsidian vault.
 ```bash
 engram init                # Install git hooks to auto-capture commits as memories
 ```
+
+### engram watch
+
+Watch files and auto-capture code changes as memories (`type=code_change`).
+
+```bash
+engram watch src/Auth/JwtBearer.cs     # watch a single file
+engram watch src/                       # watch a directory (non-recursive)
+engram watch "src/Auth/*.cs"            # watch a glob (quote it)
+engram watch src/ --threshold 20        # only capture changes >= 20 lines
+engram watch src/ --ignore-pattern "*.log"
+```
+
+See [Auto-capture with file watching](docs/01-QUICK-START.md#auto-capture-with-file-watching).
 
 ### engram sync status
 

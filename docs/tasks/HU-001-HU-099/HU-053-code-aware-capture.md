@@ -1,10 +1,16 @@
+---
+flowforge_slug: hu-053-code-aware-capture
+status: done
+---
+
 # HU-053 — Code-aware memory capture
 
 **ENG:** ENG-483  
 **Tipo:** Feature  
 **Prioridad:** P2  
-**Esfuerzo:** L (2-4 días)  
-**Estado:** Idea  
+**Esfuerzo:** L (2-4 días) — **Implementado:** ~2 días  
+**Estado:** Done  
+**Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-001)  
 **Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-001)
 
 ---

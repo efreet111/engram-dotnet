@@ -104,6 +104,27 @@ engram init --project my-app    # override project name
 
 > **Windows:** Requires Git Bash or WSL. Native Windows shells are not supported.
 
+### Auto-capture with file watching
+
+Watch files and capture every significant change as a `code_change` memory — no manual command needed. Each change of at least 10 lines (configurable) becomes a memory grouped by file (`topic_key=code-change:{path}`).
+
+```bash
+engram watch src/Auth/JwtBearer.cs              # watch a single file
+engram watch src/                                # watch a directory (non-recursive)
+engram watch "src/Auth/*.cs"                     # watch a glob (quote it)
+engram watch src/ --threshold 20                 # only capture changes >= 20 lines
+engram watch src/ --ignore-pattern "*.log"       # exclude files
+```
+
+Output looks like:
+
+```
+👀 Watching src/Auth/JwtBearer.cs...
+✓ Memory saved: #1234 "Changed: src/Auth/JwtBearer.cs" (code_change) [project: engram-dotnet]
+```
+
+Press `Ctrl+C` to stop watching (`✓ Watch stopped. N memories captured.`).
+
 ---
 
 ## 👥 Team Leader (2-5 people)
