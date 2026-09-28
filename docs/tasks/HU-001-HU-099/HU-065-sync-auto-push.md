@@ -4,7 +4,7 @@
 **Tipo:** Bug / Feature  
 **Prioridad:** P1  
 **Esfuerzo:** M (4-8 horas)  
-**Estado:** Ready  
+**Estado:** ✅ Done (2026-09-28)  
 **Origen:** ← Descubierto durante FF-003 (FlowForge onboarding flow) el 2026-08-23
 
 ---
