@@ -3,7 +3,7 @@
 > **Fuente de verdad para el orden de trabajo.**  
 > El [ROADMAP](ROADMAP.md) describe fases y visión; **este archivo define qué hacer ahora y en qué orden.**
 
-**Última actualización:** 2026-09-24  
+**Última actualización:** 2026-09-28  
 **Meta release:** finales de junio 2026 (uso por terceros + instalador)
 
 ---
@@ -106,7 +106,7 @@ Trabajar en este orden. **P0** = antes de publicitar; **P1** = junio; **P2** = d
 | — | **Code-Aware Memory (2026-09-21)** |
 | 16 | HU-063 | P2 | Chore | **Schema Evolution**: agrega `file_path`, `symbol`, `namespace` a `observations` + tabla `schema_migrations` (ledger). Prerequisito para todas las code-aware features. | Ready | M | ← HU-059 prerequisite | `docs/tasks/HU-001-HU-099/HU-063-schema-evolution.md` — ledger + columnas + índices |
 | 17 | HU-064 | P2 | Feature | **Code-Context Query Tools**: `mem_recall_for_file/module/symbol` MCP tools + CLI. Depende de HU-063. | ✅ Done | L | ← HU-059 prerequisite | `docs/tasks/HU-001-HU-099/HU-064-code-context-query-tools.md` — 3 MCP tools + CLI flags + 17 tests |
-| 18 | HU-059 | P1 | Feature | **Code-Aware Dev Agent**: query memories by code context (file, module, symbol) before/after edits. Requiere HU-063 (schema) + HU-064 (query tools). | Blocked | L | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-059-code-aware-dev-agent.md` — `mem_recall_for_file/module/symbol` + pre/post-edit hooks |
+| 18 | HU-059 | P1 | Feature | **Code-Aware Dev Agent**: query memories by code context (file, module, symbol) before/after edits. Requiere HU-063 (schema) + HU-064 (query tools). | ✅ Done | S | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-059-code-aware-dev-agent.md` — 6 integration tests + hooks docs + HU update |
 | 19 | HU-060 | P2 | Feature | **Code-Aware Capture (Parte B)**: captura decisiones con metadata code-aware (file_path, symbol, namespace). Extiende HU-030 (Parte A). | Ready | L | ← requirements/FlowForge + HU-030 | `docs/tasks/HU-001-HU-099/HU-060-code-aware-capture-parte-b.md` — `engram watch` + metadata extraction |
 | 20 | HU-061 | P1 | Feature | **Code-Context Arch Agent**: query past architectural decisions for a module before designing. Comparte ENG-416/484 con HU-059. | Ready | M | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-061-code-context-arch-agent.md` — `mem_decisions_for_module` + contradiction warnings |
 | 21 | HU-062 | P2 | Feature | **Contradiction Detection**: detectar memorias conflictivas y resolverlas. Requiere ENG-412 (taxonomy) + ENG-414 (contradiction logic). | Ready | L | ← requirements/FlowForge | `docs/tasks/HU-001-HU-099/HU-062-contradiction-detection.md` — `mem_check_contradictions` + resolution workflow |

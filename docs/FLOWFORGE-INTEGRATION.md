@@ -104,6 +104,45 @@ mem_save(
 )
 ```
 
+#### Pre-edit hook: `mem_recall_for_file` (HU-059)
+
+Antes de editar un archivo, surface memorias relevantes para mantener consistencia con decisiones existentes:
+
+```
+# Superficie memorias asociadas al archivo antes de editarlo
+mem_recall_for_file("src/Auth/JwtBearer.cs", project="mi-proyecto")
+mem_recall_for_file("src/Services/", project="mi-proyecto", type="decision")
+```
+
+**Qué hace:** Retorna decisiones, contexto y notas asociadas al archivo (o prefijo de ruta).  
+**Cuándo invocarlo:** Antes de modificar cualquier archivo de código.  
+**Por qué:** Asegura que el agente conoce convenciones del equipo y decisiones arquitectónicas antes de cambiar código.
+
+#### Post-edit hook: `mem_save` con metadata code-aware (HU-059)
+
+Después de editar un archivo, capturar la decisión o contexto con metadata de código para futura recuperación:
+
+```
+# Guardar decisión con metadata code-aware
+mem_save(
+  title="Refactor: JwtBearerHandler ahora soporta RS384",
+  content="**What**: Agregamos soporte RS384 además de RS256...\n**Why**: Compatibilidad con clientes legacy...",
+  type="decision",
+  topic_key="impl/jwt-refactor",
+  project="mi-proyecto",
+  file_path="src/Auth/JwtBearer.cs",
+  symbol="JwtBearerHandler",
+  namespace="Engram.Auth"
+)
+```
+
+**Campos code-aware:**
+- `file_path` — ruta relativa del archivo modificado
+- `symbol` — nombre del símbolo modificado (clase, función, interface)
+- `namespace` — namespace/module del código
+
+**Cuándo invocarlo:** Después de editar código que captura una decisión, convención o aprendizaje arquitectónico.
+
 ### forge-verify (Phase 3b: audit)
 
 #### Al verificar la implementación
