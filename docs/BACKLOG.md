@@ -1014,7 +1014,8 @@ curl http://servidor:7437/observations/recent?project=team/mi-api
 | — | **Visionary — largo plazo (revisar en 6-12 meses)** |
 | 66 | ENG-486 | P2 | Feature | **MCP registry (visionario)**: registry público de memory packages (como npm para memorias). Developers publican patrones/anti-patrones, otros los importan. Multi-meses de trabajo. | Deferred | XL | ← feature ideas 2026-08 (IDEA-007) | Ver [HU-056](../docs/tasks/HU-001-HU-099/HU-056-mcp-registry.md). Revisar cuando engram tenga >1K usuarios activos. |
 | 67 | ENG-487 | P2 | Feature | **Cross-functional team memory (visionario)**: namespace support para que dev/product/design compartan memorias en mismo store pero visibles por función. | Deferred | L-XL | ← feature ideas 2026-08 (IDEA-008) | Ver [HU-057](../docs/tasks/HU-001-HU-099/HU-057-cross-functional-memory.md). Solo importa a escala (equipos 10+ personas). |
-
+| — | **Mantenimiento deprecation (2026-09-28)** |
+| 68 | HU-058 | — | Chore | **Deprecación perfil Desktop**: marcar `DeployProfile.Desktop` con `[Obsolete]`, tests skipados con referencia a HU-024/ADR-014, docs marcan desktop como "⚠️ Postponed". | ✅ Done | S | ← HU-024 + ADR-014 | Ver [HU-058](../docs/tasks/HU-001-HU-099/HU-058-deprecate-desktop-profile.md) — código ya implementado ([Obsolete], NotSupportedException), tests skipados (DeployProfileTests, ProfileSetTests, ProfileShowTests), docs actualizadas (DEPLOYMENT.md, QUICK-START.md). |
 ### Criterios de activación
 
 Un ítem pasa de **Idea** a **Ready** cuando:

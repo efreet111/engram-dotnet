@@ -428,7 +428,7 @@ When pulling from multiple servers, dedup strategy:
 fuser -k 7437/tcp
 ```
 
-### `remote-server` profile (desktop ⚠️ postponed)
+### `remote-server` profile
 
 ```bash
 # Error: 28P01 (password authentication failed)

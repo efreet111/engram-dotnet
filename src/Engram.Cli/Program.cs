@@ -22,6 +22,7 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Help;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
@@ -693,11 +694,13 @@ var enrollBehaviorOpt = new Option<string>("--behavior") { Description = "Sync b
 var enrollExcludeServerOpt = new Option<string[]>("--exclude-server") { Description = "Exclude server from sync (can be repeated)" };
 var enrollInteractiveOpt = new Option<bool>("--interactive") { Description = "Interactive enrollment with project selection" };
 var enrollAllOpt = new Option<bool>("--all") { Description = "Enroll and push all projects with pending mutations" };
+var enrollAutoEnrollOpt = new Option<bool>("--auto-enroll") { Description = "Also enroll the project on the remote server (enables auto-sync on first save)" };
 syncEnrollCmd.Options.Add(enrollProjectOpt);
 syncEnrollCmd.Options.Add(enrollBehaviorOpt);
 syncEnrollCmd.Options.Add(enrollExcludeServerOpt);
 syncEnrollCmd.Options.Add(enrollInteractiveOpt);
 syncEnrollCmd.Options.Add(enrollAllOpt);
+syncEnrollCmd.Options.Add(enrollAutoEnrollOpt);
 syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
 {
     var project = parseResult.GetValue(enrollProjectOpt);
@@ -710,6 +713,14 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
     if (all && !string.IsNullOrWhiteSpace(project))
     {
         Console.Error.WriteLine("error: --all and --project are mutually exclusive.");
+        return;
+    }
+
+    // T2.2: --auto-enroll is not compatible with --all or --interactive
+    var autoEnroll = parseResult.GetValue(enrollAutoEnrollOpt);
+    if (autoEnroll && (all || interactive))
+    {
+        Console.Error.WriteLine("error: --auto-enroll is not compatible with --all or --interactive.");
         return;
     }
 
@@ -790,7 +801,16 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
         return;
     }
 
-    await ss.EnrollProjectLocalAsync(project, behavior);
+    // T2.6: Enrollment local fails first — do not attempt server enrollment
+    try
+    {
+        await ss.EnrollProjectLocalAsync(project, behavior);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"error: local enrollment failed — {ex.Message}");
+        return;
+    }
 
     var exclInfo = excludedServers.Length > 0
         ? $", excluded servers: {string.Join(", ", excludedServers)}"
@@ -798,6 +818,24 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
     Console.WriteLine($"Project '{project}' enrolled for sync push (behavior: {behavior}{exclInfo}).");
     if (excludedServers.Length > 0)
         Console.WriteLine("  (excluded servers will be persisted to YAML config in Phase 4)");
+
+    // T2.3 + T2.5 + T2.7: Server enrollment when --auto-enroll is set
+    if (autoEnroll)
+    {
+        var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            Console.WriteLine("[engram] warning: ENGRAM_SERVER_URL not set — local enrollment only. Server enrollment requires a remote server.");
+        }
+        else
+        {
+            var serverEnrolled = await EnrollProjectOnServerAsync(serverUrl, project);
+            if (!serverEnrolled)
+            {
+                Console.WriteLine("[engram] warning: server enrollment failed (project may already be enrolled on server). Local enrollment succeeded.");
+            }
+        }
+    }
 });
 
 // sync unenroll — unenroll a project from local sync push (ENG-514: HU-013)
@@ -2462,6 +2500,13 @@ static IStore OpenStore(StoreConfig? cfg = null, bool validate = true)
 }
 
 /// <summary>
+/// HU-065 F2: Hace POST /sync/enroll al servidor remoto.
+/// Delega en <see cref="SyncServerEnrollment.EnrollProjectOnServerAsync"/>.
+/// </summary>
+static Task<bool> EnrollProjectOnServerAsync(string serverUrl, string project, CancellationToken ct = default)
+    => SyncServerEnrollment.EnrollProjectOnServerAsync(serverUrl, project, ct);
+
+/// <summary>
 /// HU-018: Pushes pending mutations for a single project and acks accepted sequences.
 /// Shared single source of truth for `sync push` (single + --all) and `sync enroll --all`.
 /// Returns the number of accepted (acked) mutations.
@@ -2540,32 +2585,18 @@ static bool IsAutoEnrollDisabledInConfig()
 }
 
 /// <summary>
+/// HU-065 F1: Lee sync.remote_url desde ~/.engram/config.json.
+/// делегирует в <see cref="SyncConfigFileHelper.LoadRemoteUrlFromFile"/>.
+/// </summary>
+static string? LoadRemoteUrlFromFile(string? configPath = null)
+    => SyncConfigFileHelper.LoadRemoteUrlFromFile(configPath);
+
+/// <summary>
 /// HU-014 R6: Lee auto_sync desde ~/.engram/config.json.
 /// Devuelve true si auto_sync está habilitado (default), false si deshabilitado.
 /// </summary>
 static bool LoadSyncConfigFromFile()
-{
-    try
-    {
-        var configPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".engram", "config.json");
-        if (!File.Exists(configPath)) return true; // default: enabled
-
-        var json = File.ReadAllText(configPath);
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        if (doc.RootElement.TryGetProperty("auto_sync", out var autoSyncProp))
-        {
-            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.False)
-                return false;
-            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.Number
-                && autoSyncProp.GetInt32() == 0)
-                return false;
-        }
-        return true;
-    }
-    catch { return true; }
-}
+    => SyncConfigFileHelper.LoadAutoSyncFromFile();
 
 /// <summary>
 /// HU-014 R6: Guarda la preferencia auto_sync en ~/.engram/config.json.
@@ -2617,9 +2648,10 @@ static void SaveSyncConfigToFile(bool enabled)
 }
 
 /// <summary>
-/// HU-014 R6: Aplica la configuración de sync desde ~/.engram/config.json
+/// HU-014 R6 + HU-065 F1: Aplica la configuración de sync desde ~/.engram/config.json
 /// al entorno del proceso actual. Solo sobrescribe ENGRAM_SYNC_AUTO_SYNC
 /// si no fue explícitamente seteada en el entorno (la env var explícita siempre gana).
+/// Tambien setea ENGRAM_SERVER_URL desde sync.remote_url si la env var no está.
 /// </summary>
 static void ApplySyncConfigFromFile()
 {
@@ -2629,6 +2661,18 @@ static void ApplySyncConfigFromFile()
 
     var autoSync = LoadSyncConfigFromFile();
     Environment.SetEnvironmentVariable("ENGRAM_SYNC_AUTO_SYNC", autoSync ? "true" : "false");
+
+    // T1.2: si ENGRAM_SERVER_URL no está seteada, usar fallback de config.json
+    var envServerUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+    if (string.IsNullOrWhiteSpace(envServerUrl))
+    {
+        var fallbackUrl = LoadRemoteUrlFromFile();
+        if (!string.IsNullOrWhiteSpace(fallbackUrl))
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_SERVER_URL", fallbackUrl);
+            Console.WriteLine($"[engram] Using sync.remote_url from config.json: {fallbackUrl}");
+        }
+    }
 }
 
 /// <summary>
