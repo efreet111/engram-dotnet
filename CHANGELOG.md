@@ -7,6 +7,7 @@
 
 ### Added
 
+- **HU-059**: Code-Aware Dev Agent — 6 integration tests for code-context recall (`mem_recall_for_file/module/symbol`), graceful degradation, and documentation of pre-edit/post-edit hooks in `FLOWFORGE-INTEGRATION.md`. HU-059 was Blocked in BACKLOG; actual dependencies (HU-063, HU-064, HU-053) were already Done — real effort was S (~1h), not L. Commit `eea18b1`.
 - **HU-065 F1**: Sync reads `sync.remote_url` from `~/.engram/config.json` as fallback when `ENGRAM_SERVER_URL` is not set. New `SyncConfigFileHelper.cs` with `LoadRemoteUrlFromFile()`. `ApplySyncConfigFromFile()` propagates the fallback. Commits `a62d6c1`.
 
 - **HU-065 F2**: New `--auto-enroll` flag on `engram sync enroll --project <name>` for automatic enrollment on remote server. Makes enrollment local first, then server (best-effort, server failures log warning only). Incompatible with `--all` and `--interactive`. New `SyncServerEnrollment.cs`. Commits `fb9a6cb`.
