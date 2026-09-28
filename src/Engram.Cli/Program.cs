@@ -232,6 +232,9 @@ mcpCmd.SetAction(async (ParseResult parseResult) =>
     mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryRelationRepository>();
     mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryLineageBuilder>();
 
+    // Register contradiction detection service (HU-062)
+    mcpBuilder.Services.AddSingleton<Engram.Verification.ContradictionDetector>();
+
     // Register diagnostic service
     mcpBuilder.Services.AddSingleton<IDiagnosticService>(sp =>
     {

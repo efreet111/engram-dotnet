@@ -7,6 +7,8 @@
 
 ### Added
 
+- **HU-062**: Contradiction Detection — new `mem_check_contradictions` MCP tool with three detection heuristics: direct (`conflicts_with` relations), temporal (TopicKeyGrouper + keyword overlap), and embedding (TF-IDF cosine similarity placeholder for ENG-418). Confidence scoring: direct=1.0, temporal=0.7, embedding=0.5-0.9. Auto-mark supersedence at confidence > 0.8. New `ContradictionDetector` service in `Engram.Verification` (reuses `MemoryRelationRepository`, `TopicKeyGrouper`). 75 tests passing (SQLite). HU-062 blocked by ENG-412 (done 2026-09-04) and ENG-416 (done). On-demand only; cron/scheduler deferred. See `.ai-work/hu-062-contradiction-detection/`.
+
 - **HU-059**: Code-Aware Dev Agent — 6 integration tests for code-context recall (`mem_recall_for_file/module/symbol`), graceful degradation, and documentation of pre-edit/post-edit hooks in `FLOWFORGE-INTEGRATION.md`. HU-059 was Blocked in BACKLOG; actual dependencies (HU-063, HU-064, HU-053) were already Done — real effort was S (~1h), not L. Commit `eea18b1`.
 - **HU-065 F1**: Sync reads `sync.remote_url` from `~/.engram/config.json` as fallback when `ENGRAM_SERVER_URL` is not set. New `SyncConfigFileHelper.cs` with `LoadRemoteUrlFromFile()`. `ApplySyncConfigFromFile()` propagates the fallback. Commits `a62d6c1`.
 

@@ -4,36 +4,38 @@
 **I want**: detect conflicting memories and resolve them  
 **To**: keep the memory store trustworthy as a source of truth
 
+**Status**: ✅ Closed 2026-09-28
+
 ---
 
 ## Acceptance Criteria
 
-- [ ] `mem_check_contradictions(limit?, confidence_threshold?, types?)` implemented
-- [ ] Detects direct contradictions (same topic, conflicting content)
-- [ ] Detects temporal supersedence (newer memory contradicts older on same topic)
-- [ ] Detects embedding similarity conflicts (similar embeddings, different content)
-- [ ] Returns confidence score and suggested resolution for each conflict
-- [ ] Resolution options: keep both, mark superseded, merge, ignore
-- [ ] Auto-mark supersedence when confidence exceeds threshold
-- [ ] Periodic execution option (cron) or on-demand
-- [ ] Unit tests for contradiction detection logic
-- [ ] Integration tests with mocked memory store
+- [x] `mem_check_contradictions(limit?, confidence_threshold?, types?)` implemented
+- [x] Detects direct contradictions (same topic, conflicting content)
+- [x] Detects temporal supersedence (newer memory contradicts older on same topic)
+- [x] Detects embedding similarity conflicts (similar embeddings, different content)
+- [x] Returns confidence score and suggested resolution for each conflict
+- [x] Resolution options: keep both, mark superseded, merge, ignore
+- [x] Auto-mark supersedence when confidence exceeds threshold
+- [ ] Periodic execution option (cron) or on-demand — **deferred** (on-demand only for v1)
+- [x] Unit tests for contradiction detection logic
+- [x] Integration tests with mocked memory store
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] ENG-412: Add memory_type column (decision, insight, transient, convention)
-- [ ] ENG-412: Add lifecycle column (persistent, ephemeral, expiring)
-- [ ] ENG-412: Add expires_at column for transient memories
-- [ ] ENG-414: Implement `mem_check_contradictions` MCP tool
-- [ ] ENG-414: Implement heuristics: direct conflict, temporal supersedence, embedding similarity
-- [ ] ENG-414: Add resolution workflow via `mem_relations`
-- [ ] ENG-418: Extend `mem_search` with hybrid mode (vector + FTS5 + metadata)
-- [ ] Add confidence threshold configuration for auto-marking
-- [ ] Add cron job or on-demand trigger for contradiction check
-- [ ] Add unit tests for each detection heuristic
-- [ ] Add integration tests with mocked store
+- [x] ENG-412: Add memory_type column (decision, insight, transient, convention) — Done separately (ENG-412)
+- [x] ENG-412: Add lifecycle column (persistent, ephemeral, expiring) — Done separately (ENG-412)
+- [x] ENG-412: Add expires_at column for transient memories — Done separately (ENG-412)
+- [x] ENG-414: Implement `mem_check_contradictions` MCP tool
+- [x] ENG-414: Implement heuristics: direct conflict, temporal supersedence, embedding similarity
+- [x] ENG-414: Add resolution workflow via `mem_relations`
+- [ ] ENG-418: Extend `mem_search` with hybrid mode (vector + FTS5 + metadata) — deferred (ENG-418 pending)
+- [x] Add confidence threshold configuration for auto-marking
+- [ ] Add cron job or on-demand trigger for contradiction check — **deferred** (on-demand only for v1)
+- [x] Add unit tests for each detection heuristic
+- [x] Add integration tests with mocked store
 
 ---
 

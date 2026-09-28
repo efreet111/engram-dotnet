@@ -410,6 +410,97 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return sb.ToString().TrimEnd();
     }
 
+    // ─── mem_check_contradictions ─────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_check_contradictions", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Detect contradictions in memory observations for a project.
+
+        Three detection types:
+        - direct: observations already linked by conflicts_with relations (Confidence=1.0)
+        - temporal: newer observation on same topic_key contradicts older one via low keyword overlap (Confidence=0.7)
+        - embedding: high TF-IDF similarity but divergent keywords (Confidence=0.5–0.9, placeholder for ENG-418)
+
+        Resolution options returned per result:
+        - keep_both: both observations remain active (human review needed)
+        - mark_superseded: older observation marked deprecated (auto-done if Confidence > 0.8)
+        - merge: manual merge required (not executed automatically)
+        - ignore: low confidence, not a real contradiction
+
+        RESULTS are formatted as a readable string (not JSON). Use mem_get_observation(id) to inspect specific observations.
+        """)]
+    public async Task<string> MemCheckContradictions(
+        [Description("Project name to check for contradictions")] string project,
+        [Description("Maximum number of results to return (default: 50, max: 200)")] int limit = 50,
+        [Description("Minimum confidence threshold 0.0–1.0 (default: 0.5). Only results with confidence >= threshold are returned.")] double confidence_threshold = 0.5,
+        [Description("Comma-separated types to run: direct,temporal,embedding (default: all three). Unknown types are silently ignored.")] string? types = null)
+    {
+        var effectiveLimit = Math.Clamp(limit, 1, 200);
+        var effectiveThreshold = Math.Clamp(confidence_threshold, 0.0, 1.0);
+
+        // Parse and validate types
+        var defaultTypes = new[] { "direct", "temporal", "embedding" };
+        var requestedTypes = defaultTypes;
+        if (!string.IsNullOrWhiteSpace(types))
+        {
+            var parsed = types.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(t => defaultTypes.Contains(t, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            if (parsed.Length > 0)
+                requestedTypes = parsed;
+        }
+
+        // Resolve project to personal scope (matching MemDecisionTree pattern)
+        var resolvedProject = ResolveProject(project, Engram.Store.Scopes.Personal);
+
+        var detector = new ContradictionDetector(store, _memRelRepo);
+        var allResults = new List<ContradictionResult>();
+
+        if (requestedTypes.Contains("direct"))
+        {
+            var direct = await detector.DetectDirectContradictionsAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(direct);
+        }
+
+        if (requestedTypes.Contains("temporal"))
+        {
+            var temporal = await detector.DetectTemporalSupersedenceAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(temporal);
+        }
+
+        if (requestedTypes.Contains("embedding"))
+        {
+            var embedding = await detector.DetectEmbeddingConflictsAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(embedding);
+        }
+
+        // Sort by confidence DESC, then take limit
+        var results = allResults
+            .OrderByDescending(r => r.Confidence)
+            .Take(effectiveLimit)
+            .ToList();
+
+        if (results.Count == 0)
+            return $"No contradictions detected for project \"{resolvedProject}\" at confidence >= {effectiveThreshold}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Contradiction report for project \"{resolvedProject}\" ({results.Count} result(s), threshold >= {effectiveThreshold}):");
+        sb.AppendLine();
+
+        for (int i = 0; i < results.Count; i++)
+        {
+            var r = results[i];
+            var typeLabel = r.Type.ToUpperInvariant();
+            sb.AppendLine($"[{i + 1}] {typeLabel} (confidence: {r.Confidence:F2})");
+            sb.AppendLine($"    obs #{r.ObsIdA} ↔ obs #{r.ObsIdB}");
+            sb.AppendLine($"    Suggested: {r.SuggestedResolution}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"Run mem_get_observation(id: <ID>) to inspect individual observations.");
+        return sb.ToString().TrimEnd();
+    }
+
     // ─── mem_save ────────────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_save", ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = false)]
