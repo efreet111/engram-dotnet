@@ -4,19 +4,19 @@
 **I want**: query past architectural decisions for a module before designing  
 **To**: build on existing decisions instead of re-deriving them every session
 
-**Status**: In Progress
+**Status**: ✅ Done (2026-09-29)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `mem_recall_for_module(module, type="decision")` validates as working filter
-- [ ] `mem_decisions_for_module(module, limit?)` implemented as MCP tool dedicated
-- [ ] FlowForge integration protocol documented in RFC
-- [ ] Unit tests for `mem_decisions_for_module` pass
-- [ ] Arch agent can query prior decisions before new design work
-- [ ] Graceful handling when no prior decisions exist (proceed normally)
-- [ ] Graceful handling when Engram service is unavailable (stateless derivation)
+- [x] `mem_recall_for_module(module, type="decision")` validates as working filter
+- [x] `mem_decisions_for_module(module, limit?)` implemented as MCP tool dedicated
+- [x] FlowForge integration protocol documented in RFC
+- [x] Unit tests for `mem_decisions_for_module` pass
+- [x] Arch agent can query prior decisions before new design work
+- [x] Graceful handling when no prior decisions exist (proceed normally)
+- [x] Graceful handling when Engram service is unavailable (stateless derivation)
 
 ---
 
@@ -24,10 +24,10 @@
 
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Validar que `mem_recall_for_module(module, type="decision")` funciona como filtro existente | 🔴 Por hacer |
-| 2 | Implementar `mem_decisions_for_module(module, limit?)` como MCP tool dedicado | 🔴 Falta |
-| 3 | Documentar protocolo de integración FlowForge (RFC en `docs/architecture/rfc/`) | 🔴 Falta |
-| 4 | Tests unitarios para `mem_decisions_for_module` | 🔴 Falta |
+| 1 | Validar que `mem_recall_for_module(module, type="decision")` funciona como filtro existente | ✅ Confirmado — GetMemoriesByModuleAsync ya filtra por type |
+| 2 | Implementar `mem_decisions_for_module(module, limit?)` como MCP tool dedicado | ✅ Hecho — `EngramTools.cs:312` dual-type query |
+| 3 | Documentar protocolo de integración FlowForge (RFC en `docs/architecture/rfc/`) | ✅ Hecho — RFC-008 |
+| 4 | Tests unitarios para `mem_decisions_for_module` | ✅ Hecho — 7 tests en `MemDecisionsForModuleTests.cs` |
 
 ### Detalle de tareas
 
@@ -60,7 +60,7 @@
 | ID | Descripción | Estado |
 |----|-------------|--------|
 | ENG-416 | Schema evolution | ✅ Done |
-| ENG-484 | Code-context query tools | 🟡 Parcial (HU-064 implementó file/module/symbol, falta `mem_decisions_for_module`) |
+| ENG-484 | Code-context query tools | ✅ Done — HU-064 (file/module/symbol) + HU-061 (`mem_decisions_for_module`) |
 | ENG-412 | Memory taxonomy (HU-062) | ✅ Done |
 
 ---
@@ -88,3 +88,24 @@ HU-061 fue re-interpretada porque ENG-484 **no implementó `mem_decisions_for_mo
 
 - FlowForge HU-035 (Arch Agent stateful) → mapea a esta HU-061
 - La integración con FlowForge se documenta en el RFC de la Tarea 3
+
+---
+
+## Implementation Notes (Post-Development)
+
+### Lo que se implementó
+
+| Componente | Ubicación | Detalle |
+|-----------|-----------|---------|
+| MCP tool | `src/Engram.Mcp/EngramTools.cs:312` | `mem_decisions_for_module(module, project?, limit?)` |
+| Dual-type query | `EngramTools.cs:321-326` | Consulta `type=decision` + `type=architecture`, merge + sort desc |
+| RFC | `docs/architecture/rfc/RFC-008-flowforge-arch-agent-integration.md` | Protocolo de integración Arch Agent |
+| Tests | `tests/Engram.Mcp.Tests/MemDecisionsForModuleTests.cs` | 7 tests covering all scenarios |
+
+### Commit
+
+`c38bc44` — `feat: add mem_decisions_for_module MCP tool (HU-061)`
+
+### Descubrimiento clave
+
+Tarea 1 (`mem_recall_for_module` con filtro `type=decision`) **ya funcionaba** — HU-064 implementó el filtro en el store layer. El gap era la falta de un **tool dedicado** con nombre explícito para decisiones arquitectónicas.
