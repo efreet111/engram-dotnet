@@ -7,6 +7,8 @@
 
 ### Added
 
+- **HU-060**: Code-Aware Capture (Parte B) — `engram watch` now extracts `symbol` and `namespace` from C# files via regex patterns (`SymbolPatternCompound`, `SymbolPatternStandard`, `SymbolPatternDelegate`, `NamespacePathPattern`). Graceful fallback to null when extraction fails (with debug logging). New `CodeMetadataExtractor.cs` with 3 static methods. 53 unit tests, 212 suite regression clean, PM-1..PM-4 verified. See `.ai-work/hu-060-code-aware-capture-parte-b/`.
+
 - **HU-061**: Code-Context Arch Agent — new `mem_decisions_for_module` MCP tool with dual-type query (`decision` + `architecture`), limit clamped 1-50, sorted by CreatedAt desc. Queries `GetMemoriesByModuleAsync` twice (one per type) and merges. RFC-008 documents FlowForge Arch Agent integration protocol. 7 unit tests in `MemDecisionsForModuleTests.cs`. 337 tests total pass. Commit `c38bc44`. See `.ai-work/hu-061-code-context-arch-agent/`.
 
 - **HU-062**: Contradiction Detection — new `mem_check_contradictions` MCP tool with three detection heuristics: direct (`conflicts_with` relations), temporal (TopicKeyGrouper + keyword overlap), and embedding (TF-IDF cosine similarity placeholder for ENG-418). Confidence scoring: direct=1.0, temporal=0.7, embedding=0.5-0.9. Auto-mark supersedence at confidence > 0.8. New `ContradictionDetector` service in `Engram.Verification` (reuses `MemoryRelationRepository`, `TopicKeyGrouper`). 75 tests passing (SQLite). HU-062 blocked by ENG-412 (done 2026-09-04) and ENG-416 (done). On-demand only; cron/scheduler deferred. See `.ai-work/hu-062-contradiction-detection/`. 

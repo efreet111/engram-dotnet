@@ -1,7 +1,7 @@
 # Guía de Integración FlowForge ↔ Engram (ENG-412)
 
-**Fecha:** 2026-09-04  
-**Feature:** ENG-412 — Memory Taxonomy & Lifecycle Status  
+**Fecha:** 2026-09-29  
+**Features:** ENG-412 — Memory Taxonomy & Lifecycle Status | HU-060 — Code-Aware Capture (Parte B)  
 **Audiencia:** Agentes de FlowForge (forge-arch, forge-dev, forge-verify, forge-memory)
 
 ---
@@ -118,7 +118,7 @@ mem_recall_for_file("src/Services/", project="mi-proyecto", type="decision")
 **Cuándo invocarlo:** Antes de modificar cualquier archivo de código.  
 **Por qué:** Asegura que el agente conoce convenciones del equipo y decisiones arquitectónicas antes de cambiar código.
 
-#### Post-edit hook: `mem_save` con metadata code-aware (HU-059)
+#### Post-edit hook: `mem_save` con metadata code-aware (HU-059/HU-060)
 
 Después de editar un archivo, capturar la decisión o contexto con metadata de código para futura recuperación:
 
@@ -137,11 +137,16 @@ mem_save(
 ```
 
 **Campos code-aware:**
-- `file_path` — ruta relativa del archivo modificado
-- `symbol` — nombre del símbolo modificado (clase, función, interface)
-- `namespace` — namespace/module del código
+- `file_path` — ruta relativa del archivo modificado (siempre se provee)
+- `symbol` — nombre del símbolo modificado (clase, función, interface) — puede ser `null` si no se puede inferir
+- `namespace` — namespace/module del código — puede ser `null` si la ruta no sigue `src/<Namespace>/...`
 
 **Cuándo invocarlo:** Después de editar código que captura una decisión, convención o aprendizaje arquitectónico.
+
+**Notas sobre nulls (HU-060):**
+- Si `symbol` o `namespace` no se pueden determinar, usar `null` — no fallar la captura
+- Los campos `null` son correctamente persistidos en la base de datos y queryable
+- `engram watch` (HU-053/HU-060) automáticamente extrae `symbol` y `namespace` via regex desde el contenido y ruta del archivo
 
 ### forge-verify (Phase 3b: audit)
 

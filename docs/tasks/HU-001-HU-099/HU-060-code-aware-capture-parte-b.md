@@ -8,26 +8,28 @@
 
 ## Acceptance Criteria
 
-- [ ] Decisions extracted from plan.md include `file_path` metadata when code reference exists
-- [ ] Decisions extracted from plan.md include `symbol` metadata when class/function is identified
-- [ ] Decisions extracted from plan.md include `namespace` metadata when module is identified
-- [ ] Partial metadata capture: if only file_path is known, symbol and namespace are null
-- [ ] Fallback to text-only capture when ENG-483 tools are unavailable (Parte A behavior)
-- [ ] Tests verify metadata capture for all three fields
-- [ ] Integration test verifies end-to-end flow from plan.md to engram
+- [x] Decisions extracted from plan.md include `file_path` metadata when code reference exists
+- [x] Decisions extracted from plan.md include `symbol` metadata when class/function is identified
+- [x] Decisions extracted from plan.md include `namespace` metadata when module is identified
+- [x] Partial metadata capture: if only file_path is known, symbol and namespace are null
+- [x] Fallback to text-only capture when ENG-483 tools are unavailable (Parte A behavior)
+- [x] Tests verify metadata capture for all three fields
+- [x] Integration test verifies end-to-end flow from plan.md to engram
+
+**Status:** ✅ Done (2026-09-29) — implementación en `.ai-work/hu-060-code-aware-capture-parte-b/`
 
 ---
 
 ## Tasks (Implementation)
 
-- [ ] ENG-416: Schema evolution (reuse from HU-059)
-- [ ] ENG-483: Implement `engram_watch` MCP tool with actions: capture, analyze, track
-- [ ] ENG-483: Parse file to extract classes, functions, imports
-- [ ] ENG-483: Auto-generate namespace from file path structure
-- [ ] Wire code-aware capture to CKP-2 (Plan) post-hook
-- [ ] Implement fallback logic when ENG-483 is unavailable
-- [ ] Add unit tests for metadata extraction
-- [ ] Add integration test for plan.md → engram flow
+- [x] ENG-416: Schema evolution (reuse from HU-059) — ✅ Done (HU-063)
+- [x] ENG-483: Implement `engram_watch` MCP tool with actions: capture, analyze, track — ✅ Done (HU-053), extendido con HU-060
+- [x] ENG-483: Parse file to extract classes, functions, imports — ✅ Done (regex-based via `CodeMetadataExtractor.cs`)
+- [x] ENG-483: Auto-generate namespace from file path structure — ✅ Done (regex-based via `CodeMetadataExtractor.cs`)
+- [x] Wire code-aware capture to CKP-2 (Plan) post-hook — ✅ Done (`FLOWFORGE-INTEGRATION.md` actualizado)
+- [x] Implement fallback logic when ENG-483 is unavailable — ✅ Done (graceful null + debug log)
+- [x] Add unit tests for metadata extraction — ✅ Done (53 tests en `CodeMetadataExtractorTests.cs`)
+- [x] Add integration test for plan.md → engram flow — ✅ Done (PM-1..PM-4 ejecutados y passing)
 
 ---
 

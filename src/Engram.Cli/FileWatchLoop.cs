@@ -217,6 +217,11 @@ public static class FileWatchLoop
                     config.Threshold,
                     WatchCommand.BuildSnippets(baseline ?? [], current));
 
+                // HU-060: Extract symbol and namespace from code content
+                var fileContent = string.Join(Environment.NewLine, current);
+                var extension = Path.GetExtension(fullPath).TrimStart('.');
+                var metadata = CodeMetadataExtractor.ExtractAllMetadata(fileContent, relPath, extension);
+
                 var id = await store.AddObservationAsync(new AddObservationParams
                 {
                     SessionId = config.SessionId,
@@ -225,6 +230,8 @@ public static class FileWatchLoop
                     Content = content,
                     Project = config.Project,
                     FilePath = relPath,
+                    Symbol = metadata.Symbol,       // HU-060: code-aware symbol
+                    Namespace = metadata.Namespace,  // HU-060: code-aware namespace
                     TopicKey = $"code-change:{relPath}",
                 });
 
