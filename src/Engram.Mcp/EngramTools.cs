@@ -296,6 +296,41 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return FormatSearchResults(results, "module", module);
     }
 
+    // ─── mem_decisions_for_module (HU-061) ────────────────────────────────────
+
+    [McpServerTool(Name = "mem_decisions_for_module", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query architectural decisions (type=decision or type=architecture) for a specific module/namespace.
+
+        Returns decisions where namespace matches the given module prefix.
+        Use this before designing new features to avoid re-deriving existing decisions.
+
+        EXAMPLES:
+          mem_decisions_for_module("Engram.Store")
+          mem_decisions_for_module("Engram.Auth", limit: 5)
+        """)]
+    public async Task<string> MemDecisionsForModule(
+        [Description("The namespace or module prefix to query (e.g. 'Engram.Auth' or 'Engram')")] string module,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Max results (default: 10, max: 50)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 50);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        // Query both decision and architecture types, merge and dedupe
+        var decisions = await store.GetMemoriesByModuleAsync(module, resolvedProject, "decision", clampedLimit);
+        var architectures = await store.GetMemoriesByModuleAsync(module, resolvedProject, "architecture", clampedLimit);
+        var results = decisions.Concat(architectures)
+            .OrderByDescending(x => x.Observation.CreatedAt)
+            .Take(clampedLimit)
+            .ToList();
+
+        if (results.Count == 0)
+            return $"No decisions found for module: \"{module}\"";
+
+        return FormatSearchResults(results, "decisions for module", module);
+    }
+
     // ─── mem_recall_for_symbol (HU-064) ──────────────────────────────────────
 
     [McpServerTool(Name = "mem_recall_for_symbol", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
