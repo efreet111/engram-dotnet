@@ -35,7 +35,7 @@ AI AGENT                       ENGRAM-DOTNET                STORAGE
        │                          ┌──────────┴──────────┐    
        │                          │  EngramServer (.NET) │    
        └── HTTP REST ────────────►│  30 REST endpoints   │    
-                                  │  28 MCP tools        │    
+                                  │  31 MCP tools        │    
                                   └──────────┬──────────┘    
                                              │                
                           ┌──────────────────┼──────────────────┐
@@ -91,6 +91,10 @@ dotnet publish src/Engram.Cli -c Release -r linux-x64 --self-contained -o dist/
 
 > **Result**: Local SQLite server, ready to connect your agent.
 
+> **Tip:** Quick-capture a memory from anywhere: `engram "your insight here"` — no flags needed.
+
+> **Tip:** Install git hooks to auto-capture every commit as a memory: `engram init` (see [Auto-capture with git hooks](docs/01-QUICK-START.md#auto-capture-with-git-hooks)).
+
 ### 👥 Team Leader (2-5 people)
 [➜ Quick start for shared server team](docs/01-QUICK-START.md#-team-leader)
 
@@ -138,12 +142,13 @@ Profiles define sensible defaults; override individual variables as needed. See 
 | Feature | Status | Docs |
 |---------|--------|------|
 | **REST API** (41 endpoints) | ✅ Complete | [API Reference](docs/API-REFERENCE.md) |
-| **MCP Server** (28 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
+| **MCP Server** (31 tools) | ✅ Complete | [MCP Config](docs/MCP-CONFIG.md) |
 | **Offline-First Sync** | ✅ Complete (4 phases) | [Sync Setup](docs/SYNC-SETUP.md) |
 | **Multi-User Isolation** | ✅ RFC-002 | [Multi-User](docs/MULTI-USER.md) |
 | **TTL Configurable** | ✅ Archived | — |
 | **Doctor Diagnostic** | ✅ Archived | — |
 | **Obsidian Export** | ✅ Complete | — |
+| **Code-Aware Watch** | ✅ Complete | [CLI Reference](docs/CLI-REFERENCE.md) |
 
 ---
 
@@ -165,6 +170,26 @@ Export observations to an Obsidian vault.
 | `--since <date>` | Filter by creation date: ISO 8601 (`2025-01-01`) or relative (`30d`, `7d`, `24h`) |
 | `--watch` | Run as a daemon, exporting continuously |
 | `--interval <duration>` | Watch interval: `30s`, `5m`, `1h` (default `60s`) |
+
+### engram init
+
+```bash
+engram init                # Install git hooks to auto-capture commits as memories
+```
+
+### engram watch
+
+Watch files and auto-capture code changes as memories (`type=code_change`).
+
+```bash
+engram watch src/Auth/JwtBearer.cs     # watch a single file
+engram watch src/                       # watch a directory (non-recursive)
+engram watch "src/Auth/*.cs"            # watch a glob (quote it)
+engram watch src/ --threshold 20        # only capture changes >= 20 lines
+engram watch src/ --ignore-pattern "*.log"
+```
+
+See [Auto-capture with file watching](docs/01-QUICK-START.md#auto-capture-with-file-watching).
 
 ### engram sync status
 

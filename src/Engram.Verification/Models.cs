@@ -145,3 +145,17 @@ public sealed record LineageResult
     [JsonPropertyName("cycle_detected")] public bool CycleDetected { get; init; }
     [JsonPropertyName("hops")] public int Hops { get; init; }
 }
+
+/// <summary>
+/// Result of a contradiction detection run.
+/// Returned by <see cref="ContradictionDetector"/> methods.
+/// </summary>
+public sealed record ContradictionResult
+{
+    [JsonPropertyName("observation_a_id")] public long   ObsIdA              { get; init; }
+    [JsonPropertyName("observation_b_id")] public long   ObsIdB              { get; init; }
+    [JsonPropertyName("type")]             public string Type               { get; init; } = "";  // "direct" | "temporal" | "embedding"
+    [JsonPropertyName("confidence")]       public double Confidence         { get; init; }        // 0.0–1.0
+    [JsonPropertyName("suggested_resolution")]
+                                             public string SuggestedResolution { get; init; } = "";  // "keep_both" | "mark_superseded" | "merge" | "ignore"
+}

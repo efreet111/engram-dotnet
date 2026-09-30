@@ -313,6 +313,10 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             VALUES ('cloud', 'idle', NOW() AT TIME ZONE 'utc')
             ON CONFLICT (target_key) DO NOTHING
         ");
+
+        // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+        EnsureSchemaMigrationsLedger();
+        ApplyPendingMigrations();
     }
 
     private bool ColumnExists(string table, string column)
@@ -405,6 +409,84 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 WHERE normalized_hash IS NOT NULL");
         }
         // else: index exists and doesn't contain 'title' — already migrated, no-op
+    }
+
+    // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+
+    private void EnsureSchemaMigrationsLedger()
+    {
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version    BIGINT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+            )
+        ");
+        Exec(@"
+            INSERT INTO schema_migrations (version, name)
+            VALUES (0, 'baseline_pre_eng416')
+            ON CONFLICT (version) DO NOTHING
+        ");
+    }
+
+    private void ApplyPendingMigrations()
+    {
+        if (!MigrationApplied(1))
+        {
+            MigrateCodeMetadata();
+        }
+    }
+
+    private bool MigrationApplied(int version)
+    {
+        using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = @v";
+        cmd.Parameters.AddWithValue("@v", version);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+    }
+
+    private void MigrateCodeMetadata()
+    {
+        // HU-016 rule: columns BEFORE indexes
+        if (!ColumnExists("observations", "file_path"))
+            Exec("ALTER TABLE observations ADD COLUMN file_path TEXT");
+        if (!ColumnExists("observations", "symbol"))
+            Exec("ALTER TABLE observations ADD COLUMN symbol TEXT");
+        if (!ColumnExists("observations", "namespace"))
+            Exec("ALTER TABLE observations ADD COLUMN namespace TEXT");
+
+        // Indexes AFTER columns (HU-016)
+        // text_pattern_ops for file_path and namespace: serves = and LIKE 'prefix%' (PG §11.10)
+        // Partial indexes WHERE NOT NULL (house style: idx_obs_sync_id, idx_obs_topic)
+        Exec(@"
+            CREATE INDEX IF NOT EXISTS idx_obs_file_path
+                ON observations(file_path text_pattern_ops)
+                WHERE file_path IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_obs_symbol
+                ON observations(symbol);
+            CREATE INDEX IF NOT EXISTS idx_obs_namespace
+                ON observations(namespace text_pattern_ops)
+                WHERE namespace IS NOT NULL;
+        ");
+
+        // Register in ledger
+        Exec(@"
+            INSERT INTO schema_migrations (version, name)
+            VALUES (1, 'eng416_code_metadata')
+            ON CONFLICT (version) DO NOTHING
+        ");
+
+        _logger?.LogInformation("Applied migration 1: eng416_code_metadata");
+    }
+
+    // ─── ENG-416: metadata length guard (FR-005) ──────────────────────────────
+
+    private void ValidateMetadataLength(string? value, string fieldName)
+    {
+        if (value is not null && value.Length > _cfg.MaxMetadataLength)
+            throw new ArgumentException(
+                $"{fieldName} exceeds maximum length of {_cfg.MaxMetadataLength} chars (got {value.Length}). " +
+                "This limit prevents PostgreSQL B-tree index overflow (2704 bytes).");
     }
 
     // ─── Dedupe window expression (PostgreSQL dialect) ────────────────────────
@@ -594,6 +676,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             p = p with { Content = content };
         }
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(p.FilePath, nameof(p.FilePath));
+        ValidateMetadataLength(p.Symbol, nameof(p.Symbol));
+        ValidateMetadataLength(p.Namespace, nameof(p.Namespace));
+
         // Path 1: topic_key upsert
         if (!string.IsNullOrWhiteSpace(p.TopicKey))
         {
@@ -664,10 +751,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             INSERT INTO observations
                 (sync_id, session_id, type, title, content, tool_name, project, scope,
                  topic_key, normalized_hash, revision_count, duplicate_count, last_seen_at,
-                 created_at, updated_at)
+                 created_at, updated_at, file_path, symbol, namespace)
             VALUES
                 (@sync_id, @session_id, @type, @title, @content, @tool, @project, @scope,
-                 @topic, @hash, 1, 1, @last_seen, @created, @updated)
+                 @topic, @hash, 1, 1, @last_seen, @created, @updated,
+                 @file_path, @symbol, @namespace)
             RETURNING id";
         ins.Parameters.AddWithValue("@sync_id", (object?)NewSyncId("obs") ?? DBNull.Value);
         ins.Parameters.AddWithValue("@session_id", p.SessionId);
@@ -682,6 +770,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         ins.Parameters.AddWithValue("@last_seen", (object?)now ?? DBNull.Value);
         ins.Parameters.AddWithValue("@created", now);
         ins.Parameters.AddWithValue("@updated", now);
+        ins.Parameters.AddWithValue("@file_path", (object?)p.FilePath ?? DBNull.Value);
+        ins.Parameters.AddWithValue("@symbol", (object?)p.Symbol ?? DBNull.Value);
+        ins.Parameters.AddWithValue("@namespace", (object?)p.Namespace ?? DBNull.Value);
         return (long)ins.ExecuteScalar()!;
     }
 
@@ -691,7 +782,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
             FROM observations o
             WHERE o.topic_key = @topic AND o.project = @project AND o.scope = @scope AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@topic", topicKey);
@@ -707,7 +798,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
             FROM observations o WHERE o.id = @id AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
@@ -719,7 +810,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var sql = new StringBuilder(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
             FROM observations o WHERE o.deleted_at IS NULL");
         var parms = new List<NpgsqlParameter>();
         if (!string.IsNullOrEmpty(project))
@@ -812,7 +903,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         sql.Append(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
                    10000.0 as rank
             FROM observations o
             WHERE o.topic_key = @query AND o.deleted_at IS NULL");
@@ -823,7 +914,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             UNION ALL
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
                    ts_rank(o.search_vector, plainto_tsquery('simple', @q2)) as rank
             FROM observations o
             WHERE o.search_vector @@ plainto_tsquery('simple', @q2) AND o.deleted_at IS NULL");
@@ -850,7 +941,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         sql.Append(@"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
                    -1000.0 as rank
             FROM observations o
             WHERE o.topic_key = @query AND o.deleted_at IS NULL");
@@ -861,7 +952,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             UNION ALL
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
                    ts_rank(o.search_vector, plainto_tsquery('simple', @q2)) as rank
             FROM observations o
             WHERE o.search_vector @@ plainto_tsquery('simple', @q2) AND o.deleted_at IS NULL");
@@ -876,6 +967,325 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
     }
 
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var normalizedPath = filePath.TrimEnd('/');
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND (o.file_path = @fp OR o.file_path LIKE @fp_prefix)");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@fp", normalizedPath),
+            new("@fp_prefix", normalizedPath + "/%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(new NpgsqlParameter("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.namespace LIKE @ns_prefix");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@ns_prefix", module + "%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(new NpgsqlParameter("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit)
+    {
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.symbol = @symbol");
+        var parms = new List<NpgsqlParameter>
+        {
+            new("@symbol", symbol)
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql.ToString(), parms));
+    }
+
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    private const double PgTypeWeightDecision = 3.0;
+    private const double PgTypeWeightInsight = 2.0;
+    private const double PgTypeWeightConvention = 2.0;
+    private const double PgTypeWeightBlocker = 1.5;
+    private const double PgTypeWeightGotcha = 1.5;
+    private const double PgTypeWeightManual = 1.0;
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+    {
+        if (limit <= 0) limit = 10;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = $@"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace,
+                   {PgTypeWeightDecision} * (
+                       CASE WHEN o.created_at >= @cutoff THEN 1.0
+                            WHEN o.created_at >= @cutoff::timestamp - INTERVAL '30 days' THEN 0.7
+                            WHEN o.created_at >= @cutoff::timestamp - INTERVAL '60 days' THEN 0.4
+                            ELSE 0.2 END
+                   ) as importance_score
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'decision'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY importance_score DESC, o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+    {
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'convention'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+    {
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type IN ('blocker', 'gotcha')";
+
+        var parms = new List<NpgsqlParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC";
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+    {
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type != 'memory_relation'
+              AND o.created_at >= @cutoff::timestamp";
+
+        var parms = new List<NpgsqlParameter> { new("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(new NpgsqlParameter("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(new NpgsqlParameter("@limit", limit));
+
+        return Task.FromResult<IList<SearchResult>>(QuerySearchResults(sql, parms));
+    }
+
+    public async Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+    {
+        if (limit <= 0) limit = 10;
+
+        // Step 1: collect target observation IDs from memory_relation observations
+        var refCounts = new Dictionary<string, (string type, int count)>();
+
+        await using var conn1 = _dataSource.OpenConnection();
+        var relSql = @"
+            SELECT content FROM observations
+            WHERE deleted_at IS NULL AND status = 'active' AND type = 'memory_relation'";
+        var relParms = new List<NpgsqlParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            relSql += " AND project = @proj";
+            relParms.Add(new NpgsqlParameter("@proj", project));
+        }
+
+        await using (var cmdRel = new NpgsqlCommand(relSql, conn1))
+        {
+            foreach (var p in relParms) cmdRel.Parameters.Add(p);
+            await using var r = await cmdRel.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+            {
+                var content = r.GetString(0);
+                if (string.IsNullOrWhiteSpace(content)) continue;
+                try
+                {
+                    // Inline JSON structure to avoid cross-project reference
+                    using var doc = System.Text.Json.JsonDocument.Parse(content);
+                    var relations = doc.RootElement.GetProperty("relations");
+                    foreach (var rel in relations.EnumerateArray())
+                    {
+                        var targetId = rel.GetProperty("target_observation_id").GetInt64();
+                        var key = $"obs:{targetId}";
+                        if (refCounts.TryGetValue(key, out var existing))
+                            refCounts[key] = (existing.type, existing.count + 1);
+                        else
+                            refCounts[key] = ("observation", 1);
+                    }
+                }
+                catch { /* skip malformed JSON */ }
+            }
+        }
+
+        if (refCounts.Count == 0)
+            return new List<ConceptRef>();
+
+        // Step 2: look up referenced observations and extract concepts
+        var conceptCounts = new Dictionary<string, (string type, int count)>();
+        foreach (var kvp in refCounts)
+        {
+            var obsId = long.Parse(kvp.Key.Replace("obs:", ""));
+            await using var conn2 = _dataSource.OpenConnection();
+            await using var cmdObs = new NpgsqlCommand(
+                @"SELECT file_path, symbol, namespace FROM observations
+                  WHERE id = @id AND deleted_at IS NULL", conn2);
+            cmdObs.Parameters.Add(new NpgsqlParameter("@id", obsId));
+            await using var r2 = await cmdObs.ExecuteReaderAsync();
+            if (await r2.ReadAsync())
+            {
+                var fp = r2.IsDBNull(0) ? null : r2.GetString(0);
+                var sym = r2.IsDBNull(1) ? null : r2.GetString(1);
+                var ns = r2.IsDBNull(2) ? null : r2.GetString(2);
+
+                if (!string.IsNullOrEmpty(fp))
+                {
+                    var key = $"file_path:{fp}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("file_path", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(sym))
+                {
+                    var key = $"symbol:{sym}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("symbol", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(ns))
+                {
+                    var key = $"namespace:{ns}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("namespace", kvp.Value.count);
+                }
+            }
+        }
+
+        var sorted = conceptCounts
+            .OrderByDescending(x => x.Value.count)
+            .Take(limit)
+            .Select(x => new ConceptRef
+            {
+                Concept = x.Key.Split(':', 2)[1],
+                Type = x.Value.type,
+                RefCount = x.Value.count,
+            })
+            .ToList();
+
+        return sorted;
+    }
+
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
     {
         var focus = GetObservationDirect(observationId);
@@ -886,7 +1296,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var beforeEntries = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at, o.status
+                     o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
               FROM observations o
               WHERE o.session_id = @sid AND o.created_at < @created AND o.deleted_at IS NULL
               ORDER BY o.created_at DESC LIMIT @limit",
@@ -901,7 +1311,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var afterEntries = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at, o.status
+                     o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
               FROM observations o
               WHERE o.session_id = @sid AND o.created_at > @created AND o.deleted_at IS NULL
               ORDER BY o.created_at ASC LIMIT @limit",
@@ -1141,6 +1551,81 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         };
     }
 
+    public async Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var result = new DetailedStats();
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
+            result.Overview.Observations = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sessions";
+            result.Overview.Sessions = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
+            result.Overview.Prompts = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        var names = await ListProjectNamesAsync();
+        result.Overview.Projects = names.ToList();
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COALESCE(type, 'unknown'), COUNT(*) FROM observations WHERE deleted_at IS NULL GROUP BY type";
+            using var r = cmd.ExecuteReader();
+            while (await r.ReadAsync()) result.ByType[r.GetString(0)] = r.GetInt32(1);
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL";
+            result.Recent30Days.Created = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        if (result.Recent30Days.Created > 0)
+        {
+            using (var cmd = _dataSource.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT project, COUNT(*) as cnt FROM observations
+                    WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
+                    GROUP BY project ORDER BY cnt DESC, project ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (await r.ReadAsync()) result.Recent30Days.MostActiveProject = r.GetString(0);
+            }
+            using (var cmd = _dataSource.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT COALESCE(type, 'unknown'), COUNT(*) as cnt FROM observations
+                    WHERE created_at::timestamptz > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
+                    GROUP BY type ORDER BY cnt DESC, COALESCE(type, 'unknown') ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (await r.ReadAsync()) result.Recent30Days.MostActiveType = r.GetString(0);
+            }
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE updated_at::timestamptz < NOW() - INTERVAL '90 days' AND deleted_at IS NULL";
+            result.Oldest90Days.Count = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _dataSource.CreateCommand())
+        {
+            cmd.CommandText = "SELECT pg_database_size(current_database())";
+            result.Storage.SizeBytes = Convert.ToInt64(cmd.ExecuteScalar());
+        }
+
+        return result;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Retention
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1297,7 +1782,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var observations = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at, o.status
+                     o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
               FROM observations o WHERE o.deleted_at IS NULL ORDER BY o.created_at",
             Array.Empty<NpgsqlParameter>());
 
@@ -1345,7 +1830,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         data.Observations = QueryObservations(
             @"SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                      o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                     o.created_at, o.updated_at, o.deleted_at, o.status
+                     o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
               FROM observations o WHERE o.deleted_at IS NULL AND o.project = @proj ORDER BY o.id",
             [new NpgsqlParameter("@proj", project)]);
 
@@ -1373,7 +1858,8 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         var obsSql = @"
             SELECT id, COALESCE(sync_id,''), session_id, type, title, content, COALESCE(tool_name,''), COALESCE(project,''),
                    COALESCE(scope,'project'), COALESCE(topic_key,''), revision_count, duplicate_count, COALESCE(last_seen_at,''),
-                   created_at, updated_at, COALESCE(deleted_at,''), COALESCE(status,'active')
+                   created_at, updated_at, COALESCE(deleted_at,''), COALESCE(status,'active'),
+                   file_path, symbol, namespace
             FROM observations
             WHERE id > @afterSeq";
         
@@ -1491,10 +1977,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project, scope,
                      topic_key, normalized_hash, revision_count, duplicate_count, last_seen_at,
-                     created_at, updated_at, deleted_at, status)
+                     created_at, updated_at, deleted_at, status, file_path, symbol, namespace)
                 VALUES
                     (@sync_id, @session_id, @type, @title, @content, @tool, @project, @scope,
-                     @topic, @hash, @rev, @dup, @last_seen, @created, @updated, @deleted, @status)";
+                     @topic, @hash, @rev, @dup, @last_seen, @created, @updated, @deleted, @status,
+                     @file_path, @symbol, @namespace)";
             cmd.Parameters.AddWithValue("@sync_id", (object?)o.SyncId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@session_id", o.SessionId);
             cmd.Parameters.AddWithValue("@type", o.Type);
@@ -1512,6 +1999,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             cmd.Parameters.AddWithValue("@updated", o.UpdatedAt);
             cmd.Parameters.AddWithValue("@deleted", (object?)o.DeletedAt ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@status", string.IsNullOrEmpty(o.Status) ? "active" : o.Status);
+            cmd.Parameters.AddWithValue("@file_path", (object?)o.FilePath ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@symbol", (object?)o.Symbol ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@namespace", (object?)o.Namespace ?? DBNull.Value);
             cmd.ExecuteNonQuery();
             observationsImported++;
         }
@@ -1606,7 +2096,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content,
                    o.tool_name, o.project, o.scope, o.topic_key, o.revision_count,
                    o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at,
-                   o.deleted_at, o.status, o.md_path
+                   o.deleted_at, o.status, o.file_path, o.symbol, o.namespace, o.md_path
             FROM observations o
             WHERE o.md_path IS NOT NULL AND o.md_path != '' AND o.deleted_at IS NULL
             ORDER BY o.created_at DESC";
@@ -1615,7 +2105,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         while (r.Read())
         {
             var obs = ReadObservation(r);
-            obs.MdPath = r.IsDBNull(17) ? null : r.GetString(17);
+            obs.MdPath = r.IsDBNull(20) ? null : r.GetString(20);
             list.Add(obs);
         }
 
@@ -2438,6 +2928,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         UpdatedAt = r.GetString(14),
         DeletedAt = r.IsDBNull(15) ? null : r.GetString(15),
         Status = r.FieldCount > 16 && !r.IsDBNull(16) ? r.GetString(16) : "active",
+        FilePath  = r.FieldCount > 17 && !r.IsDBNull(17) ? r.GetString(17) : null,
+        Symbol    = r.FieldCount > 18 && !r.IsDBNull(18) ? r.GetString(18) : null,
+        Namespace = r.FieldCount > 19 && !r.IsDBNull(19) ? r.GetString(19) : null,
     };
 
     private static TimelineEntry ToTimelineEntry(Observation o) => new()
@@ -2507,7 +3000,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             seen.Add(id);
 
             var obs = ReadObservation(r);
-            var rank = r.GetDouble(17);
+            var rank = r.GetDouble(20);
             list.Add(new SearchResult { Observation = obs, Rank = rank });
         }
         return list;
@@ -2519,7 +3012,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
         cmd.CommandText = @"
             SELECT o.id, o.sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at,
-                   o.created_at, o.updated_at, o.deleted_at, o.status
+                   o.created_at, o.updated_at, o.deleted_at, o.status, o.file_path, o.symbol, o.namespace
             FROM observations o WHERE o.id = @id AND o.deleted_at IS NULL";
         cmd.Parameters.AddWithValue("@id", id);
         using var r = cmd.ExecuteReader();
@@ -2603,7 +3096,7 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
 
     // Payload records for mutation deserialization (match SqliteStore order for JSON deserialization)
     private record SessionPullPayload(string? Project, string? Directory, string? StartedAt, string? EndedAt, string? Summary);
-    private record ObservationPullPayload(string? SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt);
+    private record ObservationPullPayload(string? SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt, string? FilePath, string? Symbol, string? Namespace);
     private record ObservationDeletePayload;
     private record PromptPullPayload(string? SyncId, string? SessionId, string? Content, string? Project, string? OccurredAt);
     private record PromptDeletePayload;
@@ -2716,6 +3209,11 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             return;
         }
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(payload.FilePath, "file_path");
+        ValidateMetadataLength(payload.Symbol, "symbol");
+        ValidateMetadataLength(payload.Namespace, "namespace");
+
         // Use SessionId from payload (required for FK constraint)
         await using var checkCmd = conn.CreateCommand();
         checkCmd.Transaction = tx;
@@ -2761,13 +3259,14 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
                 INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project,
                      scope, topic_key, normalized_hash, revision_count, duplicate_count,
-                     last_seen_at, updated_at, created_at)
+                     last_seen_at, updated_at, created_at, file_path, symbol, namespace)
                 VALUES
                     (@syncId, @sessionId, @type, @title, @content, @toolName, @project,
                      @scope, @topicKey, @hash, 1, 1, 
                      TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'),
                      TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""'),
-                     COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')))";
+                     COALESCE(@occurredAt, TO_CHAR(NOW() AT TIME ZONE 'utc', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')),
+                     @file_path, @symbol, @namespace)";
 
             insertCmd.Parameters.AddWithValue("@syncId", entry.EntityKey);
             insertCmd.Parameters.AddWithValue("@sessionId", sessionId);
@@ -2780,6 +3279,9 @@ public sealed class PostgresStore : IStore, ICloudMutationStore, ICloudChunkStor
             insertCmd.Parameters.AddWithValue("@topicKey", (object?)payload.TopicKey ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@hash", (object?)payload.Content ?? "");
             insertCmd.Parameters.AddWithValue("@occurredAt", (object?)payload.OccurredAt ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@file_path", (object?)payload.FilePath ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@symbol", (object?)payload.Symbol ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@namespace", (object?)payload.Namespace ?? DBNull.Value);
 
             await insertCmd.ExecuteNonQueryAsync(ct);
         }

@@ -339,6 +339,10 @@ CREATE TABLE IF NOT EXISTS observations (
         Exec("UPDATE user_prompts SET sync_id = 'prompt-' || lower(hex(randomblob(16))) WHERE sync_id IS NULL OR sync_id = ''");
         Exec("INSERT OR IGNORE INTO sync_state (target_key, lifecycle, server_id, updated_at) VALUES ('cloud', 'idle', 'cloud', datetime('now'))");
 
+        // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+        EnsureSchemaMigrationsLedger();
+        ApplyPendingMigrations();
+
         // FTS triggers (idempotent check)
         if (!TriggerExists("obs_fts_insert"))
         {
@@ -634,6 +638,11 @@ CREATE TABLE IF NOT EXISTS observations (
         var normHash = Normalizers.HashNormalized(content);
         var topicKey = Normalizers.NormalizeTopicKey(p.TopicKey);
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(p.FilePath, nameof(p.FilePath));
+        ValidateMetadataLength(p.Symbol, nameof(p.Symbol));
+        ValidateMetadataLength(p.Namespace, nameof(p.Namespace));
+
         long observationId = 0;
 
         WithTx(tx =>
@@ -721,10 +730,11 @@ CREATE TABLE IF NOT EXISTS observations (
                 @"INSERT INTO observations
                     (sync_id, session_id, type, title, content, tool_name, project,
                      scope, topic_key, normalized_hash, revision_count, duplicate_count,
-                     last_seen_at, updated_at)
+                     last_seen_at, updated_at, file_path, symbol, namespace)
                   VALUES
                     (@sid, @sess, @type, @title, @content, @tool, @proj,
-                     @scope, @tk, @hash, 1, 1, datetime('now'), datetime('now'))",
+                     @scope, @tk, @hash, 1, 1, datetime('now'), datetime('now'),
+                     @file_path, @symbol, @namespace)",
                 Param("@sid",     syncId),
                 Param("@sess",    p.SessionId),
                 Param("@type",    p.Type),
@@ -734,7 +744,10 @@ CREATE TABLE IF NOT EXISTS observations (
                 Param("@proj",    NullableString(p.Project)),
                 Param("@scope",   scope),
                 Param("@tk",      NullableString(topicKey)),
-                Param("@hash",    normHash));
+                Param("@hash",    normHash),
+                Param("@file_path", NullableString(p.FilePath)),
+                Param("@symbol",    NullableString(p.Symbol)),
+                Param("@namespace", NullableString(p.Namespace)));
 
             observationId = LastInsertRowId(tx);
             var newObs = GetObservationTx(tx, observationId)!;
@@ -872,7 +885,7 @@ CREATE TABLE IF NOT EXISTS observations (
             var tkSql   = new StringBuilder(@"
                 SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                        o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                       o.md_path, ifnull(o.status,'active') as status
+                       o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
                 FROM observations o
                 WHERE o.topic_key = @tk AND o.deleted_at IS NULL");
             var tkParms = new List<SqliteParameter> { Param("@tk", query) };
@@ -898,7 +911,7 @@ CREATE TABLE IF NOT EXISTS observations (
         var ftsSql   = new StringBuilder(@"
             SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                    o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-                   o.md_path, ifnull(o.status,'active') as status, fts.rank
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace, fts.rank
             FROM observations_fts fts
             JOIN observations o ON o.id = fts.rowid
             WHERE observations_fts MATCH @fts AND o.deleted_at IS NULL");
@@ -916,7 +929,7 @@ CREATE TABLE IF NOT EXISTS observations (
         while (ftsR.Read())
         {
             var obs  = ReadObservation(ftsR);
-            var rank = ftsR.GetDouble(18);
+            var rank = ftsR.GetDouble(21);
             if (!seen.Contains(obs.Id))
                 results.Add(new SearchResult { Observation = obs, Rank = rank });
         }
@@ -963,6 +976,401 @@ CREATE TABLE IF NOT EXISTS observations (
 
         if (merged.Count > limit) merged = merged[..limit];
         return merged;
+    }
+
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var normalizedPath = filePath.TrimEnd('/');
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND (o.file_path = @fp OR o.file_path LIKE @fp_prefix)");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@fp", normalizedPath),
+            Param("@fp_prefix", normalizedPath + "/%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(Param("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.namespace LIKE @ns_prefix");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@ns_prefix", module + "%")
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        if (!string.IsNullOrEmpty(type))
+        {
+            sql.Append(" AND o.type = @type");
+            parms.Add(Param("@type", type));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var sql = new StringBuilder(@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.symbol = @symbol");
+        var parms = new List<SqliteParameter>
+        {
+            Param("@symbol", symbol)
+        };
+
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql.Append(" AND o.project = @proj");
+            parms.Add(Param("@proj", project));
+        }
+        sql.Append(" ORDER BY o.updated_at DESC LIMIT @limit");
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql.ToString();
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    private const double TypeWeightDecision = 3.0;
+    private const double TypeWeightInsight = 2.0;
+    private const double TypeWeightConvention = 2.0;
+    private const double TypeWeightBlocker = 1.5;
+    private const double TypeWeightGotcha = 1.5;
+    private const double TypeWeightManual = 1.0;
+
+    private static double GetTypeWeight(string type) => type.ToLowerInvariant() switch
+    {
+        "decision" => TypeWeightDecision,
+        "insight" => TypeWeightInsight,
+        "convention" => TypeWeightConvention,
+        "blocker" => TypeWeightBlocker,
+        "gotcha" => TypeWeightGotcha,
+        _ => TypeWeightManual,
+    };
+
+    private static double GetRecencyScore(string createdAt, int days)
+    {
+        if (!DateTime.TryParse(createdAt, out var created))
+            return 0.2;
+        var age = DateTime.UtcNow - created;
+        if (age.TotalDays < 30) return 1.0;
+        if (age.TotalDays < 60) return 0.7;
+        if (age.TotalDays < 90) return 0.4;
+        return 0.2;
+    }
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = $@"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace,
+                   {TypeWeightDecision} * (
+                       CASE WHEN o.created_at >= @cutoff THEN 1.0
+                            WHEN o.created_at >= date(@cutoff,'-30 days') THEN 0.7
+                            WHEN o.created_at >= date(@cutoff,'-60 days') THEN 0.4
+                            ELSE 0.2 END
+                   ) as importance_score
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'decision'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY importance_score DESC, o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = Convert.ToDouble(r["importance_score"]) });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type = 'convention'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+    {
+        project = Normalizers.NormalizeProject(project);
+
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type IN ('blocker', 'gotcha')";
+
+        var parms = new List<SqliteParameter>();
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC";
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 20;
+
+        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss");
+        var sql = @"
+            SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
+                   o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
+                   o.md_path, ifnull(o.status,'active') as status, o.file_path, o.symbol, o.namespace
+            FROM observations o
+            WHERE o.deleted_at IS NULL
+              AND o.status = 'active'
+              AND o.type != 'memory_relation'
+              AND o.created_at >= @cutoff";
+
+        var parms = new List<SqliteParameter> { Param("@cutoff", cutoff) };
+        if (!string.IsNullOrEmpty(project))
+        {
+            sql += " AND o.project = @proj";
+            parms.Add(Param("@proj", project));
+        }
+        sql += " ORDER BY o.created_at DESC LIMIT @limit";
+        parms.Add(Param("@limit", limit));
+
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var p in parms) cmd.Parameters.Add(p);
+        using var r = cmd.ExecuteReader();
+        var results = new List<SearchResult>();
+        while (r.Read())
+            results.Add(new SearchResult { Observation = ReadObservation(r), Rank = 0 });
+        return Task.FromResult<IList<SearchResult>>(results);
+    }
+
+    public Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+    {
+        project = Normalizers.NormalizeProject(project);
+        if (limit <= 0) limit = 10;
+
+        // Step 1: collect target observation IDs from all memory_relation observations
+        var refCounts = new Dictionary<string, (string type, int count)>();
+
+        using (var cmdRel = _db.CreateCommand())
+        {
+            cmdRel.CommandText = @"
+                SELECT content FROM observations
+                WHERE deleted_at IS NULL AND status = 'active' AND type = 'memory_relation'";
+            if (!string.IsNullOrEmpty(project))
+            {
+                cmdRel.CommandText += " AND project = @proj";
+                cmdRel.Parameters.Add(Param("@proj", project));
+            }
+            using var r = cmdRel.ExecuteReader();
+            while (r.Read())
+            {
+                var content = r.GetString(0);
+                if (string.IsNullOrWhiteSpace(content)) continue;
+                try
+                {
+                    // Inline JSON structure to avoid cross-project reference
+                    // Expected: { "observation_id": 123, "relations": [{ "type": "depends_on", "target_observation_id": 456 }] }
+                    using var doc = System.Text.Json.JsonDocument.Parse(content);
+                    var relations = doc.RootElement.GetProperty("relations");
+                    foreach (var rel in relations.EnumerateArray())
+                    {
+                        var targetId = rel.GetProperty("target_observation_id").GetInt64();
+                        var key = $"obs:{targetId}";
+                        if (refCounts.TryGetValue(key, out var existing))
+                            refCounts[key] = (existing.type, existing.count + 1);
+                        else
+                            refCounts[key] = ("observation", 1);
+                    }
+                }
+                catch { /* skip malformed JSON */ }
+            }
+        }
+
+        if (refCounts.Count == 0)
+            return Task.FromResult<IList<ConceptRef>>(new List<ConceptRef>());
+
+        // Step 2: look up the observations that were referenced and collect their concepts
+        var conceptCounts = new Dictionary<string, (string type, int count)>();
+        foreach (var kvp in refCounts)
+        {
+            var obsId = long.Parse(kvp.Key.Replace("obs:", ""));
+            using var cmdObs = _db.CreateCommand();
+            cmdObs.CommandText = @"
+                SELECT file_path, symbol, namespace FROM observations
+                WHERE id = @id AND deleted_at IS NULL";
+            cmdObs.Parameters.Add(Param("@id", obsId));
+            using var r = cmdObs.ExecuteReader();
+            if (r.Read())
+            {
+                var fp = r.IsDBNull(0) ? null : r.GetString(0);
+                var sym = r.IsDBNull(1) ? null : r.GetString(1);
+                var ns = r.IsDBNull(2) ? null : r.GetString(2);
+
+                if (!string.IsNullOrEmpty(fp))
+                {
+                    var key = $"file_path:{fp}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("file_path", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(sym))
+                {
+                    var key = $"symbol:{sym}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("symbol", kvp.Value.count);
+                }
+                if (!string.IsNullOrEmpty(ns))
+                {
+                    var key = $"namespace:{ns}";
+                    if (conceptCounts.TryGetValue(key, out var ex))
+                        conceptCounts[key] = (ex.type, ex.count + kvp.Value.count);
+                    else
+                        conceptCounts[key] = ("namespace", kvp.Value.count);
+                }
+            }
+        }
+
+        var sorted = conceptCounts
+            .OrderByDescending(x => x.Value.count)
+            .Take(limit)
+            .Select(x => new ConceptRef
+            {
+                Concept = x.Key.Split(':', 2)[1],
+                Type = x.Value.type,
+                RefCount = x.Value.count,
+            })
+            .ToList();
+
+        return Task.FromResult<IList<ConceptRef>>(sorted);
     }
 
     public Task<TimelineResult?> TimelineAsync(long observationId, int before, int after)
@@ -1277,6 +1685,88 @@ CREATE TABLE IF NOT EXISTS observations (
         return Task.FromResult(stats);
     }
 
+    public Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var result = new DetailedStats();
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE deleted_at IS NULL";
+            result.Overview.Observations = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sessions";
+            result.Overview.Sessions = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM user_prompts WHERE deleted_at IS NULL";
+            result.Overview.Prompts = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT project FROM observations WHERE project IS NOT NULL AND deleted_at IS NULL GROUP BY project ORDER BY MAX(created_at) DESC";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result.Overview.Projects.Add(r.GetString(0));
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COALESCE(type, 'unknown'), COUNT(*) FROM observations WHERE deleted_at IS NULL GROUP BY type";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result.ByType[r.GetString(0)] = r.GetInt32(1);
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL";
+            result.Recent30Days.Created = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        if (result.Recent30Days.Created > 0)
+        {
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT project, COUNT(*) as cnt FROM observations
+                    WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL
+                    GROUP BY project ORDER BY cnt DESC, project ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (r.Read()) result.Recent30Days.MostActiveProject = r.GetString(0);
+            }
+            using (var cmd = _db.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT COALESCE(type, 'unknown'), COUNT(*) as cnt FROM observations
+                    WHERE created_at > datetime('now', '-30 days') AND deleted_at IS NULL
+                    GROUP BY type ORDER BY cnt DESC, COALESCE(type, 'unknown') ASC LIMIT 1
+                    """;
+                using var r = cmd.ExecuteReader();
+                if (r.Read()) result.Recent30Days.MostActiveType = r.GetString(0);
+            }
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM observations WHERE updated_at < datetime('now', '-90 days') AND deleted_at IS NULL";
+            result.Oldest90Days.Count = Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        using (var cmd = _db.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA page_count";
+            var pageCount = Convert.ToInt64(cmd.ExecuteScalar());
+            cmd.CommandText = "PRAGMA page_size";
+            var pageSize = Convert.ToInt64(cmd.ExecuteScalar());
+            result.Storage.SizeBytes = pageCount * pageSize;
+        }
+
+        return Task.FromResult(result);
+    }
+
     // ─── Retention ─────────────────────────────────────────────────────
 
     public Task<RetentionStats> GetRetentionStatsAsync()
@@ -1470,7 +1960,8 @@ CREATE TABLE IF NOT EXISTS observations (
                        o.revision_count, o.duplicate_count, ifnull(o.last_seen_at,'') as last_seen_at,
                        o.created_at, o.updated_at, ifnull(o.deleted_at,'') as deleted_at,
                        ifnull(o.md_path,'') as md_path,
-                       ifnull(o.status,'active') as status
+                       ifnull(o.status,'active') as status,
+                       o.file_path, o.symbol, o.namespace
                 FROM observations o
                 WHERE o.project = @proj AND o.deleted_at IS NULL
                 ORDER BY o.id";
@@ -1508,7 +1999,8 @@ CREATE TABLE IF NOT EXISTS observations (
                    revision_count, duplicate_count, ifnull(last_seen_at,'') as last_seen_at,
                    created_at, updated_at, ifnull(deleted_at,'') as deleted_at,
                    ifnull(md_path,'') as md_path,
-                   ifnull(status,'active') as status
+                   ifnull(status,'active') as status,
+                   file_path, symbol, namespace
             FROM observations
             WHERE id > @afterSeq";
         
@@ -2549,6 +3041,11 @@ CREATE TABLE IF NOT EXISTS observations (
             return;
         }
 
+        // ENG-416: fail-loud guard for code metadata (FR-005)
+        ValidateMetadataLength(payload.FilePath, "file_path");
+        ValidateMetadataLength(payload.Symbol, "symbol");
+        ValidateMetadataLength(payload.Namespace, "namespace");
+
         WithTx(tx =>
         {
             try
@@ -2584,10 +3081,11 @@ CREATE TABLE IF NOT EXISTS observations (
                         @"INSERT INTO observations
                             (sync_id, session_id, type, title, content, tool_name, project,
                              scope, topic_key, normalized_hash, revision_count, duplicate_count,
-                             last_seen_at, updated_at, created_at)
+                             last_seen_at, updated_at, created_at, file_path, symbol, namespace)
                           VALUES
                             (@syncId, @sessionId, @type, @title, @content, @toolName, @project,
-                             @scope, @topicKey, @hash, 1, 1, datetime('now'), datetime('now'), COALESCE(@occurredAt, datetime('now')))",
+                             @scope, @topicKey, @hash, 1, 1, datetime('now'), datetime('now'), COALESCE(@occurredAt, datetime('now')),
+                             @file_path, @symbol, @namespace)",
                         Param("@syncId",   mutation.EntityKey),
                         Param("@sessionId", payload.SessionId ?? ""),
                         Param("@type",     payload.Type ?? ""),
@@ -2598,7 +3096,10 @@ CREATE TABLE IF NOT EXISTS observations (
                         Param("@scope",   payload.Scope ?? "project"),
                         Param("@topicKey",  payload.TopicKey ?? ""),
                         Param("@hash",     hash),
-                        Param("@occurredAt", payload.OccurredAt));
+                        Param("@occurredAt", payload.OccurredAt),
+                        Param("@file_path", payload.FilePath is not null ? (object)payload.FilePath : DBNull.Value),
+                        Param("@symbol",    payload.Symbol is not null ? (object)payload.Symbol : DBNull.Value),
+                        Param("@namespace", payload.Namespace is not null ? (object)payload.Namespace : DBNull.Value));
                 }
             }
             catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT (FK)
@@ -2745,7 +3246,7 @@ CREATE TABLE IF NOT EXISTS observations (
 
     // Payload records for deserialization
     private record SessionPullPayload(string Id, string? Project, string? Directory, string? EndedAt, string? Summary, string? StartedAt);
-    private record ObservationPullPayload(string SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt);
+    private record ObservationPullPayload(string SyncId, string? SessionId, string? Type, string? Title, string? Content, string? ToolName, string? Project, string? Scope, string? TopicKey, string? OccurredAt, string? FilePath, string? Symbol, string? Namespace);
     private record ObservationDeletePayload(string SyncId);
     private record PromptPullPayload(string SyncId, string? SessionId, string? Content, string? Project, string? OccurredAt);
     private record PromptDeletePayload(string SyncId);
@@ -2908,7 +3409,7 @@ CREATE TABLE IF NOT EXISTS observations (
     private const string ObsSelect = @"
         SELECT o.id, ifnull(o.sync_id,'') as sync_id, o.session_id, o.type, o.title, o.content, o.tool_name, o.project,
                o.scope, o.topic_key, o.revision_count, o.duplicate_count, o.last_seen_at, o.created_at, o.updated_at, o.deleted_at,
-               o.md_path, o.status
+               o.md_path, o.status, o.file_path, o.symbol, o.namespace
         FROM observations o";
 
     private const string TimelineEntrySelect = @"
@@ -2938,6 +3439,9 @@ CREATE TABLE IF NOT EXISTS observations (
         DeletedAt      = r.IsDBNull(15) ? null : r.GetString(15),
         MdPath         = r.IsDBNull(16) ? null : r.GetString(16),
         Status         = r.FieldCount > 17 && !r.IsDBNull(17) ? r.GetString(17) : "active",
+        FilePath       = r.FieldCount > 18 && !r.IsDBNull(18) ? r.GetString(18) : null,
+        Symbol         = r.FieldCount > 19 && !r.IsDBNull(19) ? r.GetString(19) : null,
+        Namespace      = r.FieldCount > 20 && !r.IsDBNull(20) ? r.GetString(20) : null,
     };
 
     private static TimelineEntry ReadTimelineEntry(SqliteDataReader r) => new()
@@ -3186,6 +3690,9 @@ CREATE TABLE IF NOT EXISTS observations (
         project    = obs.Project,
         scope      = obs.Scope,
         topic_key  = obs.TopicKey,
+        file_path  = obs.FilePath,
+        symbol     = obs.Symbol,
+        @namespace = obs.Namespace,
     };
 
     // ─── Migration helpers ─────────────────────────────────────────────────────
@@ -3202,6 +3709,79 @@ CREATE TABLE IF NOT EXISTS observations (
         using var alter = _db.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
         alter.ExecuteNonQuery();
+    }
+
+    // ─── ENG-416: Schema evolution ledger ─────────────────────────────────────
+
+    private void EnsureSchemaMigrationsLedger()
+    {
+        Exec(@"
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version    INTEGER PRIMARY KEY,
+                name       TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ");
+        // Baseline 0000: registers the pre-ENG-416 idempotent block
+        Exec(@"
+            INSERT OR IGNORE INTO schema_migrations (version, name)
+            VALUES (0, 'baseline_pre_eng416')
+        ");
+    }
+
+    private void ApplyPendingMigrations()
+    {
+        // Version 1: ENG-416 code metadata
+        if (!MigrationApplied(1))
+        {
+            MigrateCodeMetadata();
+        }
+        // Future migrations: add else-if chain or loop here
+    }
+
+    private bool MigrationApplied(int version)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = @v";
+        cmd.Parameters.AddWithValue("@v", version);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+    }
+
+    /// <summary>
+    /// ENG-416: Add file_path, symbol, namespace columns + indexes to observations.
+    /// Runs in a single transaction with its ledger INSERT (NFR-002).
+    /// </summary>
+    private void MigrateCodeMetadata()
+    {
+        // HU-016 rule: columns BEFORE indexes
+        AddColumnIfNotExists("observations", "file_path", "TEXT");
+        AddColumnIfNotExists("observations", "symbol",    "TEXT");
+        AddColumnIfNotExists("observations", "namespace", "TEXT");
+
+        // Indexes AFTER columns (HU-016: creating index before column breaks legacy DBs)
+        Exec(@"
+            CREATE INDEX IF NOT EXISTS idx_obs_file_path  ON observations(file_path);
+            CREATE INDEX IF NOT EXISTS idx_obs_symbol     ON observations(symbol);
+            CREATE INDEX IF NOT EXISTS idx_obs_namespace  ON observations(namespace);
+        ");
+
+        // Register in ledger (atomic with above via caller transaction)
+        Exec(@"
+            INSERT INTO schema_migrations (version, name)
+            VALUES (1, 'eng416_code_metadata')
+        ");
+
+        _logger?.LogInformation("Applied migration 1: eng416_code_metadata");
+    }
+
+    // ─── ENG-416: metadata length guard (FR-005) ──────────────────────────────
+
+    private void ValidateMetadataLength(string? value, string fieldName)
+    {
+        if (value is not null && value.Length > _cfg.MaxMetadataLength)
+            throw new ArgumentException(
+                $"{fieldName} exceeds maximum length of {_cfg.MaxMetadataLength} chars (got {value.Length}). " +
+                "This limit prevents PostgreSQL B-tree index overflow (2704 bytes).");
     }
 
     private bool TriggerExists(string name)

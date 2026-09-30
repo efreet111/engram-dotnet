@@ -525,4 +525,169 @@ public class HttpStoreTests : IAsyncDisposable
         var remaining = await _sut.RecentPromptsAsync("proj", null, 10);
         Assert.DoesNotContain(remaining, p => p.Id == promptToDelete.Id);
     }
+
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task GetMemoriesByFilePathAsync_ExactMatch_ReturnsMatching()
+    {
+        await _sut.CreateSessionAsync("s-cx-file", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-file",
+            Title     = "JWT decision",
+            Content   = "We use RS256 for JWT",
+            Type      = "decision",
+            Project   = "test-project",
+            FilePath  = "src/Auth/JwtBearer.cs",
+        });
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-file",
+            Title     = "Unrelated",
+            Content   = "Some other file",
+            Type      = "manual",
+            Project   = "test-project",
+            FilePath  = "src/Other/File.cs",
+        });
+
+        var results = await _sut.GetMemoriesByFilePathAsync("src/Auth/JwtBearer.cs", "test-project", null, 10);
+
+        Assert.Single(results);
+        Assert.Equal("JWT decision", results[0].Observation.Title);
+    }
+
+    [Fact]
+    public async Task GetMemoriesByFilePathAsync_PrefixMatch_ReturnsAllUnderPath()
+    {
+        await _sut.CreateSessionAsync("s-cx-prefix", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-prefix",
+            Title     = "Auth decision 1",
+            Content   = "Content 1",
+            Type      = "decision",
+            Project   = "test-project",
+            FilePath  = "src/Auth/JwtBearer.cs",
+        });
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-prefix",
+            Title     = "Auth decision 2",
+            Content   = "Content 2",
+            Type      = "decision",
+            Project   = "test-project",
+            FilePath  = "src/Auth/Claims/ClaimsProcessor.cs",
+        });
+
+        var results = await _sut.GetMemoriesByFilePathAsync("src/Auth/", "test-project", null, 10);
+
+        Assert.Equal(2, results.Count);
+    }
+
+    [Fact]
+    public async Task GetMemoriesByFilePathAsync_NoMatch_ReturnsEmpty()
+    {
+        await _sut.CreateSessionAsync("s-cx-empty", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-empty",
+            Title     = "Some decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-project",
+            FilePath  = "src/Unrelated/File.cs",
+        });
+
+        var results = await _sut.GetMemoriesByFilePathAsync("src/Auth/JwtBearer.cs", "test-project", null, 10);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetMemoriesByModuleAsync_ExactNamespace_ReturnsMatching()
+    {
+        await _sut.CreateSessionAsync("s-cx-mod", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-mod",
+            Title     = "Store decision",
+            Content   = "Use repository pattern",
+            Type      = "architecture",
+            Project   = "test-project",
+            Namespace = "Engram.Store",
+        });
+
+        var results = await _sut.GetMemoriesByModuleAsync("Engram.Store", "test-project", null, 10);
+
+        Assert.Single(results);
+        Assert.Equal("Store decision", results[0].Observation.Title);
+    }
+
+    [Fact]
+    public async Task GetMemoriesByModuleAsync_PrefixMatch_ReturnsAllUnderModule()
+    {
+        await _sut.CreateSessionAsync("s-cx-mod-prefix", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-mod-prefix",
+            Title     = "Store decision",
+            Content   = "Content",
+            Type      = "architecture",
+            Project   = "test-project",
+            Namespace = "Engram.Store",
+        });
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-mod-prefix",
+            Title     = "Store sub decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-project",
+            Namespace = "Engram.Store.Repositories",
+        });
+
+        var results = await _sut.GetMemoriesByModuleAsync("Engram.Store", "test-project", null, 10);
+
+        Assert.Equal(2, results.Count);
+    }
+
+    [Fact]
+    public async Task GetMemoriesBySymbolAsync_ExactMatch_ReturnsMatching()
+    {
+        await _sut.CreateSessionAsync("s-cx-sym", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-sym",
+            Title     = "IStore interface decision",
+            Content   = "Use IStore abstraction",
+            Type      = "architecture",
+            Project   = "test-project",
+            Symbol    = "IStore",
+        });
+
+        var results = await _sut.GetMemoriesBySymbolAsync("IStore", "test-project", 10);
+
+        Assert.Single(results);
+        Assert.Equal("IStore interface decision", results[0].Observation.Title);
+    }
+
+    [Fact]
+    public async Task GetMemoriesBySymbolAsync_NoMatch_ReturnsEmpty()
+    {
+        await _sut.CreateSessionAsync("s-cx-sym-empty", "test-project", "/");
+        await _sut.AddObservationAsync(new AddObservationParams
+        {
+            SessionId = "s-cx-sym-empty",
+            Title     = "Some decision",
+            Content   = "Content",
+            Type      = "decision",
+            Project   = "test-project",
+            Symbol    = "SomeSymbol",
+        });
+
+        var results = await _sut.GetMemoriesBySymbolAsync("NonExistentSymbol", "test-project", 10);
+
+        Assert.Empty(results);
+    }
 }

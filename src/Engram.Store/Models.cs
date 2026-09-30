@@ -64,6 +64,10 @@ public class Observation
     [JsonPropertyName("md_path")]             public string? MdPath            { get; set; }
     // ENG-412: observation lifecycle status (active | deprecated | deleted)
     [JsonPropertyName("status")]              public string  Status            { get; set; } = "active";
+    // ENG-416: code metadata fields (HU-054 prerequisite)
+    [JsonPropertyName("file_path")]  public string? FilePath  { get; set; }
+    [JsonPropertyName("symbol")]     public string? Symbol     { get; set; }
+    [JsonPropertyName("namespace")]  public string? Namespace  { get; set; }
 }
 
 public class TimelineEntry
@@ -187,6 +191,9 @@ public record AddObservationParams
     [JsonPropertyName("scope")]      public string? Scope     { get; init; }
     [JsonPropertyName("topic_key")]  public string? TopicKey  { get; init; }
     [JsonPropertyName("md_path")]    public string? MdPath    { get; init; }
+    [JsonPropertyName("file_path")]  public string? FilePath  { get; init; }
+    [JsonPropertyName("symbol")]     public string? Symbol     { get; init; }
+    [JsonPropertyName("namespace")]  public string? Namespace  { get; init; }
 }
 
 public record UpdateObservationParams
@@ -238,6 +245,47 @@ public sealed record RetentionStats
     [JsonPropertyName("without_topic_key_90d")] public int WithoutTopicKey90d { get; set; }
 }
 
+public sealed record DetailedStats
+{
+    [JsonPropertyName("overview")]
+    public OverviewStats Overview { get; set; } = new();
+    [JsonPropertyName("by_type")]
+    public Dictionary<string, int> ByType { get; set; } = new();
+    [JsonPropertyName("recent_30d")]
+    public RecentActivityStats Recent30Days { get; set; } = new();
+    [JsonPropertyName("oldest_90d")]
+    public OldestMemoriesStats Oldest90Days { get; set; } = new();
+    [JsonPropertyName("storage")]
+    public StorageStats Storage { get; set; } = new();
+}
+
+public sealed record OverviewStats
+{
+    [JsonPropertyName("observations")] public int Observations { get; set; }
+    [JsonPropertyName("sessions")] public int Sessions { get; set; }
+    [JsonPropertyName("prompts")] public int Prompts { get; set; }
+    [JsonPropertyName("projects")] public List<string> Projects { get; set; } = new();
+    [JsonPropertyName("database_size_bytes")] public long DatabaseSizeBytes { get; set; }
+}
+
+public sealed record RecentActivityStats
+{
+    [JsonPropertyName("created")] public int Created { get; set; }
+    [JsonPropertyName("most_active_project")] public string? MostActiveProject { get; set; }
+    [JsonPropertyName("most_active_type")] public string? MostActiveType { get; set; }
+}
+
+public sealed record OldestMemoriesStats
+{
+    [JsonPropertyName("count")] public int Count { get; set; }
+}
+
+public sealed record StorageStats
+{
+    [JsonPropertyName("size_bytes")] public long SizeBytes { get; set; }
+    [JsonPropertyName("size_mb")] public double SizeMb => SizeBytes / (1024.0 * 1024.0);
+}
+
 public sealed record AgeBucket
 {
     [JsonPropertyName("label")] public string Label { get; set; } = "";
@@ -264,6 +312,55 @@ public sealed record ProjectMigration
     [JsonPropertyName("from_project")] public string FromProject { get; init; } = "";
     [JsonPropertyName("to_project")] public string ToProject { get; init; } = "";
     [JsonPropertyName("migrated_at")] public string MigratedAt { get; init; } = "";
+}
+
+// ─── Onboarding (HU-055) ─────────────────────────────────────────────────────
+
+/// <summary>
+/// Top-level onboarding report returned by the onboard command.
+/// </summary>
+public sealed record OnboardingReport
+{
+    [JsonPropertyName("user")]           public string              User           { get; init; } = "";
+    [JsonPropertyName("generated_at")]   public string              GeneratedAt    { get; init; } = "";
+    [JsonPropertyName("total_memories")] public int                TotalMemories  { get; init; }
+    [JsonPropertyName("sections")]        public OnboardingSections  Sections       { get; init; } = new();
+}
+
+/// <summary>
+/// All sections of the onboarding report.
+/// </summary>
+public sealed record OnboardingSections
+{
+    [JsonPropertyName("decisions")]      public List<OnboardingItem> Decisions     { get; init; } = [];
+    [JsonPropertyName("conventions")]     public List<OnboardingItem> Conventions    { get; init; } = [];
+    [JsonPropertyName("blockers")]        public List<OnboardingItem> Blockers       { get; init; } = [];
+    [JsonPropertyName("insights")]       public List<OnboardingItem> Insights       { get; init; } = [];
+    [JsonPropertyName("where_to_start")] public List<ConceptRef>     WhereToStart  { get; init; } = [];
+}
+
+/// <summary>
+/// A single memory item in an onboarding section.
+/// </summary>
+public sealed record OnboardingItem
+{
+    [JsonPropertyName("id")]          public long    Id         { get; init; }
+    [JsonPropertyName("type")]        public string  Type       { get; init; } = "";
+    [JsonPropertyName("title")]       public string  Title      { get; init; } = "";
+    [JsonPropertyName("content")]     public string  Content    { get; init; } = "";
+    [JsonPropertyName("created_at")]  public string  CreatedAt  { get; init; } = "";
+    [JsonPropertyName("project")]     public string? Project    { get; init; }
+    [JsonPropertyName("importance")]  public double  Importance { get; init; }
+}
+
+/// <summary>
+/// A referenced concept (file_path, symbol, or namespace) with its reference count.
+/// </summary>
+public sealed record ConceptRef
+{
+    [JsonPropertyName("concept")]    public string Concept   { get; init; } = "";
+    [JsonPropertyName("type")]       public string Type      { get; init; } = ""; // "file_path" | "symbol" | "namespace"
+    [JsonPropertyName("ref_count")]  public int    RefCount  { get; init; }
 }
 
 // ─── Domain exceptions ────────────────────────────────────────────────────────

@@ -1,3 +1,8 @@
+---
+flowforge_slug: hu-052-dev-observability
+status: in-progress
+---
+
 # HU-052 — Dev-facing observability mejorado (`engram stats`)
 
 **ENG:** ENG-482  
@@ -90,14 +95,14 @@ Engram Memory Stats
 
 ## Criterios de aceptación
 
-- [ ] `engram stats` muestra:
-  - [ ] **Overview**: totals (observations, sessions, prompts, projects)
-  - [ ] **By Type**: breakdown con count y porcentaje
-  - [ ] **Recent Activity**: memorias creadas en últimos 30 días
-  - [ ] **Oldest Memories**: count de memorias 90+ días sin actualizar
-  - [ ] **Storage**: database size en MB/KB
-- [ ] Output formateado con emojis y separadores (como el ejemplo arriba)
-- [ ] Flag `--json` para output machine-readable:
+- [x] `engram stats` muestra:
+  - [x] **Overview**: totals (observations, sessions, prompts, projects)
+  - [x] **By Type**: breakdown con count y porcentaje
+  - [x] **Recent Activity**: memorias creadas en últimos 30 días
+  - [x] **Oldest Memories**: count de memorias 90+ días sin actualizar
+  - [x] **Storage**: database size en MB/KB
+- [x] Output formateado con emojis y separadores (como el ejemplo arriba)
+- [x] Flag `--json` para output machine-readable:
   ```json
   {
     "overview": { "observations": 156, "sessions": 42, ... },
@@ -107,14 +112,14 @@ Engram Memory Stats
     "storage": { "size_mb": 2.3 }
   }
   ```
-- [ ] Tests:
-  - [ ] Stats con SQLite (in-memory)
-  - [ ] Stats con Postgres (Testcontainers)
-  - [ ] Output JSON válido
-  - [ ] Edge case: base de datos vacía (0 memorias)
-- [ ] Documentación:
-  - [ ] `docs/01-QUICK-START.md` — ejemplo de `engram stats`
-  - [ ] `README.md` — mención de stats mejorado
+- [x] Tests:
+  - [x] Stats con SQLite (in-memory) — `DetailedStatsTests.cs` (7 tests)
+  - [x] Stats con Postgres (Testcontainers) — `PostgresDetailedStatsTests.cs` (5 tests)
+  - [x] Output JSON válido
+  - [x] Edge case: base de datos vacía (0 memorias)
+- [x] Documentación:
+  - [x] `docs/CLI-REFERENCE.md` — sección `engram stats` actualizada con `--json` flag
+  - [x] README.md — mención de stats mejorado (vía CLI-REFERENCE.md)
 
 ---
 

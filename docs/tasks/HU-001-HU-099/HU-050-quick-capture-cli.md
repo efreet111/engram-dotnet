@@ -4,7 +4,8 @@
 **Tipo:** Feature  
 **Prioridad:** P1  
 **Esfuerzo:** S (3-4 horas)  
-**Estado:** Idea  
+**Estado:** Done  
+**FlowForge slug:** hu-050-quick-capture  
 **Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-003)
 
 ---

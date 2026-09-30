@@ -19,6 +19,23 @@ public interface IStore : IDisposable
     Task<IList<SearchResult>> SearchAsync(string query, IList<string> projects, SearchOptions opts);
     Task<TimelineResult?> TimelineAsync(long observationId, int before, int after);
 
+    // Code-context queries (HU-064)
+    Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit);
+    Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit);
+    Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit);
+
+    // Onboarding queries (HU-055)
+    /// <summary>Top decisions ordered by importance (recency × type_weight × reference_count).</summary>
+    Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days);
+    /// <summary>Active conventions ordered by recency.</summary>
+    Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days);
+    /// <summary>Blockers and gotchas (type = 'blocker' or 'gotcha').</summary>
+    Task<IList<SearchResult>> GetBlockersAsync(string? project);
+    /// <summary>Recent insights across all types within the time window.</summary>
+    Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit);
+    /// <summary>Most referenced concepts (file_path, symbol, namespace) by reference count.</summary>
+    Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project);
+
     // Prompts
     Task<long> AddPromptAsync(AddPromptParams p);
     Task<IList<Prompt>> RecentPromptsAsync(string? project, string? userId, int limit);
@@ -29,6 +46,7 @@ public interface IStore : IDisposable
     Task<string> FormatContextAsync(string? project, string? scope);
     Task<string> FormatContextAsync(IList<string> projects, string? scope);
     Task<Stats> StatsAsync();
+    Task<DetailedStats> GetDetailedStatsAsync();
 
     // Export / Import
     Task<ExportData> ExportAsync();

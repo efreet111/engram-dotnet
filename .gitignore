@@ -84,3 +84,4 @@ openspec/engram-install-new/proposal.md
 docker/sync-test.yml
 docker run --rm ghcr.io/efreet111/libe_sqlite3.so
 docker run --rm ghcr.io/efreet111/engram-dotnet:latest engram
+docs/requirements/01-engram-dotnet-dependencies-report.md

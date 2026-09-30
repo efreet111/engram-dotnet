@@ -29,7 +29,7 @@ src/
 ├── Engram.Sync/         ← Offline-first sync engine
 │   ├── SyncManager.cs   ← BackgroundService
 │   └── Transport/       ← HTTP transport (IMutationTransport)
-├── Engram.Mcp/          ← MCP server (28 tools, stdio transport)
+├── Engram.Mcp/          ← MCP server (31 tools, stdio transport)
 ├── Engram.Cli/          ← CLI entry point (System.CommandLine)
 ├── Engram.Diagnostics/  ← Doctor diagnostic tools
 ├── Engram.Obsidian/     ← Obsidian vault export
@@ -185,7 +185,7 @@ app.MapGet("/search", async (ctx, store) => await HandleSearch(ctx, store));
 
 ## MCP Server
 
-28 tools registered via `McpServerTool` attribute:
+31 tools registered via `McpServerTool` attribute:
 
 ```
 Production (create/read):

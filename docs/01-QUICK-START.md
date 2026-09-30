@@ -77,6 +77,54 @@ Or see [SETUP-WIZARD.md](SETUP-WIZARD.md) and [MCP-CONFIG.md](MCP-CONFIG.md).
 
 Your AI agent can now use `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`, etc.
 
+### Quick capture from CLI
+
+Capture a memory instantly without flags:
+
+```bash
+engram "decisión: elegimos PostgreSQL por JSONB"
+# ✓ Memory saved: #42 "decisión: elegimos PostgreSQL por" (note) [project: engram-dotnet]
+
+engram -t insight "pattern: usamos Result<T> para errores"
+# ✓ Memory saved: #43 "pattern: usamos Result<T> para errores" (insight) [project: engram-dotnet]
+```
+
+### Auto-capture with git hooks
+
+Run `engram init` in any git repository to install a `post-commit` hook that captures every commit as a searchable memory.
+
+```bash
+cd your-project/
+engram init                     # auto-capture every commit
+engram init --interactive       # prompt before each capture
+engram init --project my-app    # override project name
+```
+
+**Disable:** `rm .git/hooks/post-commit .git/hooks/prepare-commit-msg`
+
+> **Windows:** Requires Git Bash or WSL. Native Windows shells are not supported.
+
+### Auto-capture with file watching
+
+Watch files and capture every significant change as a `code_change` memory — no manual command needed. Each change of at least 10 lines (configurable) becomes a memory grouped by file (`topic_key=code-change:{path}`).
+
+```bash
+engram watch src/Auth/JwtBearer.cs              # watch a single file
+engram watch src/                                # watch a directory (non-recursive)
+engram watch "src/Auth/*.cs"                     # watch a glob (quote it)
+engram watch src/ --threshold 20                 # only capture changes >= 20 lines
+engram watch src/ --ignore-pattern "*.log"       # exclude files
+```
+
+Output looks like:
+
+```
+👀 Watching src/Auth/JwtBearer.cs...
+✓ Memory saved: #1234 "Changed: src/Auth/JwtBearer.cs" (code_change) [project: engram-dotnet]
+```
+
+Press `Ctrl+C` to stop watching (`✓ Watch stopped. N memories captured.`).
+
 ---
 
 ## 👥 Team Leader (2-5 people)
@@ -380,7 +428,7 @@ When pulling from multiple servers, dedup strategy:
 fuser -k 7437/tcp
 ```
 
-### `remote-server` profile (desktop ⚠️ postponed)
+### `remote-server` profile
 
 ```bash
 # Error: 28P01 (password authentication failed)
