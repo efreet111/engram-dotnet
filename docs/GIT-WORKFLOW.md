@@ -12,6 +12,7 @@
 | Rama | Uso |
 |------|-----|
 | **`main`** | Siempre desplegable. CI en cada push/PR. Releases desde tags aquí. |
+| **`dev`** | Integración compartida. CI en cada push/PR; permite colaboración y publicación directa de cambios no estables. |
 | **`feat/...`** | Features nuevas |
 | **`fix/...`** | Bugfixes |
 | **`docs/...`** | Solo documentación (puede ir directo a `main` si es trivial) |
@@ -29,6 +30,11 @@ chore/pin-mcp-sdk-version
 Opcional pero recomendado: incluir ID de backlog en el PR/commit body: `ENG-206`.
 
 **No usar** `main` para trabajo diario. **No force-push** a `main`.
+
+Los cambios de desarrollo compartido pueden publicarse directamente en `dev`.
+La rama `dev` ejecuta el mismo CI de SQLite y PostgreSQL que `main`, pero no
+genera releases oficiales. Las releases siguen dependiendo exclusivamente de
+tags `v*`.
 
 ---
 
