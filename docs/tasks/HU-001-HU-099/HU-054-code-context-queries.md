@@ -4,7 +4,7 @@
 **Tipo:** Feature  
 **Prioridad:** P2  
 **Esfuerzo:** L (~1 semana)  
-**Estado:** Idea  
+**Estado:** Done (implementado en HU-064)  
 **Origen:** ← feature ideas 2026-08 (ENGRAM-IDEA-002)
 
 ---

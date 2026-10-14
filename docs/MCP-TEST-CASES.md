@@ -1,6 +1,6 @@
 # MCP Tools — Test Cases
 
-> **Purpose**: Verify all 28 MCP tools work correctly.  
+> **Purpose**: Verify all 31 MCP tools work correctly. (28 core + 3 HU-064 code-context)  
 > **Server**: `http://localhost:7437` (PostgreSQL)  
 > **Requires**: `engram mcp` running locally OR direct curl to REST API.
 
@@ -320,6 +320,91 @@ curl -X POST http://localhost:7437/md/sync \
 
 ---
 
+## 🧪 CASE 18: `mem_recall_for_file` — Query memories by file path
+
+**MCP tool**: `mem_recall_for_file(path, project?, type?, limit?)`
+
+```bash
+# First, save a memory with a file path
+curl -X POST http://localhost:7437/observations \
+  -H "Content-Type: application/json" \
+  -H "X-Engram-User: your-username" \
+  -d '{
+    "session_id":"mcp-test-session",
+    "title":"Decision about JWT",
+    "content":"We use RS256 for JWT tokens in Auth module",
+    "type":"decision",
+    "project":"team/mcp-test",
+    "file_path":"src/Auth/JwtBearer.cs"
+  }'
+
+# Query by exact file path (HU-064: uses /search/by-file endpoint)
+curl "http://localhost:7437/search/by-file?path=src/Auth/JwtBearer.cs&project=team/mcp-test&limit=5" \
+  -H "X-Engram-User: your-username"
+
+# Query by prefix (directory)
+curl "http://localhost:7437/search/by-file?path=src/Auth/&project=team/mcp-test&limit=5" \
+  -H "X-Engram-User: your-username"
+```
+
+**Expected**: Observations with matching `file_path` returned.
+
+---
+
+## 🧪 CASE 19: `mem_recall_for_module` — Query memories by namespace
+
+**MCP tool**: `mem_recall_for_module(module, project?, type?, limit?)`
+
+```bash
+# Save a memory with a namespace
+curl -X POST http://localhost:7437/observations \
+  -H "Content-Type: application/json" \
+  -H "X-Engram-User: your-username" \
+  -d '{
+    "session_id":"mcp-test-session",
+    "title":"Store architecture decision",
+    "content":"Use repository pattern in Engram.Store",
+    "type":"architecture",
+    "project":"team/mcp-test",
+    "namespace":"Engram.Store"
+  }'
+
+# Query by namespace prefix (HU-064: uses /search/by-module endpoint)
+curl "http://localhost:7437/search/by-module?module=Engram.Store&project=team/mcp-test&limit=5" \
+  -H "X-Engram-User: your-username"
+```
+
+**Expected**: Observations with `namespace` starting with `Engram.Store`.
+
+---
+
+## 🧪 CASE 20: `mem_recall_for_symbol` — Query memories by symbol name
+
+**MCP tool**: `mem_recall_for_symbol(symbol, project?, limit?)`
+
+```bash
+# Save a memory referencing a symbol
+curl -X POST http://localhost:7437/observations \
+  -H "Content-Type: application/json" \
+  -H "X-Engram-User: your-username" \
+  -d '{
+    "session_id":"mcp-test-session",
+    "title":"IStore interface decision",
+    "content":"Abstraction over storage backend via IStore",
+    "type":"architecture",
+    "project":"team/mcp-test",
+    "symbol":"IStore"
+  }'
+
+# Query by exact symbol (HU-064: uses /search/by-symbol endpoint)
+curl "http://localhost:7437/search/by-symbol?symbol=IStore&project=team/mcp-test&limit=5" \
+  -H "X-Engram-User: your-username"
+```
+
+**Expected**: Observations with exact `symbol` match.
+
+---
+
 ## ✅ TEST CHECKLIST
 
 - [ ] CASE 1: `mem_save` — memory created
@@ -339,6 +424,9 @@ curl -X POST http://localhost:7437/md/sync \
 - [ ] CASE 15: `mem_merge_projects`
 - [ ] CASE 16: `mem_promote_to_md`
 - [ ] CASE 17: `mem_sync_md_to_repo`
+- [x] CASE 18: `mem_recall_for_file` — file-path query (HU-064)
+- [x] CASE 19: `mem_recall_for_module` — namespace query (HU-064)
+- [x] CASE 20: `mem_recall_for_symbol` — symbol query (HU-064)
 
 ---
 

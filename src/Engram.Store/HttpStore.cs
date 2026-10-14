@@ -197,6 +197,63 @@ public sealed class HttpStore : IStore
         return await Deserialize<TimelineResult>(resp);
     }
 
+    // ─── Code-context queries (HU-064) ─────────────────────────────────────────
+
+    public async Task<IList<SearchResult>> GetMemoriesByFilePathAsync(string filePath, string? project, string? type, int limit)
+    {
+        var qs = BuildQuery(
+            ("path",    filePath),
+            ("project", project),
+            ("type",    type),
+            ("limit",   limit.ToString()));
+
+        var resp = await Get($"search/by-file{qs}");
+        await EnsureSuccess(resp, "GetMemoriesByFilePath");
+        return await Deserialize<List<SearchResult>>(resp) ?? [];
+    }
+
+    public async Task<IList<SearchResult>> GetMemoriesByModuleAsync(string module, string? project, string? type, int limit)
+    {
+        var qs = BuildQuery(
+            ("module",  module),
+            ("project", project),
+            ("type",    type),
+            ("limit",   limit.ToString()));
+
+        var resp = await Get($"search/by-module{qs}");
+        await EnsureSuccess(resp, "GetMemoriesByModule");
+        return await Deserialize<List<SearchResult>>(resp) ?? [];
+    }
+
+    public async Task<IList<SearchResult>> GetMemoriesBySymbolAsync(string symbol, string? project, int limit)
+    {
+        var qs = BuildQuery(
+            ("symbol",  symbol),
+            ("project", project),
+            ("limit",   limit.ToString()));
+
+        var resp = await Get($"search/by-symbol{qs}");
+        await EnsureSuccess(resp, "GetMemoriesBySymbol");
+        return await Deserialize<List<SearchResult>>(resp) ?? [];
+    }
+
+    // ─── Onboarding queries (HU-055) ─────────────────────────────────────────────
+
+    public Task<IList<SearchResult>> GetTopDecisionsAsync(int limit, string? project, int days)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetActiveConventionsAsync(int limit, string? project, int days)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetBlockersAsync(string? project)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<SearchResult>> GetRecentInsightsAsync(int days, string? project, int limit)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
+    public Task<IList<ConceptRef>> GetMostReferencedConceptsAsync(int limit, string? project)
+        => throw new NotSupportedException("HttpStore does not support onboarding queries locally");
+
     // ─── Prompts ──────────────────────────────────────────────────────────────
 
     public async Task<long> AddPromptAsync(AddPromptParams p)
@@ -264,6 +321,13 @@ public sealed class HttpStore : IStore
         var resp = await Get("stats");
         await EnsureSuccess(resp, "Stats");
         return await Deserialize<Stats>(resp) ?? new Stats();
+    }
+
+    public async Task<DetailedStats> GetDetailedStatsAsync()
+    {
+        var resp = await Get("stats/detailed");
+        await EnsureSuccess(resp, "GetDetailedStats");
+        return await Deserialize<DetailedStats>(resp) ?? new DetailedStats();
     }
 
     // ─── Retention ─────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ Este ROADMAP es visión y contexto; no sustituye la cola.
 | ENG-451 BUG-1 + BUG-2 | `6ba2674` `12b97a9` `5e20f80` | Sync recovery for orphaned pulled mutations + accurate `/sync/status` counts from DB. See ADR-007. |
 | ENG-452 | `fec9d73` | Self-loop detection — `engram serve` with SQLite no longer wastes CPU on doomed 501s. See ADR-008. |
 | ENG-435 rework cycle 2 | `4be21df` `62c1194` | Migration dry-run + mid-migration rollback integration tests. Closes rework cycle 2/3. |
-| ENG-456 | `5764ce1` | NoOpVerifier factory pattern — MCP server starts without `ANTHROPIC_API_KEY`. All 28 tools work; `mem_verify_artifact` returns structured `api_key_missing` error. 8 tests added. |
+| ENG-456 | `5764ce1` | NoOpVerifier factory pattern — MCP server starts without `ANTHROPIC_API_KEY`. All 31 tools work; `mem_verify_artifact` returns structured `api_key_missing` error. 8 tests added. |
 | ENG-473 | `c88d31e` | Fix `relations add` FK constraint violation — `rel-cli-{date}` session was generated but never created, breaking `mem_relations` and `mem_lineage_obs`. Fix: `CreateSessionAsync()` before `SaveRelationAsync()`. |
 | ENG-476 | `0258675` | Sync-on-demand push — trigger push after each `mem_save`, `mem_update`, `mem_delete`. Immediate push on MCP startup. Status feedback via `/sync/status`. |
 | ENG-478 | `0aa35ed` | Docker vanilla build — fix NuGet version error (`dev` not valid SemVer) + `Dockerfile.debian` alternative for servers without `mcr.microsoft.com` access. |
@@ -164,8 +164,8 @@ Quick wins (P1):
 
 Future features (P2):
 - **ENG-483**: Code-aware memory capture (`engram watch`) — L effort
-- **ENG-484**: Code-context query tools (`mem_recall_for_*`) — L effort (requires ENG-416 schema evolution)
-- **ENG-485**: Onboarding flow for teams (`engram onboard`) — L effort
+- **ENG-484**: ✅ Code-context query tools (`mem_recall_for_file/module/symbol`) — L effort — **Done (HU-064)**
+- **ENG-485**: ✅ Onboarding flow for teams (`engram onboard`) — L effort — **Done (HU-055)**
 
 Visionary (Deferred):
 - **ENG-486**: MCP registry (npm-like for memories) — XL effort
@@ -285,7 +285,7 @@ Add user/password authentication to protect the server from unauthorized access.
 |---|-----------|---------------|----------|--------|
 | 1 | **Pull entre 2 clientes** | Dev1 crea memoria local → SyncManager push → Dev2 hace pull → Dev2 ve la memoria | 2 developers | 🔲 |
 | 2 | **Offline + reconexión** | Dev1 offline → crea 3 memorias → reconecta → aparecen en server | Server restart | 🔲 |
-| 3 | **MCP Tools (28 tools)** | Ver [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) | curl / MCP | 🔲 Sin trazabilidad |
+| 3 | **MCP Tools (31 tools)** | Ver [MANUAL-TESTING-CHECKLIST.md](MANUAL-TESTING-CHECKLIST.md) | curl / MCP | 🔲 Sin trazabilidad |
 | 4 | **CLI commands** | search, save, doctor, export, stats, context, projects | ✅ | 🔲 Sin trazabilidad |
 | 5 | **REST API smoke test** | 33 core + 8 sync endpoints | ✅ | 🔲 Sin trazabilidad — ver checklist detallado |
 | 6 | **Sync endpoints** | enroll, status, push/pull, pause/resume | curl | 🔲 Sin probar |

@@ -1,5 +1,6 @@
 // Engram — Persistent memory for AI coding agents (C# port)
 // Usage:
+//   engram "<text>"           Quick-capture a memory
 //   engram serve [port]     Start HTTP + MCP server
 //   engram mcp              Start MCP server only (stdio transport)
 //   engram search <query>   Search memories from CLI
@@ -17,7 +18,11 @@
 //   engram version          Print version
 
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
+using System.CommandLine.Help;
+using System.Linq;
+using System.Text;
 using System.Text.Json;
 using Engram.Cli;
 using Engram.Mcp;
@@ -37,6 +42,25 @@ const string Version = "1.3.0";
 // ─── Root command ────────────────────────────────────────────────────────────
 
 var root = new RootCommand("Engram — persistent memory for AI coding agents");
+
+// ─── Quick-capture (HU-050) ─────────────────────────────────────────────────
+var quickCaptureArg = new Argument<string>("content")
+{
+    Description = "Quick-capture: save a memory with this text (e.g. engram \"my insight\")",
+    Arity = ArgumentArity.ZeroOrOne,  // critical: allows subcommands to still route
+};
+var qcTypeOpt = new Option<string>("--type", "-t")
+{
+    Description = "Memory type (default: note)",
+    DefaultValueFactory = _ => "note",
+};
+var qcProjOpt = new Option<string?>("--project", "-p")
+{
+    Description = "Project name (default: auto-detected)",
+};
+root.Arguments.Add(quickCaptureArg);
+root.Options.Add(qcTypeOpt);
+root.Options.Add(qcProjOpt);
 
 // ─── serve ───────────────────────────────────────────────────────────────────
 
@@ -208,6 +232,9 @@ mcpCmd.SetAction(async (ParseResult parseResult) =>
     mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryRelationRepository>();
     mcpBuilder.Services.AddSingleton<Engram.Verification.MemoryLineageBuilder>();
 
+    // Register contradiction detection service (HU-062)
+    mcpBuilder.Services.AddSingleton<Engram.Verification.ContradictionDetector>();
+
     // Register diagnostic service
     mcpBuilder.Services.AddSingleton<IDiagnosticService>(sp =>
     {
@@ -289,11 +316,17 @@ var searchTypeOpt  = new Option<string?>("--type") { Description = "Filter by ty
 var searchProjOpt  = new Option<string?>("--project") { Description = "Filter by project" };
 var searchScopeOpt = new Option<string?>("--scope") { Description = "Filter by scope: team or personal (omit for both)" };
 var searchLimitOpt = new Option<int>("--limit") { Description = "Max results", DefaultValueFactory = _ => 10 };
+var searchFilePathOpt = new Option<string?>("--file-path") { Description = "Query memories by file path (exact or prefix match)" };
+var searchSymbolOpt   = new Option<string?>("--symbol") { Description = "Query memories by exact symbol name" };
+var searchNamespaceOpt = new Option<string?>("--namespace") { Description = "Query memories by namespace/module prefix" };
 searchCmd.Arguments.Add(searchQueryArg);
 searchCmd.Options.Add(searchTypeOpt);
 searchCmd.Options.Add(searchProjOpt);
 searchCmd.Options.Add(searchScopeOpt);
 searchCmd.Options.Add(searchLimitOpt);
+searchCmd.Options.Add(searchFilePathOpt);
+searchCmd.Options.Add(searchSymbolOpt);
+searchCmd.Options.Add(searchNamespaceOpt);
 searchCmd.SetAction(async (ParseResult parseResult) =>
 {
     string query = parseResult.GetValue(searchQueryArg)!;
@@ -301,9 +334,34 @@ searchCmd.SetAction(async (ParseResult parseResult) =>
     string? proj = parseResult.GetValue(searchProjOpt);
     string? scope = parseResult.GetValue(searchScopeOpt);
     int limit = parseResult.GetValue(searchLimitOpt);
+    string? filePath = parseResult.GetValue(searchFilePathOpt);
+    string? symbol = parseResult.GetValue(searchSymbolOpt);
+    string? ns = parseResult.GetValue(searchNamespaceOpt);
 
     using var store = OpenStore();
-    var results = await store.SearchAsync(query, new SearchOptions
+
+    // Code-context query paths (HU-064)
+    if (!string.IsNullOrEmpty(filePath))
+    {
+        var results = await store.GetMemoriesByFilePathAsync(filePath, proj, type, limit);
+        PrintSearchResults(results, $"file path \"{filePath}\"");
+        return;
+    }
+    if (!string.IsNullOrEmpty(symbol))
+    {
+        var results = await store.GetMemoriesBySymbolAsync(symbol, proj, limit);
+        PrintSearchResults(results, $"symbol \"{symbol}\"");
+        return;
+    }
+    if (!string.IsNullOrEmpty(ns))
+    {
+        var results = await store.GetMemoriesByModuleAsync(ns, proj, type, limit);
+        PrintSearchResults(results, $"module \"{ns}\"");
+        return;
+    }
+
+    // Standard FTS search
+    var ftsResults = await store.SearchAsync(query, new SearchOptions
     {
         Type    = type,
         Project = proj,
@@ -311,12 +369,12 @@ searchCmd.SetAction(async (ParseResult parseResult) =>
         Limit   = limit,
     });
 
-    if (results.Count == 0) { Console.WriteLine($"No memories found for: \"{query}\""); return; }
+    if (ftsResults.Count == 0) { Console.WriteLine($"No memories found for: \"{query}\""); return; }
 
-    Console.WriteLine($"Found {results.Count} memories:\n");
-    for (int i = 0; i < results.Count; i++)
+    Console.WriteLine($"Found {ftsResults.Count} memories:\n");
+    for (int i = 0; i < ftsResults.Count; i++)
     {
-        var r = results[i].Observation;
+        var r = ftsResults[i].Observation;
         var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
         Console.WriteLine($"[{i+1}] #{r.Id} ({r.Type}) — {r.Title}");
         Console.WriteLine($"    {Truncate(r.Content, 300)}");
@@ -333,12 +391,18 @@ var saveTypeOpt   = new Option<string>("--type") { Description = "Type", Default
 var saveProjOpt   = new Option<string?>("--project") { Description = "Project name" };
 var saveScopeOpt  = new Option<string?>("--scope") { Description = "Scope: team (shared with all devs) or personal (private). Default: auto-classified from --type" };
 var saveTopicOpt  = new Option<string?>("--topic") { Description = "Topic key for upsert" };
+var saveFilePathOpt = new Option<string?>("--file-path") { Description = "File path associated with this memory (code-context)" };
+var saveSymbolOpt   = new Option<string?>("--symbol") { Description = "Symbol name associated with this memory (code-context)" };
+var saveNamespaceOpt = new Option<string?>("--namespace") { Description = "Namespace/module associated with this memory (code-context)" };
 saveCmd.Arguments.Add(saveTitleArg);
 saveCmd.Arguments.Add(saveContentArg);
 saveCmd.Options.Add(saveTypeOpt);
 saveCmd.Options.Add(saveProjOpt);
 saveCmd.Options.Add(saveScopeOpt);
 saveCmd.Options.Add(saveTopicOpt);
+saveCmd.Options.Add(saveFilePathOpt);
+saveCmd.Options.Add(saveSymbolOpt);
+saveCmd.Options.Add(saveNamespaceOpt);
 saveCmd.SetAction(async (ParseResult parseResult) =>
 {
     string title = parseResult.GetValue(saveTitleArg)!;
@@ -347,6 +411,9 @@ saveCmd.SetAction(async (ParseResult parseResult) =>
     string? proj = parseResult.GetValue(saveProjOpt);
     string? scope = parseResult.GetValue(saveScopeOpt);
     string? topic = parseResult.GetValue(saveTopicOpt);
+    string? filePath = parseResult.GetValue(saveFilePathOpt);
+    string? symbol = parseResult.GetValue(saveSymbolOpt);
+    string? ns = parseResult.GetValue(saveNamespaceOpt);
 
     using var store = OpenStore();
     var sessionId = string.IsNullOrEmpty(proj) ? "manual-save" : $"manual-save-{proj}";
@@ -360,6 +427,9 @@ saveCmd.SetAction(async (ParseResult parseResult) =>
         Project   = proj,
         Scope     = scope,
         TopicKey  = topic,
+        FilePath  = filePath,
+        Symbol    = symbol,
+        Namespace = ns,
     });
     Console.WriteLine($"Memory saved: #{id} \"{title}\" ({type})");
 });
@@ -383,26 +453,93 @@ contextCmd.SetAction(async (ParseResult parseResult) =>
 
 // ─── stats ────────────────────────────────────────────────────────────────────
 
-var statsCmd = new Command("stats", "Show memory system statistics");
-statsCmd.SetAction(async (ParseResult _) =>
+var statsCmd = new Command("stats", "Show detailed memory system statistics");
+var statsJsonOpt = new Option<bool>("--json") { Description = "Output as JSON (machine-readable)" };
+statsCmd.Options.Add(statsJsonOpt);
+
+statsCmd.SetAction(async (ParseResult parseResult) =>
 {
     var cfg = StoreConfig.FromEnvironment();
     using var store = OpenStore(cfg);
-    var s = await store.StatsAsync();
-    var projects = s.Projects.Count > 0 ? string.Join(", ", s.Projects) : "none yet";
+    var stats = await store.GetDetailedStatsAsync();
+
+    if (parseResult.GetValue(statsJsonOpt))
+    {
+        Console.WriteLine(JsonSerializer.Serialize(stats, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            WriteIndented = true,
+        }));
+        return;
+    }
+
     var dbLabel = cfg.IsPostgres
         ? $"PostgreSQL ({cfg.PgConnectionString?.Split(';').FirstOrDefault(p => p.StartsWith("Host=", StringComparison.OrdinalIgnoreCase))?.Split('=').LastOrDefault() ?? "unknown"})"
         : cfg.IsThinClient
             ? $"HTTP Remote ({cfg.RemoteUrl})"
             : $"{cfg.DataDir}/engram.db";
-    Console.WriteLine($"""
-        Engram Memory Stats
-          Sessions:     {s.TotalSessions}
-          Observations: {s.TotalObservations}
-          Prompts:      {s.TotalPrompts}
-          Projects:     {projects}
-          Database:     {dbLabel}
-        """);
+
+    var projectsStr = stats.Overview.Projects.Count > 0
+        ? string.Join(", ", stats.Overview.Projects)
+        : "none yet";
+
+    var sizeMb = stats.Storage.SizeBytes / (1024.0 * 1024.0);
+    var sizeStr = sizeMb >= 1
+        ? $"{sizeMb:F1} MB"
+        : $"{stats.Storage.SizeBytes / 1024.0:F1} KB";
+
+    Console.WriteLine("Engram Memory Stats");
+    Console.WriteLine("\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796\u2796");
+
+    Console.WriteLine("\n\ud83d\udcca Overview");
+    Console.WriteLine($"  Total observations: {stats.Overview.Observations}");
+    Console.WriteLine($"  Total sessions:      {stats.Overview.Sessions}");
+    Console.WriteLine($"  Total prompts:       {stats.Overview.Prompts}");
+    Console.WriteLine($"  Projects:            {stats.Overview.Projects.Count} ({projectsStr})");
+    Console.WriteLine($"  Database:            {dbLabel} ({sizeStr})");
+
+    Console.WriteLine("\n\ud83d\udcdd By Type");
+    if (stats.ByType.Count == 0)
+    {
+        Console.WriteLine("  No memories yet");
+    }
+    else
+    {
+        var total = stats.Overview.Observations;
+        foreach (var (type, count) in stats.ByType.OrderByDescending(x => x.Value))
+        {
+            var pct = total > 0 ? (count * 100.0 / total) : 0;
+            Console.WriteLine($"  {type,-15} {count,5} ({pct:F1}%)");
+        }
+    }
+
+    Console.WriteLine("\n\ud83d\udd50 Recent Activity (last 30 days)");
+    if (stats.Recent30Days.Created == 0)
+    {
+        Console.WriteLine("  No memories created in the last 30 days");
+    }
+    else
+    {
+        Console.WriteLine($"  Created: {stats.Recent30Days.Created} memories");
+        if (!string.IsNullOrEmpty(stats.Recent30Days.MostActiveProject))
+            Console.WriteLine($"  Most active project: {stats.Recent30Days.MostActiveProject}");
+        if (!string.IsNullOrEmpty(stats.Recent30Days.MostActiveType))
+            Console.WriteLine($"  Most active type: {stats.Recent30Days.MostActiveType}");
+    }
+
+    Console.WriteLine("\n\ud83e\udd06 Oldest Memories (90+ days)");
+    if (stats.Oldest90Days.Count == 0)
+    {
+        Console.WriteLine("  No memories older than 90 days");
+    }
+    else
+    {
+        Console.WriteLine($"  {stats.Oldest90Days.Count} memories not updated in 90+ days");
+        Console.WriteLine("  Run `engram stats --json` for details");
+    }
+
+    Console.WriteLine("\n\ud83d\udcbe Storage");
+    Console.WriteLine($"  Database size: {sizeStr}");
 });
 
 // ─── export ───────────────────────────────────────────────────────────────────
@@ -560,11 +697,13 @@ var enrollBehaviorOpt = new Option<string>("--behavior") { Description = "Sync b
 var enrollExcludeServerOpt = new Option<string[]>("--exclude-server") { Description = "Exclude server from sync (can be repeated)" };
 var enrollInteractiveOpt = new Option<bool>("--interactive") { Description = "Interactive enrollment with project selection" };
 var enrollAllOpt = new Option<bool>("--all") { Description = "Enroll and push all projects with pending mutations" };
+var enrollAutoEnrollOpt = new Option<bool>("--auto-enroll") { Description = "Also enroll the project on the remote server (enables auto-sync on first save)" };
 syncEnrollCmd.Options.Add(enrollProjectOpt);
 syncEnrollCmd.Options.Add(enrollBehaviorOpt);
 syncEnrollCmd.Options.Add(enrollExcludeServerOpt);
 syncEnrollCmd.Options.Add(enrollInteractiveOpt);
 syncEnrollCmd.Options.Add(enrollAllOpt);
+syncEnrollCmd.Options.Add(enrollAutoEnrollOpt);
 syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
 {
     var project = parseResult.GetValue(enrollProjectOpt);
@@ -577,6 +716,14 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
     if (all && !string.IsNullOrWhiteSpace(project))
     {
         Console.Error.WriteLine("error: --all and --project are mutually exclusive.");
+        return;
+    }
+
+    // T2.2: --auto-enroll is not compatible with --all or --interactive
+    var autoEnroll = parseResult.GetValue(enrollAutoEnrollOpt);
+    if (autoEnroll && (all || interactive))
+    {
+        Console.Error.WriteLine("error: --auto-enroll is not compatible with --all or --interactive.");
         return;
     }
 
@@ -657,7 +804,16 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
         return;
     }
 
-    await ss.EnrollProjectLocalAsync(project, behavior);
+    // T2.6: Enrollment local fails first — do not attempt server enrollment
+    try
+    {
+        await ss.EnrollProjectLocalAsync(project, behavior);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"error: local enrollment failed — {ex.Message}");
+        return;
+    }
 
     var exclInfo = excludedServers.Length > 0
         ? $", excluded servers: {string.Join(", ", excludedServers)}"
@@ -665,6 +821,24 @@ syncEnrollCmd.SetAction(async (ParseResult parseResult) =>
     Console.WriteLine($"Project '{project}' enrolled for sync push (behavior: {behavior}{exclInfo}).");
     if (excludedServers.Length > 0)
         Console.WriteLine("  (excluded servers will be persisted to YAML config in Phase 4)");
+
+    // T2.3 + T2.5 + T2.7: Server enrollment when --auto-enroll is set
+    if (autoEnroll)
+    {
+        var serverUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            Console.WriteLine("[engram] warning: ENGRAM_SERVER_URL not set — local enrollment only. Server enrollment requires a remote server.");
+        }
+        else
+        {
+            var serverEnrolled = await EnrollProjectOnServerAsync(serverUrl, project);
+            if (!serverEnrolled)
+            {
+                Console.WriteLine("[engram] warning: server enrollment failed (project may already be enrolled on server). Local enrollment succeeded.");
+            }
+        }
+    }
 });
 
 // sync unenroll — unenroll a project from local sync push (ENG-514: HU-013)
@@ -1925,7 +2099,90 @@ interactiveCmd.SetAction(parseResult =>
     return InteractiveMenu.Run(store, Console.In, Console.Out);
 });
 
+// ─── Quick-capture handler (HU-050) ─────────────────────────────────────────
+root.SetAction(async (ParseResult parseResult) =>
+{
+    var content = parseResult.GetValue(quickCaptureArg);
+    if (string.IsNullOrWhiteSpace(content))
+    {
+        // Content explicitly provided but empty/whitespace → error (exit ≠ 0)
+        if (parseResult.GetResult(quickCaptureArg) is not null)
+        {
+            await Console.Error.WriteLineAsync("Memory content cannot be empty");
+            return 1;
+        }
+        // No args at all → show help (System.CommandLine default)
+        new HelpAction().Invoke(parseResult);
+        return 0;
+    }
+
+    // Project detection chain (paridad con mcp handler, lines 142-145)
+    var storeCfg = StoreConfig.FromEnvironment();
+    var project = parseResult.GetValue(qcProjOpt)
+        ?? storeCfg.Project
+        ?? ProjectDetector.DetectProject(Directory.GetCurrentDirectory());
+    project = Normalizers.NormalizeProject(project);
+
+    // Title generation (FR-002)
+    var title = GenerateQuickCaptureTitle(content);
+
+    // Session ID (FR-005)
+    var sessionId = $"quick-capture-{DateTime.Now:yyyyMMddTHHmmss}";
+
+    // Persist via IStore contract (FR-001, NFR-003)
+    using var store = OpenStore();
+    await store.CreateSessionAsync(sessionId, project, "");
+    var id = await store.AddObservationAsync(new AddObservationParams
+    {
+        SessionId = sessionId,
+        Type      = parseResult.GetValue(qcTypeOpt)!,
+        Title     = title,
+        Content   = content,
+        Project   = project,
+    });
+
+    // Confirmation output (FR-007)
+    Console.WriteLine($"✓ Memory saved: #{id} \"{title}\" ({parseResult.GetValue(qcTypeOpt)}) [project: {project}]");
+    return 0;
+});
+
+static string GenerateQuickCaptureTitle(string content)
+{
+    // Split by whitespace (includes \n, \r, \t — FR-006)
+    var words = content.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    if (words.Length == 0) return content.Trim();
+
+    // Content fits in 50 chars → title = content (trimmed)
+    var trimmed = content.Trim();
+    if (trimmed.Length <= 50) return trimmed;
+
+    // Accumulate words: ≤7 words AND ≤50 chars
+    var accumulated = new System.Text.StringBuilder();
+    var count = 0;
+    foreach (var word in words)
+    {
+        if (count >= 7) break;
+        var addition = count == 0 ? word : " " + word;
+        if (accumulated.Length + addition.Length > 50) break;
+        accumulated.Append(addition);
+        count++;
+    }
+
+    // Single word > 50 chars → truncate to 47 + "…"
+    if (accumulated.Length == 0 && words.Length > 0)
+    {
+        var first = words[0];
+        return first.Length > 50 ? first[..47] + "…" : first;
+    }
+
+    return accumulated.ToString();
+}
+
 // ─── Assemble ────────────────────────────────────────────────────────────────
+
+var initCmd = GitInitCommand.CreateCommand();
+var watchCmd = WatchCommand.CreateCommand();
+var onboardCmd = OnboardCommand.CreateCommand();
 
 root.Subcommands.Add(serveCmd);
 root.Subcommands.Add(mcpCmd);
@@ -1947,6 +2204,9 @@ root.Subcommands.Add(profileCmd);
 root.Subcommands.Add(relationsCmd);
 root.Subcommands.Add(lineageCmd);
 root.Subcommands.Add(interactiveCmd);
+root.Subcommands.Add(initCmd);
+root.Subcommands.Add(watchCmd);
+root.Subcommands.Add(onboardCmd);
 
 return await root.Parse(args).InvokeAsync();
 
@@ -2243,6 +2503,13 @@ static IStore OpenStore(StoreConfig? cfg = null, bool validate = true)
 }
 
 /// <summary>
+/// HU-065 F2: Hace POST /sync/enroll al servidor remoto.
+/// Delega en <see cref="SyncServerEnrollment.EnrollProjectOnServerAsync"/>.
+/// </summary>
+static Task<bool> EnrollProjectOnServerAsync(string serverUrl, string project, CancellationToken ct = default)
+    => SyncServerEnrollment.EnrollProjectOnServerAsync(serverUrl, project, ct);
+
+/// <summary>
 /// HU-018: Pushes pending mutations for a single project and acks accepted sequences.
 /// Shared single source of truth for `sync push` (single + --all) and `sync enroll --all`.
 /// Returns the number of accepted (acked) mutations.
@@ -2321,32 +2588,18 @@ static bool IsAutoEnrollDisabledInConfig()
 }
 
 /// <summary>
+/// HU-065 F1: Lee sync.remote_url desde ~/.engram/config.json.
+/// делегирует в <see cref="SyncConfigFileHelper.LoadRemoteUrlFromFile"/>.
+/// </summary>
+static string? LoadRemoteUrlFromFile(string? configPath = null)
+    => SyncConfigFileHelper.LoadRemoteUrlFromFile(configPath);
+
+/// <summary>
 /// HU-014 R6: Lee auto_sync desde ~/.engram/config.json.
 /// Devuelve true si auto_sync está habilitado (default), false si deshabilitado.
 /// </summary>
 static bool LoadSyncConfigFromFile()
-{
-    try
-    {
-        var configPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".engram", "config.json");
-        if (!File.Exists(configPath)) return true; // default: enabled
-
-        var json = File.ReadAllText(configPath);
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        if (doc.RootElement.TryGetProperty("auto_sync", out var autoSyncProp))
-        {
-            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.False)
-                return false;
-            if (autoSyncProp.ValueKind == System.Text.Json.JsonValueKind.Number
-                && autoSyncProp.GetInt32() == 0)
-                return false;
-        }
-        return true;
-    }
-    catch { return true; }
-}
+    => SyncConfigFileHelper.LoadAutoSyncFromFile();
 
 /// <summary>
 /// HU-014 R6: Guarda la preferencia auto_sync en ~/.engram/config.json.
@@ -2398,9 +2651,10 @@ static void SaveSyncConfigToFile(bool enabled)
 }
 
 /// <summary>
-/// HU-014 R6: Aplica la configuración de sync desde ~/.engram/config.json
+/// HU-014 R6 + HU-065 F1: Aplica la configuración de sync desde ~/.engram/config.json
 /// al entorno del proceso actual. Solo sobrescribe ENGRAM_SYNC_AUTO_SYNC
 /// si no fue explícitamente seteada en el entorno (la env var explícita siempre gana).
+/// Tambien setea ENGRAM_SERVER_URL desde sync.remote_url si la env var no está.
 /// </summary>
 static void ApplySyncConfigFromFile()
 {
@@ -2410,6 +2664,18 @@ static void ApplySyncConfigFromFile()
 
     var autoSync = LoadSyncConfigFromFile();
     Environment.SetEnvironmentVariable("ENGRAM_SYNC_AUTO_SYNC", autoSync ? "true" : "false");
+
+    // T1.2: si ENGRAM_SERVER_URL no está seteada, usar fallback de config.json
+    var envServerUrl = Environment.GetEnvironmentVariable("ENGRAM_SERVER_URL");
+    if (string.IsNullOrWhiteSpace(envServerUrl))
+    {
+        var fallbackUrl = LoadRemoteUrlFromFile();
+        if (!string.IsNullOrWhiteSpace(fallbackUrl))
+        {
+            Environment.SetEnvironmentVariable("ENGRAM_SERVER_URL", fallbackUrl);
+            Console.WriteLine($"[engram] Using sync.remote_url from config.json: {fallbackUrl}");
+        }
+    }
 }
 
 /// <summary>
@@ -2434,6 +2700,26 @@ static string? ParseConnStringParam(string? connString, string key)
 
 static string Truncate(string s, int max)
     => s.Length <= max ? s : s[..max] + "...";
+
+static void PrintSearchResults(IList<SearchResult> results, string context)
+{
+    if (results.Count == 0) { Console.WriteLine($"No memories found for {context}"); return; }
+
+    Console.WriteLine($"Found {results.Count} memories for {context}:\n");
+    for (int i = 0; i < results.Count; i++)
+    {
+        var r = results[i].Observation;
+        var projectDisplay = r.Project is not null ? $" | project: {r.Project}" : "";
+        var codeMeta = new List<string>();
+        if (!string.IsNullOrEmpty(r.FilePath)) codeMeta.Add($"file: {r.FilePath}");
+        if (!string.IsNullOrEmpty(r.Symbol)) codeMeta.Add($"symbol: {r.Symbol}");
+        if (!string.IsNullOrEmpty(r.Namespace)) codeMeta.Add($"namespace: {r.Namespace}");
+        var metaStr = codeMeta.Count > 0 ? " | " + string.Join(" | ", codeMeta) : "";
+        Console.WriteLine($"[{i + 1}] #{r.Id} ({r.Type}) — {r.Title}");
+        Console.WriteLine($"    {Truncate(r.Content, 300)}");
+        Console.WriteLine($"    {r.CreatedAt}{projectDisplay} | scope: {r.Scope}{metaStr}\n");
+    }
+}
 
 public static class SyncStatusFormatter
 {

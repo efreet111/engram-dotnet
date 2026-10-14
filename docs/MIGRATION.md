@@ -7,7 +7,7 @@
 - Initial public release
 - Offline-first sync (mutations, enrollment, pause/resume)
 - PostgreSQL backend
-- 41 REST endpoints + 28 MCP tools
+- 41 REST endpoints + 31 MCP tools
 
 ### Migration steps
 

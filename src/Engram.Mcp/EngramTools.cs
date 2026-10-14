@@ -236,6 +236,130 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
         return AppendActivityNudge(sb.ToString().TrimEnd(), activitySessionId);
     }
 
+    // ─── mem_recall_for_file (HU-064) ────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_file", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a specific file path.
+
+        Returns observations where file_path equals the given path OR file_path starts with the given path (prefix match).
+        Useful for understanding what decisions, context, or notes exist for a particular file.
+
+        EXAMPLES:
+          mem_recall_for_file("src/Auth/JwtBearer.cs")
+          mem_recall_for_file("src/Services/", limit: 5, type: "decision")
+        """)]
+    public async Task<string> MemRecallForFile(
+        [Description("The file path to query (e.g. 'src/Auth/JwtBearer.cs' or 'src/Auth/')")] string path,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesByFilePathAsync(path, resolvedProject, type, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for file path: \"{path}\"";
+
+        return FormatSearchResults(results, "file", path);
+    }
+
+    // ─── mem_recall_for_module (HU-064) ─────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_module", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a namespace/module.
+
+        Returns observations where namespace matches the given module prefix.
+        Useful for understanding what decisions or context exist for a module/package.
+
+        EXAMPLES:
+          mem_recall_for_module("Engram.Auth")
+          mem_recall_for_module("Engram.Store", type: "architecture")
+        """)]
+    public async Task<string> MemRecallForModule(
+        [Description("The namespace or module prefix to query (e.g. 'Engram.Auth' or 'Engram')")] string module,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Filter by type: tool_use, file_change, command, file_read, search, manual, decision, architecture, bugfix, pattern")] string? type = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesByModuleAsync(module, resolvedProject, type, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for module: \"{module}\"";
+
+        return FormatSearchResults(results, "module", module);
+    }
+
+    // ─── mem_decisions_for_module (HU-061) ────────────────────────────────────
+
+    [McpServerTool(Name = "mem_decisions_for_module", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query architectural decisions (type=decision or type=architecture) for a specific module/namespace.
+
+        Returns decisions where namespace matches the given module prefix.
+        Use this before designing new features to avoid re-deriving existing decisions.
+
+        EXAMPLES:
+          mem_decisions_for_module("Engram.Store")
+          mem_decisions_for_module("Engram.Auth", limit: 5)
+        """)]
+    public async Task<string> MemDecisionsForModule(
+        [Description("The namespace or module prefix to query (e.g. 'Engram.Auth' or 'Engram')")] string module,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Max results (default: 10, max: 50)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 50);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        // Query both decision and architecture types, merge and dedupe
+        var decisions = await store.GetMemoriesByModuleAsync(module, resolvedProject, "decision", clampedLimit);
+        var architectures = await store.GetMemoriesByModuleAsync(module, resolvedProject, "architecture", clampedLimit);
+        var results = decisions.Concat(architectures)
+            .OrderByDescending(x => x.Observation.CreatedAt)
+            .Take(clampedLimit)
+            .ToList();
+
+        if (results.Count == 0)
+            return $"No decisions found for module: \"{module}\"";
+
+        return FormatSearchResults(results, "decisions for module", module);
+    }
+
+    // ─── mem_recall_for_symbol (HU-064) ──────────────────────────────────────
+
+    [McpServerTool(Name = "mem_recall_for_symbol", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Query memories associated with a specific symbol (function, class, interface, etc.).
+
+        Returns observations where symbol exactly matches the given name.
+        Useful for understanding what decisions or context exist for a specific code symbol.
+
+        EXAMPLES:
+          mem_recall_for_symbol("JwtBearerHandler")
+          mem_recall_for_symbol("IStore")
+        """)]
+    public async Task<string> MemRecallForSymbol(
+        [Description("The exact symbol name to query (e.g. 'JwtBearerHandler' or 'IStore')")] string symbol,
+        [Description("Filter by project name")] string? project = null,
+        [Description("Max results (default: 10, max: 20)")] int limit = 10)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 20);
+        var resolvedProject = ResolveProject(project, Scopes.Personal);
+
+        var results = await store.GetMemoriesBySymbolAsync(symbol, resolvedProject, clampedLimit);
+
+        if (results.Count == 0)
+            return $"No memories found for symbol: \"{symbol}\"";
+
+        return FormatSearchResults(results, "symbol", symbol);
+    }
+
     // ─── mem_decision_tree ────────────────────────────────────────────────────
 
     [McpServerTool(Name = "mem_decision_tree", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
@@ -318,6 +442,97 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
             sb.AppendLine();
         }
 
+        return sb.ToString().TrimEnd();
+    }
+
+    // ─── mem_check_contradictions ─────────────────────────────────────────────
+
+    [McpServerTool(Name = "mem_check_contradictions", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false)]
+    [Description("""
+        Detect contradictions in memory observations for a project.
+
+        Three detection types:
+        - direct: observations already linked by conflicts_with relations (Confidence=1.0)
+        - temporal: newer observation on same topic_key contradicts older one via low keyword overlap (Confidence=0.7)
+        - embedding: high TF-IDF similarity but divergent keywords (Confidence=0.5–0.9, placeholder for ENG-418)
+
+        Resolution options returned per result:
+        - keep_both: both observations remain active (human review needed)
+        - mark_superseded: older observation marked deprecated (auto-done if Confidence > 0.8)
+        - merge: manual merge required (not executed automatically)
+        - ignore: low confidence, not a real contradiction
+
+        RESULTS are formatted as a readable string (not JSON). Use mem_get_observation(id) to inspect specific observations.
+        """)]
+    public async Task<string> MemCheckContradictions(
+        [Description("Project name to check for contradictions")] string project,
+        [Description("Maximum number of results to return (default: 50, max: 200)")] int limit = 50,
+        [Description("Minimum confidence threshold 0.0–1.0 (default: 0.5). Only results with confidence >= threshold are returned.")] double confidence_threshold = 0.5,
+        [Description("Comma-separated types to run: direct,temporal,embedding (default: all three). Unknown types are silently ignored.")] string? types = null)
+    {
+        var effectiveLimit = Math.Clamp(limit, 1, 200);
+        var effectiveThreshold = Math.Clamp(confidence_threshold, 0.0, 1.0);
+
+        // Parse and validate types
+        var defaultTypes = new[] { "direct", "temporal", "embedding" };
+        var requestedTypes = defaultTypes;
+        if (!string.IsNullOrWhiteSpace(types))
+        {
+            var parsed = types.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(t => defaultTypes.Contains(t, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            if (parsed.Length > 0)
+                requestedTypes = parsed;
+        }
+
+        // Resolve project to personal scope (matching MemDecisionTree pattern)
+        var resolvedProject = ResolveProject(project, Engram.Store.Scopes.Personal);
+
+        var detector = new ContradictionDetector(store, _memRelRepo);
+        var allResults = new List<ContradictionResult>();
+
+        if (requestedTypes.Contains("direct"))
+        {
+            var direct = await detector.DetectDirectContradictionsAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(direct);
+        }
+
+        if (requestedTypes.Contains("temporal"))
+        {
+            var temporal = await detector.DetectTemporalSupersedenceAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(temporal);
+        }
+
+        if (requestedTypes.Contains("embedding"))
+        {
+            var embedding = await detector.DetectEmbeddingConflictsAsync(resolvedProject, effectiveThreshold, effectiveLimit);
+            allResults.AddRange(embedding);
+        }
+
+        // Sort by confidence DESC, then take limit
+        var results = allResults
+            .OrderByDescending(r => r.Confidence)
+            .Take(effectiveLimit)
+            .ToList();
+
+        if (results.Count == 0)
+            return $"No contradictions detected for project \"{resolvedProject}\" at confidence >= {effectiveThreshold}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Contradiction report for project \"{resolvedProject}\" ({results.Count} result(s), threshold >= {effectiveThreshold}):");
+        sb.AppendLine();
+
+        for (int i = 0; i < results.Count; i++)
+        {
+            var r = results[i];
+            var typeLabel = r.Type.ToUpperInvariant();
+            sb.AppendLine($"[{i + 1}] {typeLabel} (confidence: {r.Confidence:F2})");
+            sb.AppendLine($"    obs #{r.ObsIdA} ↔ obs #{r.ObsIdB}");
+            sb.AppendLine($"    Suggested: {r.SuggestedResolution}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"Run mem_get_observation(id: <ID>) to inspect individual observations.");
         return sb.ToString().TrimEnd();
     }
 
@@ -1521,6 +1736,34 @@ public sealed class EngramTools(IStore store, McpConfig cfg, WriteQueue writeQue
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";
+
+    private static string FormatSearchResults(IList<SearchResult> results, string contextType, string contextValue)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {results.Count} memories for {contextType} \"{contextValue}\":");
+        sb.AppendLine();
+
+        for (int i = 0; i < results.Count; i++)
+        {
+            var r = results[i].Observation;
+            var preview = Truncate(r.Content, 300);
+            if (r.Content.Length > 300) preview += " [preview]";
+            var codeMeta = new List<string>();
+            if (!string.IsNullOrEmpty(r.FilePath)) codeMeta.Add($"file: {r.FilePath}");
+            if (!string.IsNullOrEmpty(r.Symbol)) codeMeta.Add($"symbol: {r.Symbol}");
+            if (!string.IsNullOrEmpty(r.Namespace)) codeMeta.Add($"namespace: {r.Namespace}");
+            var metaStr = codeMeta.Count > 0 ? " | " + string.Join(" | ", codeMeta) : "";
+            sb.AppendLine($"[{i + 1}] #{r.Id} ({r.Type}) — {r.Title}");
+            sb.AppendLine($"    {preview}");
+            sb.AppendLine($"    {r.CreatedAt} | scope: {r.Scope}{metaStr}");
+            sb.AppendLine();
+        }
+
+        if (results.Any(r => r.Observation.Content.Length > 300))
+            sb.AppendLine("---\nResults above are previews (300 chars). To read the full content, call mem_get_observation(id: <ID>).");
+
+        return sb.ToString().TrimEnd();
+    }
 
     private string AppendActivityNudge(string baseResponse, string sessionId)
     {

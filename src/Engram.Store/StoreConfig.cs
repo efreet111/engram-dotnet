@@ -33,6 +33,13 @@ public class StoreConfig
     /// </summary>
     public int MaxTitleLength { get; init; } = 200;
 
+    /// <summary>
+    /// Maximum length for code metadata fields (file_path, symbol, namespace).
+    /// ENG-416: prevents PostgreSQL B-tree index overflow (2704 byte limit).
+    /// 512 chars × 4 bytes UTF-8 = 2048 bytes + overhead < 2704. Fail-loud.
+    /// </summary>
+    public int MaxMetadataLength { get; init; } = 512;
+
     public string? JwtSecret { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_JWT_SECRET");
 
     public string? CorsOrigins { get; init; } = Environment.GetEnvironmentVariable("ENGRAM_CORS_ORIGINS");
