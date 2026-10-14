@@ -7,6 +7,8 @@
 
 ### Added
 
+- **Tests**: New `MemRelationsAndContradictionsTests.cs` — 15 unit tests covering `mem_relations` MCP tool: add/get/delete relations, validation of relation types (related_to, conflicts_with, depends_on, supersedes), error handling for invalid actions/ids/types, and supersedes validation (same topic_key required). Note: `mem_check_contradictions` tests deferred to `ContradictionDetectorIntegrationTests.cs` in `Engram.Verification.Tests`.
+
 - **HU-060**: Code-Aware Capture (Parte B) — `engram watch` now extracts `symbol` and `namespace` from C# files via regex patterns (`SymbolPatternCompound`, `SymbolPatternStandard`, `SymbolPatternDelegate`, `NamespacePathPattern`). Graceful fallback to null when extraction fails (with debug logging). New `CodeMetadataExtractor.cs` with 3 static methods. 53 unit tests, 212 suite regression clean, PM-1..PM-4 verified. See `.ai-work/hu-060-code-aware-capture-parte-b/`.
 
 - **HU-061**: Code-Context Arch Agent — new `mem_decisions_for_module` MCP tool with dual-type query (`decision` + `architecture`), limit clamped 1-50, sorted by CreatedAt desc. Queries `GetMemoriesByModuleAsync` twice (one per type) and merges. RFC-008 documents FlowForge Arch Agent integration protocol. 7 unit tests in `MemDecisionsForModuleTests.cs`. 337 tests total pass. Commit `c38bc44`. See `.ai-work/hu-061-code-context-arch-agent/`.
