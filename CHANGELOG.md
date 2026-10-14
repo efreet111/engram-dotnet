@@ -3,7 +3,7 @@
 > Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > Historial por PRs de GitHub para detalles completos.
 
-## [Unreleased]
+## [1.4.0] — 2026-10-14
 
 ### Added
 
@@ -34,6 +34,8 @@
 
 - **HU-026**: System.CommandLine migration — `Program.cs` y `tests/Engram.Cli.Tests/` migrados de API beta (2.0.0-beta4.22272.1) a 2.0.11 estable. 244 errores de compilación corregidos (SetHandler→SetAction, root.Add→Subcommands.Add, GetValueForOption→GetValue, InvocationContext→ParseResult). 121 tests pasan.
 - **ENG-473**: `mem_relations` and `mem_lineage_obs` no longer crash with SQLite FK constraint violation — CLI `relations add` now creates the `rel-cli-{date}` session before saving observations. Commit `c88d31e`.
+
+## [Unreleased]
 
 ## [1.3.0] — 2026-07-06
 
